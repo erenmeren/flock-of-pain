@@ -5,18 +5,24 @@ from workforce_twin.model import (
 from workforce_twin.schedule import business_hours
 
 
-def tiny_company(rate_per_hour: float = 0.0, pool_headcount: int = 3) -> Company:
+def tiny_company(
+    rate_per_hour: float = 0.0, pool_headcount: int = 3, employees: int = 1,
+    steps: list[Step] | None = None,
+) -> Company:
     sched = business_hours(9, 17)
     pool = Resource("cs_pool", "cs", {"support"}, schedule=sched, headcount=pool_headcount)
-    e1 = Resource("e1", "cs", {"support"}, pool_id="cs_pool", name="E1")
+    staff = [
+        Resource(f"e{i}", "cs", {"support"}, pool_id="cs_pool", name=f"E{i}")
+        for i in range(1, employees + 1)
+    ]
     c = Company(
         "tiny", "Tiny",
-        [Department("cs", "Customer Service", [pool, e1])],
+        [Department("cs", "Customer Service", [pool, *staff])],
         [BusinessSystem("erp", "ERP")],
         [Workflow(
             "w", "W",
-            [Step("a", "A", "cs", "support", const(10), system_id="erp"),
-             Step("b", "B", "cs", "support", const(5), depends_on=["a"])],
+            steps or [Step("a", "A", "cs", "support", const(10), system_id="erp"),
+                      Step("b", "B", "cs", "support", const(5), depends_on=["a"])],
             ArrivalSpec(rate_per_hour, business_hours(9, 17)),
         )],
     )
