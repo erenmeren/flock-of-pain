@@ -1,15 +1,8 @@
 """Reynolds: a synthetic five-department company. Every number here is an assumed value."""
-from math import log
-
-from flock_of_pain.dist import Dist, lognormal
+from flock_of_pain.dist import lognormal_mean
 from flock_of_pain.model import ArrivalSpec, BusinessSystem, Company, Department, Resource, Step, Workflow
 from flock_of_pain.scenario import AddEmployee, ArrivalMultiplier, Scenario, SystemOutage
 from flock_of_pain.schedule import MINUTES_PER_DAY, Schedule, business_hours
-
-
-def lognormal_minutes(m: float, s: float = 0.4) -> Dist:
-    """Lognormal with mean m minutes (lognormal() takes the underlying normal's parameters)."""
-    return lognormal(log(m) - s * s / 2, s)
 
 
 def _emp(n: int, dept: str, skills: set[str], cost: float, schedule: Schedule | None, pool: str | None = None) -> Resource:
@@ -19,7 +12,7 @@ def _emp(n: int, dept: str, skills: set[str], cost: float, schedule: Schedule | 
 
 def _step(id: str, dept: str, skill: str, mean: float, fail: float, depends_on: list[str] | None = None,
           **kw) -> Step:
-    return Step(id, id.replace("_", " ").title(), dept, skill, lognormal_minutes(mean),
+    return Step(id, id.replace("_", " ").title(), dept, skill, lognormal_mean(mean),
                 depends_on=depends_on or [], failure_prob=fail, max_retries=1, **kw)
 
 

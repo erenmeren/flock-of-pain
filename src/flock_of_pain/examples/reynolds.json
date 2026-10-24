@@ -1,0 +1,1155 @@
+{
+  "id": "reynolds",
+  "name": "Reynolds",
+  "systems": [
+    {
+      "id": "erp",
+      "name": "ERP"
+    },
+    {
+      "id": "crm",
+      "name": "CRM"
+    }
+  ],
+  "departments": [
+    {
+      "id": "cs",
+      "name": "Customer Support",
+      "resources": [
+        {
+          "id": "cs_pool",
+          "skills": [
+            "customer_contact",
+            "erp_entry",
+            "order_review",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 18.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          },
+          "headcount": 12
+        },
+        {
+          "id": "emp_01",
+          "name": "Employee 1",
+          "skills": [
+            "customer_contact",
+            "erp_entry",
+            "order_review",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 18.0,
+          "schedule": null,
+          "pool_id": "cs_pool"
+        },
+        {
+          "id": "emp_02",
+          "name": "Employee 2",
+          "skills": [
+            "customer_contact",
+            "erp_entry",
+            "order_review",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 18.0,
+          "schedule": null,
+          "pool_id": "cs_pool"
+        },
+        {
+          "id": "emp_03",
+          "name": "Employee 3",
+          "skills": [
+            "customer_contact",
+            "erp_entry",
+            "order_review",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 18.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                13
+              ],
+              "1": [
+                9,
+                13
+              ],
+              "2": [
+                9,
+                13
+              ],
+              "3": [
+                9,
+                13
+              ],
+              "4": [
+                9,
+                13
+              ]
+            }
+          },
+          "pool_id": "cs_pool"
+        },
+        {
+          "id": "emp_04",
+          "name": "Employee 4",
+          "skills": [
+            "erp_entry",
+            "order_review"
+          ],
+          "cost_per_hour": 22.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                16
+              ],
+              "1": [
+                8,
+                16
+              ],
+              "2": [
+                8,
+                16
+              ],
+              "3": [
+                8,
+                16
+              ],
+              "4": [
+                8,
+                16
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_05",
+          "name": "Employee 5",
+          "skills": [
+            "customer_contact",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 20.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_06",
+          "name": "Employee 6",
+          "skills": [
+            "customer_contact",
+            "erp_entry",
+            "order_review",
+            "ticket_triage"
+          ],
+          "cost_per_hour": 24.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                18
+              ],
+              "1": [
+                8,
+                18
+              ],
+              "2": [
+                8,
+                18
+              ],
+              "3": [
+                8,
+                18
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "supply_chain",
+      "name": "Supply Chain",
+      "resources": [
+        {
+          "id": "sc_pool",
+          "skills": [
+            "inventory",
+            "logistics"
+          ],
+          "cost_per_hour": 24.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                16
+              ],
+              "1": [
+                8,
+                16
+              ],
+              "2": [
+                8,
+                16
+              ],
+              "3": [
+                8,
+                16
+              ],
+              "4": [
+                8,
+                16
+              ]
+            }
+          },
+          "headcount": 8
+        },
+        {
+          "id": "emp_07",
+          "name": "Employee 7",
+          "skills": [
+            "inventory",
+            "logistics"
+          ],
+          "cost_per_hour": 24.0,
+          "schedule": null,
+          "pool_id": "sc_pool"
+        },
+        {
+          "id": "emp_08",
+          "name": "Employee 8",
+          "skills": [
+            "inventory",
+            "logistics"
+          ],
+          "cost_per_hour": 24.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                13
+              ],
+              "1": [
+                9,
+                13
+              ],
+              "2": [
+                9,
+                13
+              ],
+              "3": [
+                9,
+                13
+              ],
+              "4": [
+                9,
+                13
+              ]
+            }
+          },
+          "pool_id": "sc_pool"
+        },
+        {
+          "id": "emp_09",
+          "name": "Employee 9",
+          "skills": [
+            "inventory"
+          ],
+          "cost_per_hour": 26.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_10",
+          "name": "Employee 10",
+          "skills": [
+            "logistics"
+          ],
+          "cost_per_hour": 26.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                18
+              ],
+              "1": [
+                8,
+                18
+              ],
+              "2": [
+                8,
+                18
+              ],
+              "3": [
+                8,
+                18
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_11",
+          "name": "Employee 11",
+          "skills": [
+            "inventory",
+            "logistics"
+          ],
+          "cost_per_hour": 28.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "finance",
+      "name": "Finance",
+      "resources": [
+        {
+          "id": "finance_pool",
+          "skills": [
+            "billing"
+          ],
+          "cost_per_hour": 32.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          },
+          "headcount": 6
+        },
+        {
+          "id": "emp_12",
+          "name": "Employee 12",
+          "skills": [
+            "billing",
+            "credit"
+          ],
+          "cost_per_hour": 38.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_13",
+          "name": "Employee 13",
+          "skills": [
+            "credit"
+          ],
+          "cost_per_hour": 40.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                16
+              ],
+              "1": [
+                8,
+                16
+              ],
+              "2": [
+                8,
+                16
+              ],
+              "3": [
+                8,
+                16
+              ],
+              "4": [
+                8,
+                16
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_14",
+          "name": "Employee 14",
+          "skills": [
+            "billing"
+          ],
+          "cost_per_hour": 30.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                13
+              ],
+              "1": [
+                9,
+                13
+              ],
+              "2": [
+                9,
+                13
+              ],
+              "3": [
+                9,
+                13
+              ],
+              "4": [
+                9,
+                13
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_15",
+          "name": "Employee 15",
+          "skills": [
+            "billing",
+            "credit"
+          ],
+          "cost_per_hour": 35.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            },
+            "absences": [
+              [
+                10080,
+                20160
+              ]
+            ]
+          }
+        },
+        {
+          "id": "emp_16",
+          "name": "Employee 16",
+          "skills": [
+            "billing"
+          ],
+          "cost_per_hour": 32.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                18
+              ],
+              "1": [
+                8,
+                18
+              ],
+              "2": [
+                8,
+                18
+              ],
+              "3": [
+                8,
+                18
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sales",
+      "name": "Sales",
+      "resources": [
+        {
+          "id": "emp_17",
+          "name": "Employee 17",
+          "skills": [
+            "sales_ops"
+          ],
+          "cost_per_hour": 28.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_18",
+          "name": "Employee 18",
+          "skills": [
+            "sales_ops"
+          ],
+          "cost_per_hour": 25.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                16
+              ],
+              "1": [
+                8,
+                16
+              ],
+              "2": [
+                8,
+                16
+              ],
+              "3": [
+                8,
+                16
+              ],
+              "4": [
+                8,
+                16
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_19",
+          "name": "Employee 19",
+          "skills": [
+            "sales_ops"
+          ],
+          "cost_per_hour": 25.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                13
+              ],
+              "1": [
+                9,
+                13
+              ],
+              "2": [
+                9,
+                13
+              ],
+              "3": [
+                9,
+                13
+              ],
+              "4": [
+                9,
+                13
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_20",
+          "name": "Employee 20",
+          "skills": [
+            "sales_ops"
+          ],
+          "cost_per_hour": 30.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                18
+              ],
+              "1": [
+                8,
+                18
+              ],
+              "2": [
+                8,
+                18
+              ],
+              "3": [
+                8,
+                18
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "it",
+      "name": "IT",
+      "resources": [
+        {
+          "id": "emp_21",
+          "name": "Employee 21",
+          "skills": [
+            "it_support"
+          ],
+          "cost_per_hour": 34.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_22",
+          "name": "Employee 22",
+          "skills": [
+            "it_support"
+          ],
+          "cost_per_hour": 32.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                16
+              ],
+              "1": [
+                8,
+                16
+              ],
+              "2": [
+                8,
+                16
+              ],
+              "3": [
+                8,
+                16
+              ],
+              "4": [
+                8,
+                16
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_23",
+          "name": "Employee 23",
+          "skills": [
+            "it_support"
+          ],
+          "cost_per_hour": 38.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                8,
+                18
+              ],
+              "1": [
+                8,
+                18
+              ],
+              "2": [
+                8,
+                18
+              ],
+              "3": [
+                8,
+                18
+              ]
+            }
+          }
+        },
+        {
+          "id": "emp_24",
+          "name": "Employee 24",
+          "skills": [
+            "it_support"
+          ],
+          "cost_per_hour": 36.0,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                9,
+                17
+              ],
+              "1": [
+                9,
+                17
+              ],
+              "2": [
+                9,
+                17
+              ],
+              "3": [
+                9,
+                17
+              ],
+              "4": [
+                9,
+                17
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "order_modification",
+      "name": "Customer Order Modification",
+      "arrival": {
+        "rate_per_hour": 6,
+        "window": {
+          "weekday_hours": {
+            "0": [
+              9,
+              17
+            ],
+            "1": [
+              9,
+              17
+            ],
+            "2": [
+              9,
+              17
+            ],
+            "3": [
+              9,
+              17
+            ],
+            "4": [
+              9,
+              17
+            ]
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "intake",
+          "name": "Intake",
+          "department_id": "cs",
+          "required_skill": "order_review",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.62805020110221,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "failure_prob": 0.03,
+          "max_retries": 1
+        },
+        {
+          "id": "erp_update",
+          "name": "Erp Update",
+          "department_id": "cs",
+          "required_skill": "erp_entry",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.915732273553991,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "intake"
+          ],
+          "system_id": "erp",
+          "failure_prob": 0.05,
+          "max_retries": 1
+        },
+        {
+          "id": "inventory_check",
+          "name": "Inventory Check",
+          "department_id": "supply_chain",
+          "required_skill": "inventory",
+          "duration": {
+            "kind": "lognormal",
+            "a": 3.3211973816621554,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "erp_update"
+          ],
+          "failure_prob": 0.04,
+          "max_retries": 1
+        },
+        {
+          "id": "price_adjust",
+          "name": "Price Adjust",
+          "department_id": "finance",
+          "required_skill": "billing",
+          "duration": {
+            "kind": "lognormal",
+            "a": 3.1388758248682005,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "erp_update"
+          ],
+          "failure_prob": 0.03,
+          "max_retries": 1
+        },
+        {
+          "id": "reserve_stock",
+          "name": "Reserve Stock",
+          "department_id": "supply_chain",
+          "required_skill": "logistics",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.915732273553991,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "inventory_check"
+          ],
+          "failure_prob": 0.02,
+          "max_retries": 1
+        },
+        {
+          "id": "invoice",
+          "name": "Invoice",
+          "department_id": "finance",
+          "required_skill": "billing",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.62805020110221,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "price_adjust",
+            "reserve_stock"
+          ],
+          "failure_prob": 0.06,
+          "max_retries": 1
+        },
+        {
+          "id": "confirm_customer",
+          "name": "Confirm Customer",
+          "department_id": "cs",
+          "required_skill": "customer_contact",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.222585092994046,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "invoice"
+          ],
+          "sla_minutes": 480,
+          "failure_prob": 0.02,
+          "max_retries": 1
+        }
+      ]
+    },
+    {
+      "id": "support_ticket",
+      "name": "Support Ticket",
+      "arrival": {
+        "rate_per_hour": 3,
+        "window": {
+          "weekday_hours": {
+            "0": [
+              9,
+              17
+            ],
+            "1": [
+              9,
+              17
+            ],
+            "2": [
+              9,
+              17
+            ],
+            "3": [
+              9,
+              17
+            ],
+            "4": [
+              9,
+              17
+            ]
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "triage",
+          "name": "Triage",
+          "department_id": "cs",
+          "required_skill": "ticket_triage",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.62805020110221,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "failure_prob": 0.04,
+          "max_retries": 1
+        },
+        {
+          "id": "resolve",
+          "name": "Resolve",
+          "department_id": "it",
+          "required_skill": "it_support",
+          "duration": {
+            "kind": "lognormal",
+            "a": 3.608879454113936,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "triage"
+          ],
+          "failure_prob": 0.08,
+          "max_retries": 1
+        },
+        {
+          "id": "close",
+          "name": "Close",
+          "department_id": "cs",
+          "required_skill": "ticket_triage",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.222585092994046,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "resolve"
+          ],
+          "failure_prob": 0.02,
+          "max_retries": 1
+        }
+      ]
+    },
+    {
+      "id": "credit_check",
+      "name": "Credit Check",
+      "arrival": {
+        "rate_per_hour": 2,
+        "window": {
+          "weekday_hours": {
+            "0": [
+              9,
+              17
+            ],
+            "1": [
+              9,
+              17
+            ],
+            "2": [
+              9,
+              17
+            ],
+            "3": [
+              9,
+              17
+            ],
+            "4": [
+              9,
+              17
+            ]
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "credit_request",
+          "name": "Credit Request",
+          "department_id": "sales",
+          "required_skill": "sales_ops",
+          "duration": {
+            "kind": "lognormal",
+            "a": 2.915732273553991,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "failure_prob": 0.03,
+          "max_retries": 1
+        },
+        {
+          "id": "credit_review",
+          "name": "Credit Review",
+          "department_id": "finance",
+          "required_skill": "credit",
+          "duration": {
+            "kind": "lognormal",
+            "a": 3.7266624897703196,
+            "b": 0.4,
+            "c": 0.0
+          },
+          "depends_on": [
+            "credit_request"
+          ],
+          "failure_prob": 0.05,
+          "max_retries": 1
+        }
+      ]
+    }
+  ],
+  "outages": []
+}

@@ -1,4 +1,5 @@
 import random
+from math import log
 from dataclasses import dataclass
 
 
@@ -44,3 +45,8 @@ def lognormal(mean: float, sigma: float) -> Dist:
 
 def exponential(mean: float) -> Dist:
     return Dist("exponential", mean)
+
+
+def lognormal_mean(mean: float, sigma: float = 0.4) -> Dist:
+    """Lognormal with the given mean (lognormal() takes the underlying normal's parameters)."""
+    return lognormal(log(mean) - sigma * sigma / 2, sigma)

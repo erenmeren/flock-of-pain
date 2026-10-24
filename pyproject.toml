@@ -20,3 +20,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["slow: long-running performance test"]
+
+[tool.setuptools.package-data]
+flock_of_pain = ["examples/*.json"]
