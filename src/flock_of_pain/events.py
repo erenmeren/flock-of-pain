@@ -75,6 +75,7 @@ class Task:
     run_token: int = 0
     retries: int = 0
     last_reason: Reason | None = None  # reason on the latest TASK_QUEUED / retag
+    seq: int = 0  # engine creation order
 
 
 S = TaskState

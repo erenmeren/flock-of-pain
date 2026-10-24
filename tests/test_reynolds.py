@@ -46,3 +46,12 @@ def test_performance_smoke_30_days():
     t0 = time.perf_counter()
     Engine(reynolds.build(), RunConfig(seed=1, horizon_minutes=30 * 1440)).run()
     assert time.perf_counter() - t0 < 30
+
+
+@pytest.mark.slow
+def test_three_x_load_90_days_under_budget():
+    from flock_of_pain.scenario import ArrivalMultiplier, Scenario
+    c = Scenario("x3", "x3", reynolds.build(), [ArrivalMultiplier(3.0)]).materialize()
+    t = time.perf_counter()
+    Engine(c, RunConfig(seed=42, horizon_minutes=90 * 1440)).run()
+    assert time.perf_counter() - t < 8.0
