@@ -181,6 +181,7 @@ class Engine:
             return
         self.events.append(Event(self.now, K.SYSTEM_OUTAGE_ENDED, system_id=system_id))
         ids, self.in_progress[system_id] = self.in_progress[system_id], set()
+        # a BLOCKED task of a cancelled instance resumes and completes but spawns nothing (blocked = paused in-progress)
         for task in sorted((self.tasks_by_id.pop(i) for i in ids), key=lambda t: t.seq):
             self._try_dispatch_task(task)
         # queued tasks on this system: every free resource re-scans its queues
@@ -224,6 +225,8 @@ class Engine:
             else:
                 transition(task, S.CANCELLED, self.now, self.events)
                 inst.active.pop(step.id, None)
+                if not inst.active:
+                    del self.instances[inst.id]
             return
         transition(task, S.COMPLETED, self.now, self.events)
         if step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
@@ -237,6 +240,8 @@ class Engine:
         # freed slot serves already-queued work before this instance's successors
         self._dispatch_resource(r)
         if inst.cancelled:
+            if not inst.active:
+                del self.instances[inst.id]
             return
         for s in inst.workflow.steps:
             if s.id not in inst.completed and s.id not in inst.active and set(s.depends_on) <= inst.completed:

@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     print(compare(results))
     for r in results:
         print(f"\nTop blocked time: {r.name}")
-        print(f"OFF_SHIFT total: {off_shift_minutes(r):.1f}")
+        print(f"OFF_SHIFT per run: {off_shift_minutes(r):.1f}")
         print("department | reason | blocker | minutes | count")
         for row in top_ledger(r):
             print(f"{row.department_id} | {row.reason or '-'} | {row.blocker_id or '-'} | "

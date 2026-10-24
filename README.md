@@ -19,7 +19,8 @@ uv run --extra dev pytest
 uv run python -m flock_of_pain demo --days 10 --reps 5 --seed 42
 ```
 
-Options: `--policy` picks the dispatch policy, and `--events-dir PATH` writes one `<experiment>-<seed>.jsonl` event log per run.
+Options: `--policy` picks the dispatch policy, `--events-dir PATH` writes one `<experiment>-<seed>.jsonl` event log per run, and `--company PATH` runs the scenarios against a company JSON file instead of the built-in Reynolds company.
+`uv run python -m flock_of_pain export-example PATH` writes the Reynolds company as JSON, a starting point for `--company`.
 The demo runs the synthetic Reynolds company (`src/flock_of_pain/examples/reynolds.py`) under four scenarios: baseline, demand +30%, a 2-hour ERP outage, and one extra CS employee.
 
 All demo parameters are assumed values, not measurements.
@@ -31,12 +32,15 @@ uv run --extra api uvicorn flock_of_pain.api:app
 ```
 
 - `GET /example`: Reynolds company and its four scenarios as JSON.
-- `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`.
+- `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`, with `path` prefixed by the request section (`company.`, `scenarios[i].`, `config.`).
+  One request may run at most 2000 run-days (days x replications x scenarios), or 30 with `include_events`.
 
 ## Docs
 
-- Spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-core-design.md`
-- Plan: `docs/superpowers/plans/2026-10-24-flock-of-pain-core.md`
+- Core spec: `docs/superpowers/specs/2026-10-24-workforce-twin-core-design.md`
+- Core plan: `docs/superpowers/plans/2026-10-24-workforce-twin-core.md`
+- Phase-1 (JSON I/O and API) spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-io-api-design.md`
+- Phase-1 plan: `docs/superpowers/plans/2026-10-24-flock-of-pain-io-api.md`
 
 ## Web
 

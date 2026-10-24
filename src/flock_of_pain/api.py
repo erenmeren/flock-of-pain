@@ -15,7 +15,8 @@ from flock_of_pain.model import ModelError
 MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS = 2000, 30  # ~330 s and ~38 GB at 365 x 50 x 4 without a cap
 
 app = FastAPI(title="Flock of Pain")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 
 class SimulateRequest(BaseModel):
