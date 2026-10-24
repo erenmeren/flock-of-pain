@@ -34,6 +34,7 @@ export default function Home() {
 
   async function run() {
     setError(null);
+    setResult(null);
     let body;
     try {
       body = {
@@ -57,22 +58,20 @@ export default function Home() {
 
   const fmt = (s?: { mean: number; p10: number; p90: number }) =>
     s ? `${s.mean.toFixed(2)} (${s.p10.toFixed(2)}–${s.p90.toFixed(2)})` : "";
-  const rows = result
-    ? [...result.kpi_keys, ...Array.from(new Set(result.scenarios.flatMap((s) => Object.keys(s.summary)))).filter((k) => k.startsWith("util_"))]
-    : [];
+  const rows = result?.kpi_keys ?? [];
 
   return (
     <main className="grid gap-6 p-6 md:grid-cols-2">
       <div className="flex flex-col gap-4">
-        <Textarea className="h-64 font-mono" value={company} onChange={(e) => setCompany(e.target.value)} />
-        <Textarea className="h-64 font-mono" value={scenarios} onChange={(e) => setScenarios(e.target.value)} />
+        <Textarea aria-label="company JSON" className="h-64 font-mono" value={company} onChange={(e) => setCompany(e.target.value)} />
+        <Textarea aria-label="scenarios JSON" className="h-64 font-mono" value={scenarios} onChange={(e) => setScenarios(e.target.value)} />
         <div className="grid grid-cols-3 gap-2">
           <Input type="number" aria-label="seed" value={seed} onChange={(e) => setSeed(e.target.value)} />
           <Input type="number" aria-label="days" value={days} onChange={(e) => setDays(e.target.value)} />
           <Input type="number" aria-label="reps" value={reps} onChange={(e) => setReps(e.target.value)} />
         </div>
         <Select value={policy} onValueChange={(v) => v && setPolicy(v)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="policy"><SelectValue /></SelectTrigger>
           <SelectContent>
             {POLICIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
           </SelectContent>
