@@ -28,8 +28,8 @@ export async function getExample(): Promise<{ company: unknown; scenarios: unkno
   return res.json();
 }
 
-export async function simulate(body: unknown): Promise<SimulateResponse> {
-  const res = await fetch(`${API}/simulate`, {
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -37,9 +37,17 @@ export async function simulate(body: unknown): Promise<SimulateResponse> {
   if (res.ok) return res.json();
   const j = await res.json().catch(() => null);
   // FastAPI validation errors carry `detail` instead of {path, message}
-  if (res.status === 422 && j && typeof j.message === "string") throw j as ApiError;
+  if (j && typeof j.message === "string") throw j as ApiError;
   throw {
     path: null,
-    message: j?.detail ? JSON.stringify(j.detail) : `POST /simulate failed: ${res.status}`,
+    message: j?.detail ? JSON.stringify(j.detail) : `POST ${path} failed: ${res.status}`,
   } as ApiError;
+}
+
+export function simulate(body: unknown): Promise<SimulateResponse> {
+  return post("/simulate", body);
+}
+
+export function generate(prompt: string): Promise<{ company: unknown; scenarios: unknown[] }> {
+  return post("/generate", { prompt });
 }

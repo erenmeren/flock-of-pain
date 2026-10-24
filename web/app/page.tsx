@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { type ApiError, type SimulateResponse, getExample, simulate } from "@/lib/api";
+import { type ApiError, type SimulateResponse, generate, getExample, simulate } from "@/lib/api";
 
 const POLICIES = ["priority", "fifo", "least_loaded"];
 
 export default function Home() {
+  const [prompt, setPrompt] = useState("");
   const [company, setCompany] = useState("");
   const [scenarios, setScenarios] = useState("");
   const [seed, setSeed] = useState("42");
@@ -31,6 +32,20 @@ export default function Home() {
       })
       .catch(setError);
   }, []);
+
+  async function gen() {
+    setError(null);
+    setBusy(true);
+    try {
+      const x = await generate(prompt);
+      setCompany(JSON.stringify(x.company, null, 2));
+      setScenarios(JSON.stringify(x.scenarios, null, 2));
+    } catch (e) {
+      setError(e as ApiError);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function run() {
     setError(null);
@@ -63,6 +78,8 @@ export default function Home() {
   return (
     <main className="grid gap-6 p-6 md:grid-cols-2">
       <div className="flex flex-col gap-4">
+        <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the JSON below" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+        <Button variant="outline" onClick={gen} disabled={busy || !prompt.trim()}>Generate</Button>
         <Textarea aria-label="company JSON" className="h-64 font-mono" value={company} onChange={(e) => setCompany(e.target.value)} />
         <Textarea aria-label="scenarios JSON" className="h-64 font-mono" value={scenarios} onChange={(e) => setScenarios(e.target.value)} />
         <div className="grid grid-cols-3 gap-2">

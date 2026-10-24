@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from flock_of_pain import agent
 from flock_of_pain.examples import reynolds
 from flock_of_pain.experiment import ASSUMPTION, KPI_KEYS, off_shift_minutes, run_experiment, top_ledger
 from flock_of_pain.io import (SchemaError, company_from_dict, company_to_dict, metrics_to_dict, run_config_from_dict,
@@ -26,10 +27,19 @@ class SimulateRequest(BaseModel):
     include_events: bool = False
 
 
+class GenerateRequest(BaseModel):
+    prompt: str
+
+
 @app.exception_handler(ModelError)
 async def _model_error(_: Request, e: ModelError):
     path, message = (e.path, e.message) if isinstance(e, SchemaError) else (None, str(e))
     return JSONResponse({"path": path, "message": message}, status_code=422)
+
+
+@app.exception_handler(agent.AgentError)
+async def _agent_error(_: Request, e: agent.AgentError):
+    return JSONResponse({"path": None, "message": str(e)}, status_code=502)
 
 
 @app.get("/example")
@@ -84,3 +94,8 @@ def simulate(req: SimulateRequest):
             "runs": [run_out(run) for run in r.runs],
         } for s, r in results],
     }
+
+
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    return agent.generate(req.prompt)

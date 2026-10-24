@@ -21,6 +21,7 @@ uv run python -m flock_of_pain demo --days 10 --reps 5 --seed 42
 
 Options: `--policy` picks the dispatch policy, `--events-dir PATH` writes one `<experiment>-<seed>.jsonl` event log per run, and `--company PATH` runs the scenarios against a company JSON file instead of the built-in Reynolds company.
 `uv run python -m flock_of_pain export-example PATH` writes the Reynolds company as JSON, a starting point for `--company`.
+`uv run --extra api python -m flock_of_pain generate "a 40-person e-commerce support team ..." --out c.json` asks Claude for a company plus scenarios (see API `/generate`); `demo --company c.json` then runs those scenarios.
 The demo runs the synthetic Reynolds company (`src/flock_of_pain/examples/reynolds.py`) under four scenarios: baseline, demand +30%, a 2-hour ERP outage, and one extra CS employee.
 
 All demo parameters are assumed values, not measurements.
@@ -34,6 +35,7 @@ uv run --extra api uvicorn flock_of_pain.api:app
 - `GET /example`: Reynolds company and its four scenarios as JSON.
 - `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`, with `path` prefixed by the request section (`company.`, `scenarios[i].`, `config.`).
   One request may run at most 2000 run-days (days x replications x scenarios), or 30 with `include_events`.
+- `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`.
 
 ## Docs
 
@@ -41,6 +43,7 @@ uv run --extra api uvicorn flock_of_pain.api:app
 - Core plan: `docs/superpowers/plans/2026-10-24-workforce-twin-core.md`
 - Phase-1 (JSON I/O and API) spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-io-api-design.md`
 - Phase-1 plan: `docs/superpowers/plans/2026-10-24-flock-of-pain-io-api.md`
+- Phase-2a (AI agent) spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-agent-design.md`
 
 ## Web
 

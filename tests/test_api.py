@@ -91,3 +91,19 @@ def test_duplicate_scenario_ids_422():
     s = client.get("/example").json()["scenarios"][0]
     r = _post(scenarios=[s, s])
     assert r.status_code == 422 and r.json()["path"] == "scenarios"
+
+
+def test_generate_endpoint(monkeypatch):
+    import json
+    from flock_of_pain import agent
+    ex = client.get("/example").json()
+    monkeypatch.setattr(agent, "_ask", lambda messages: json.dumps(ex))
+    r = client.post("/generate", json={"prompt": "a small bakery"})
+    assert r.status_code == 200 and r.json() == ex
+
+
+def test_generate_502(monkeypatch):
+    from flock_of_pain import agent
+    monkeypatch.setattr(agent, "_ask", lambda messages: "not json")
+    r = client.post("/generate", json={"prompt": "x"})
+    assert r.status_code == 502 and r.json()["path"] is None and "not JSON" in r.json()["message"]
