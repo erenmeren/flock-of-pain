@@ -68,7 +68,7 @@ def test_missing_schedule():
 def test_duplicate_resource_id():
     s = business_hours(9, 17)
     c = make_company([Resource("r", "d1", {"x"}, schedule=s), Resource("r", "d1", {"x"}, schedule=s)])
-    with pytest.raises(ModelError, match="r"):
+    with pytest.raises(ModelError, match="duplicate"):
         c.resolve()
 
 
@@ -141,3 +141,46 @@ def test_defaults_and_lookups():
     assert [r.id for r in c.resources()] == ["r1"]
     assert c.department("d1").name == "D1"
     assert c.workflow("w").id == "w"
+
+
+@pytest.mark.parametrize("p", [0.0, 1.0])
+def test_failure_prob_boundaries_ok(p):
+    make_company(steps=[Step("a", "A", "d1", "x", const(1), failure_prob=p)]).resolve()
+
+
+def test_failure_prob_negative():
+    steps = [Step("a", "A", "d1", "x", const(1), failure_prob=-0.1)]
+    with pytest.raises(ModelError, match="failure_prob"):
+        make_company(steps=steps).resolve()
+
+
+def test_three_node_cycle():
+    steps = [
+        Step("a", "A", "d1", "x", const(1), depends_on=["c"]),
+        Step("b", "B", "d1", "x", const(1), depends_on=["a"]),
+        Step("c", "C", "d1", "x", const(1), depends_on=["b"]),
+    ]
+    with pytest.raises(ModelError, match="cycl"):
+        make_company(steps=steps).resolve()
+
+
+def test_pool_id_points_at_non_pool():
+    s = business_hours(9, 17)
+    c = make_company([Resource("a", "d1", {"x"}, schedule=s), Resource("b", "d1", {"x"}, pool_id="a", schedule=s)])
+    with pytest.raises(ModelError, match="pool_id"):
+        c.resolve()
+
+
+def test_missing_lookups_raise_model_error():
+    c = make_company()
+    for call in (
+        lambda: c.resource("zz"),
+        lambda: c.department("zz"),
+        lambda: c.workflow("zz"),
+        lambda: c.step("w", "zz"),
+    ):
+        with pytest.raises(ModelError, match="zz"):
+            call()
+    c.resolve()
+    with pytest.raises(ModelError, match="zz"):
+        c.resource("zz")

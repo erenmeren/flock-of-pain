@@ -77,21 +77,34 @@ class Company:
     systems: list[BusinessSystem]
     workflows: list[Workflow]
     outages: list[tuple[str, float, float]] = field(default_factory=list)
+    _index: dict[str, Resource] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def resources(self) -> list[Resource]:
         return [r for d in self.departments for r in d.resources]
 
     def resource(self, id: str) -> Resource:
-        return next(r for r in self.resources() if r.id == id)
+        r = self._index.get(id) or next((r for r in self.resources() if r.id == id), None)
+        if r is None:
+            raise ModelError(f"unknown resource {id}")
+        return r
 
     def department(self, id: str) -> Department:
-        return next(d for d in self.departments if d.id == id)
+        d = next((d for d in self.departments if d.id == id), None)
+        if d is None:
+            raise ModelError(f"unknown department {id}")
+        return d
 
     def workflow(self, id: str) -> Workflow:
-        return next(w for w in self.workflows if w.id == id)
+        w = next((w for w in self.workflows if w.id == id), None)
+        if w is None:
+            raise ModelError(f"unknown workflow {id}")
+        return w
 
     def step(self, workflow_id: str, step_id: str) -> Step:
-        return next(s for s in self.workflow(workflow_id).steps if s.id == step_id)
+        s = next((s for s in self.workflow(workflow_id).steps if s.id == step_id), None)
+        if s is None:
+            raise ModelError(f"unknown step {step_id} in workflow {workflow_id}")
+        return s
 
     def resolve(self) -> None:
         resources = self.resources()
@@ -100,6 +113,7 @@ class Company:
             if r.id in by_id:
                 raise ModelError(f"duplicate resource id: {r.id}")
             by_id[r.id] = r
+        self._index = by_id
 
         carved: dict[str, int] = {}
         for r in resources:
