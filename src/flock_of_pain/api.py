@@ -12,6 +12,8 @@ from flock_of_pain.io import (SchemaError, company_from_dict, company_to_dict, m
                               scenario_from_dict, scenario_to_dict)
 from flock_of_pain.model import ModelError
 
+MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS = 2000, 30  # ~330 s and ~38 GB at 365 x 50 x 4 without a cap
+
 app = FastAPI(title="Flock of Pain")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
 
@@ -40,7 +42,12 @@ def simulate(req: SimulateRequest):
     company = company_from_dict(req.company)
     scenarios = [scenario_from_dict(s, company) for s in req.scenarios]
     config = run_config_from_dict(req.config)
-    results = [(s, run_experiment(s.name, s, config)) for s in scenarios]
+    budget = config.horizon_minutes / 1440 * config.replications * max(1, len(scenarios))  # run-days
+    limit = MAX_EVENT_RUN_DAYS if req.include_events else MAX_RUN_DAYS
+    if budget > limit:
+        raise SchemaError("config", f"days x replications x scenarios = {budget:g} run-days exceeds the limit of "
+                                    f"{limit}{' with include_events' if req.include_events else ''}")
+    results = [(s, run_experiment(s.name, s, config, keep_events=req.include_events)) for s in scenarios]
     utils = sorted({k for _, r in results for k in r.summary if k.startswith("util_")})
 
     def run_out(run):

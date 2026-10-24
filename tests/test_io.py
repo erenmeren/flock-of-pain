@@ -133,3 +133,10 @@ def test_metrics_to_dict_is_json():
     d = metrics_to_dict(compute_metrics(e.events, c, 1440))
     json.dumps(d)
     assert all(isinstance(r["reason"], (str, type(None))) for r in d["ledger"])
+
+
+@pytest.mark.parametrize("v", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_number_is_schema_error(v):
+    with pytest.raises(SchemaError) as e:
+        dist_from_dict({"kind": "const", "a": v}, "d")
+    assert (e.value.path, e.value.message) == ("d.a", "must be finite")

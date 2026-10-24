@@ -65,14 +65,14 @@ def kpis(m: Metrics) -> dict[str, float]:
     }
 
 
-def run_experiment(name: str, scenario: Scenario, config: RunConfig) -> ExperimentResult:
+def run_experiment(name: str, scenario: Scenario, config: RunConfig, keep_events: bool = True) -> ExperimentResult:
     runs = []
     for i in range(config.replications):
         company = scenario.materialize()
         engine = Engine(company, replace(config, seed=config.seed + i))
         engine.run()
-        runs.append(RunResult(config.seed + i, engine.events,
-                              compute_metrics(engine.events, company, config.horizon_minutes)))
+        metrics = compute_metrics(engine.events, company, config.horizon_minutes)
+        runs.append(RunResult(config.seed + i, engine.events if keep_events else [], metrics))
     per_run = [kpis(r.metrics) for r in runs]
     keys = per_run[0].keys() if per_run else []
     return ExperimentResult(name, runs, {k: _stat([p.get(k, 0.0) for p in per_run]) for k in keys})

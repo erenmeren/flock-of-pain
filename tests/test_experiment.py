@@ -94,3 +94,9 @@ def test_top_ledger_excludes_off_shift_by_default():
                         RunConfig(seed=42, horizon_minutes=3 * 1440, replications=2))
     per_run = [sum(x.minutes for x in run.metrics.ledger if x.reason == Reason.OFF_SHIFT) for run in r2.runs]
     assert off_shift_minutes(r2) == pytest.approx(sum(per_run) / 2)
+
+
+def test_keep_events_false_drops_events_keeps_metrics():
+    kept, dropped = run_experiment("s", _scenario(), CFG), run_experiment("s", _scenario(), CFG, keep_events=False)
+    assert all(r.events == [] for r in dropped.runs)
+    assert [r.metrics for r in dropped.runs] == [r.metrics for r in kept.runs]

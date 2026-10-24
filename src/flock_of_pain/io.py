@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import math
 import os
 import types
 
@@ -48,6 +49,8 @@ def _get(d: dict, key: str, path: str, typ, default=_REQUIRED):
     types = (int, float) if typ is float else typ
     if not isinstance(v, types) or (isinstance(v, bool) and typ is not bool):
         raise SchemaError(p, f"expected {getattr(typ, '__name__', typ)}")
+    if isinstance(v, float) and not math.isfinite(v):
+        raise SchemaError(p, "must be finite")
     return v
 
 

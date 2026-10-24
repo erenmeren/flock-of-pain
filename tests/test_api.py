@@ -47,3 +47,12 @@ def test_model_error_422():
     ex["company"]["workflows"][0]["steps"][0]["department_id"] = "nope"
     r = client.post("/simulate", json={"company": ex["company"], "scenarios": [], "config": {"seed": 1, "days": 1}})
     assert r.status_code == 422 and r.json()["path"] is None and "nope" in r.json()["message"]
+
+
+@pytest.mark.parametrize("config,n,events", [({"seed": 1, "days": 365, "replications": 50}, 4, False),
+                                             ({"seed": 1, "days": 31}, 1, True)])
+def test_run_budget_422(config, n, events):
+    ex = client.get("/example").json()
+    r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"][:n], "config": config,
+                                       "include_events": events})
+    assert r.status_code == 422 and r.json()["path"] == "config"
