@@ -1,10 +1,17 @@
+import dataclasses
 import json
 import os
+import types
 
+from flock_of_pain.analytics import Metrics
 from flock_of_pain.dist import Dist, lognormal_mean
 from flock_of_pain.model import (ArrivalSpec, BusinessSystem, Company, Department, ModelError, Resource, Step,
                                  Workflow)
+from flock_of_pain.engine import RunConfig
+from flock_of_pain.scenario import (Absence, AddEmployee, ArrivalMultiplier, RemoveResource, Scenario, SetPoolHeadcount,
+                                    SystemOutage)
 from flock_of_pain.schedule import Schedule
+from flock_of_pain.scheduling import POLICIES
 
 _REQUIRED = object()
 _KINDS = {"const", "uniform", "triangular", "lognormal", "exponential"}
@@ -73,7 +80,11 @@ def dist_from_dict(d: dict, path: str) -> Dist:
     d = _obj(d, path)
     kind = _get(d, "kind", path, str)
     if kind == "lognormal_mean":
-        out = lognormal_mean(_get(d, "mean", path, float), _get(d, "sigma", path, float, 0.4))
+        mean, sigma = _get(d, "mean", path, float), _get(d, "sigma", path, float, 0.4)
+        for k, v in (("mean", mean), ("sigma", sigma)):
+            if v <= 0:
+                raise SchemaError(_join(path, k), "must be > 0")
+        out = lognormal_mean(mean, sigma)
     elif kind in _KINDS:
         out = Dist(kind, _get(d, "a", path, float), _get(d, "b", path, float, 0.0), _get(d, "c", path, float, 0.0))
     else:
@@ -143,7 +154,7 @@ def _step_from_dict(d: dict, path: str) -> Step:
     s = Step(id=_get(d, "id", path, str), name=_get(d, "name", path, str),
              department_id=_get(d, "department_id", path, str), required_skill=_get(d, "required_skill", path, str),
              duration=dist_from_dict(_get(d, "duration", path, dict), _join(path, "duration")),
-             depends_on=_strs(d, "depends_on", path, []), system_id=_get(d, "system_id", path, str, None),
+             depends_on=list(_strs(d, "depends_on", path, [])), system_id=_get(d, "system_id", path, str, None),
              priority=_get(d, "priority", path, int, 0), sla_minutes=_get(d, "sla_minutes", path, float, None),
              failure_prob=_get(d, "failure_prob", path, float, 0.0), rework_to=_get(d, "rework_to", path, str, None),
              max_retries=_get(d, "max_retries", path, int, 0))
@@ -216,3 +227,61 @@ def company_to_dict(c: Company) -> dict:
 def load_company(path: str | os.PathLike) -> Company:
     with open(path, encoding="utf-8") as f:
         return company_from_dict(json.load(f))
+
+
+OVERLAY_TYPES: dict[str, type] = {"arrival_multiplier": ArrivalMultiplier, "system_outage": SystemOutage,
+                                  "add_employee": AddEmployee, "remove_resource": RemoveResource,
+                                  "set_pool_headcount": SetPoolHeadcount, "absence": Absence}
+_OVERLAY_NAMES = {v: k for k, v in OVERLAY_TYPES.items()}
+
+
+def _overlay_from_dict(d: dict, path: str):
+    kind = _get(d, "type", path, str)
+    cls = OVERLAY_TYPES.get(kind)
+    if cls is None:
+        raise SchemaError(_join(path, "type"), f"unknown type {kind!r}")
+    kw = {}
+    for f in dataclasses.fields(cls):
+        if f.name == "employee":
+            continue
+        typ = str if isinstance(f.type, types.UnionType) else f.type
+        kw[f.name] = _get(d, f.name, path, typ, _REQUIRED if f.default is dataclasses.MISSING else f.default)
+    if cls is AddEmployee:
+        kw["employee"] = resource_from_dict(_get(d, "employee", path, dict), kw["department_id"], _join(path, "employee"))
+    _done(d, path)
+    return cls(**kw)
+
+
+def scenario_from_dict(d: dict, base: Company) -> Scenario:
+    d = _obj(d, "")
+    s = Scenario(_get(d, "id", "", str), _get(d, "name", "", str), base, _items(d, "overlays", "", _overlay_from_dict))
+    _done(d, "")
+    return s
+
+
+def scenario_to_dict(s: Scenario) -> dict:
+    overlays = []
+    for o in s.overlays:
+        item = {"type": _OVERLAY_NAMES[type(o)]}
+        for f in dataclasses.fields(o):
+            v = getattr(o, f.name)
+            item[f.name] = resource_to_dict(v) if f.name == "employee" else v
+        overlays.append(item)
+    return {"id": s.id, "name": s.name, "overlays": overlays}
+
+
+def run_config_from_dict(d: dict) -> RunConfig:
+    d = _obj(d, "")
+    seed, days = _get(d, "seed", "", int), _get(d, "days", "", float)
+    reps, policy = _get(d, "replications", "", int, 1), _get(d, "policy", "", str, "priority")
+    _done(d, "")
+    if policy not in POLICIES:
+        raise SchemaError("policy", f"unknown policy {policy!r}")
+    return RunConfig(seed, days * 1440, reps, policy)
+
+
+def metrics_to_dict(m: Metrics) -> dict:
+    out = dataclasses.asdict(m)
+    for r in out["ledger"]:
+        r["reason"] = None if r["reason"] is None else str(r["reason"])
+    return out

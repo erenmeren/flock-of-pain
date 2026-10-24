@@ -70,3 +70,59 @@ def test_carved_employee_inherits_and_exports_null():
 def test_load_company(tmp_path):
     p = tmp_path / "c.json"; p.write_text(EXAMPLE.read_text())
     assert load_company(p).id == reynolds.build().id
+
+
+def test_lognormal_mean_nonpositive_is_schema_error():
+    with pytest.raises(SchemaError) as e:
+        dist_from_dict({"kind": "lognormal_mean", "mean": 0}, "d")
+    assert e.value.path == "d.mean"
+    with pytest.raises(SchemaError) as e:
+        dist_from_dict({"kind": "lognormal_mean", "mean": 5, "sigma": 0}, "d")
+    assert e.value.path == "d.sigma"
+
+
+def test_step_depends_on_is_copied():
+    d = json.loads(EXAMPLE.read_text())
+    deps = ["a"]
+    d["workflows"][0]["steps"][0]["depends_on"] = deps
+    try:
+        company_from_dict(d)
+    except ModelError:
+        pass  # unknown dep id is fine; only aliasing matters
+    from flock_of_pain.io import _step_from_dict
+    s = _step_from_dict(dict(d["workflows"][0]["steps"][0]), "s")
+    assert s.depends_on == deps and s.depends_on is not deps
+
+
+from flock_of_pain.io import scenario_from_dict, scenario_to_dict, run_config_from_dict, metrics_to_dict
+
+
+def test_scenario_round_trip():
+    base = reynolds.build()
+    for s in reynolds.scenarios(base):
+        d = scenario_to_dict(s)
+        s2 = scenario_from_dict(d, base)
+        assert scenario_to_dict(s2) == d
+        assert s2.materialize() == s.materialize()
+
+
+def test_scenario_unknown_type_path():
+    with pytest.raises(SchemaError) as e:
+        scenario_from_dict({"id": "x", "name": "x", "overlays": [{"type": "nope"}]}, reynolds.build())
+    assert e.value.path == "overlays[0].type"
+
+
+def test_run_config():
+    c = run_config_from_dict({"seed": 7, "days": 2, "replications": 3, "policy": "fifo"})
+    assert (c.seed, c.horizon_minutes, c.replications, c.policy) == (7, 2880, 3, "fifo")
+    with pytest.raises(SchemaError) as e:
+        run_config_from_dict({"seed": 7, "days": 2, "policy": "lifo"})
+    assert e.value.path == "policy"
+
+
+def test_metrics_to_dict_is_json():
+    c = reynolds.build(); e = Engine(c, RunConfig(seed=1, horizon_minutes=1440)); e.run()
+    from flock_of_pain.analytics import compute_metrics
+    d = metrics_to_dict(compute_metrics(e.events, c, 1440))
+    json.dumps(d)
+    assert all(isinstance(r["reason"], (str, type(None))) for r in d["ledger"])
