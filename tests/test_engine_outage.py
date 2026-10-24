@@ -152,8 +152,56 @@ def test_queued_task_retagged_on_outage():
     arrive_at(e, 540)
     e.run()
     queued = [x for x in e.events if x.task_id == "w-000001:a:0" and x.kind == K.TASK_QUEUED]
-    assert [(x.t, x.reason) for x in queued] == [(540, Reason.ALL_RESOURCES_BUSY), (560, Reason.SYSTEM_DOWN)]
+    assert [(x.t, x.reason) for x in queued] == [
+        (540, Reason.ALL_RESOURCES_BUSY), (560, Reason.SYSTEM_DOWN), (600, Reason.ALL_RESOURCES_BUSY),
+    ]
     assert (queued[1].system_id, queued[1].payload) == ("erp", {"retag": True})
+
+
+def test_queued_task_retagged_at_outage_end():
+    steps = [Step("x", "X", "cs", "support", const(90)),
+             Step("a", "A", "cs", "support", const(10), system_id="erp")]
+    c = tiny_company(pool_headcount=1, steps=steps)
+    c.outages = [("erp", 560, 600)]
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 540)
+    e.run()
+    queued = [x for x in e.events if x.task_id == "w-000001:a:0" and x.kind == K.TASK_QUEUED]
+    assert [(x.t, x.reason, x.system_id) for x in queued] == [
+        (540, Reason.ALL_RESOURCES_BUSY, None), (560, Reason.SYSTEM_DOWN, "erp"),
+        (600, Reason.ALL_RESOURCES_BUSY, None),
+    ]
+    assert queued[2].payload == {"retag": True}
+    assert first(e, K.TASK_STARTED, "w-000001:a:0").t == 630
+
+
+def test_queued_task_retagged_on_shift_change():
+    c = tiny_company(pool_headcount=1, steps=[Step("x", "X", "cs", "support", const(60))])
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=2 * DAY))
+    arrive_at(e, 990)  # 16:30, runs past 17:00
+    arrive_at(e, 1015)  # 16:55, e1 busy
+    e.run()
+    t2 = "w-000002:x:0"
+    queued = [(x.t, x.reason) for x in e.events if x.task_id == t2 and x.kind == K.TASK_QUEUED]
+    assert queued == [(1015, Reason.ALL_RESOURCES_BUSY), (1020, Reason.OFF_SHIFT)]
+    assert first(e, K.TASK_STARTED, t2).t == DAY + 540
+
+
+def test_unresolved_company_rejected():
+    c = tiny_company()
+    c._index = {}
+    with pytest.raises(ModelError):
+        Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
+
+
+def test_shift_walk_survives_long_absence():
+    from workforce_twin.scenario import Absence, Scenario
+    c = Scenario("s", "S", tiny_company(), [Absence("e1", 1 * DAY, 16 * DAY)]).materialize()
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=30 * DAY))
+    e.run()
+    on = [x.t for x in kinds(e, K.RESOURCE_AVAILABLE) if x.resource_id == "e1"]
+    assert on[0] == 540 and any(t > 16 * DAY for t in on)
+    assert all(not DAY <= t < 16 * DAY for t in on)
 
 
 def test_rework_then_success():

@@ -74,6 +74,7 @@ class Task:
     ends_at: float | None = None
     run_token: int = 0
     retries: int = 0
+    last_reason: Reason | None = None  # reason on the latest TASK_QUEUED / retag
 
 
 S = TaskState

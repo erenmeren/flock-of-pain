@@ -8,12 +8,13 @@ from workforce_twin.scenario import (
     Absence, AddEmployee, ArrivalMultiplier, RemoveResource, Scenario,
     SetPoolHeadcount, SystemOutage,
 )
+from workforce_twin.schedule import business_hours
 
 
 def test_base_untouched_by_all_overlays():
     base = tiny_company(rate_per_hour=10)
     before = copy.deepcopy(base)
-    new = Resource("e2", "cs", {"support"}, pool_id="cs_pool")
+    new = Resource("e2", "cs", {"support"}, schedule=business_hours(9, 17))
     Scenario("s", "S", base, [
         ArrivalMultiplier(1.3), SystemOutage("erp", 600, 720), AddEmployee("cs", new),
         Absence("e1", 100, 200), SetPoolHeadcount("cs_pool", 5), RemoveResource("e1"),
@@ -26,8 +27,8 @@ def test_arrival_multiplier():
     base = tiny_company(rate_per_hour=10)
     c = Scenario("s", "S", base, [ArrivalMultiplier(1.3)]).materialize()
     assert c.workflow("w").arrival.rate_per_hour == pytest.approx(13)
-    c = Scenario("s", "S", base, [ArrivalMultiplier(2, "nope")]).materialize()
-    assert c.workflow("w").arrival.rate_per_hour == pytest.approx(10)
+    with pytest.raises(ModelError):
+        Scenario("s", "S", base, [ArrivalMultiplier(2, "nope")]).materialize()
 
 
 def test_remove_resource_frees_pool_capacity():
@@ -57,12 +58,17 @@ def test_outage():
         Scenario("s", "S", base, [SystemOutage("nope", 0, 1)]).materialize()
 
 
+def test_add_employee_with_pool_id_rejected():
+    new = Resource("e2", "cs", {"support"}, pool_id="cs_pool")
+    with pytest.raises(ModelError):
+        Scenario("s", "S", tiny_company(), [AddEmployee("cs", new)]).materialize()
+
+
 def test_add_employee_and_absence_isolated_from_pool():
     base = tiny_company()
-    new = Resource("e2", "cs", {"support"}, pool_id="cs_pool")
+    new = Resource("e2", "cs", {"support"}, schedule=business_hours(9, 17))
     c = Scenario("s", "S", base, [AddEmployee("cs", new), Absence("e1", 540, 600)]).materialize()
-    assert c.resource("cs_pool").capacity == 1
+    assert c.resource("cs_pool").capacity == 2  # headcount added, pool not carved
+    assert c.resource("e2").capacity == 1
     assert c.resource("e1").schedule.absences == [(540, 600)]
     assert c.resource("cs_pool").schedule.absences == []
-    assert c.resource("e2").schedule is not None
-    assert new.schedule is None

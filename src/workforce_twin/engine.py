@@ -6,6 +6,7 @@ from functools import partial
 
 from workforce_twin.events import Event, EventKind, Reason, Task, TaskState, transition
 from workforce_twin.model import Company, ModelError, Resource, Step, Workflow
+from workforce_twin.schedule import MINUTES_PER_WEEK
 from workforce_twin.scheduling import POLICIES
 
 K = EventKind
@@ -33,6 +34,8 @@ class Instance:
 
 class Engine:
     def __init__(self, company: Company, config: RunConfig):
+        if not company._index and company.resources():
+            raise ModelError("company not resolved; call Company.resolve()")
         self.company = company
         self.config = config
         self.horizon = config.horizon_minutes
@@ -56,7 +59,15 @@ class Engine:
 
         for r in resources:
             t = 0.0
-            while (on := r.schedule.next_on(t)) is not None and on < self.horizon:
+            while t < self.horizon:
+                if (on := r.schedule.next_on(t)) is None:
+                    if not r.schedule.weekday_hours:
+                        break
+                    # next_on looks only 2 weeks ahead: skip past a long absence (or a week) and retry
+                    t = max((b for a, b in r.schedule.absences if a <= t < b), default=t + MINUTES_PER_WEEK)
+                    continue
+                if on >= self.horizon:
+                    break
                 self.schedule(on, partial(self._shift, r, True))
                 t = r.schedule.next_off(on)
                 if t < self.horizon:
@@ -108,6 +119,8 @@ class Engine:
         self.events.append(Event(self.now, kind, department_id=r.department_id, resource_id=r.id))
         if on:
             self._dispatch_resource(r)
+        for skill in sorted(r.skills):
+            self._retag_queue(r.department_id, skill)
 
     def _next_arrival(self, wf: Workflow, t: float) -> None:
         rate = wf.arrival.rate_per_hour / 60
@@ -151,6 +164,7 @@ class Engine:
                     self.now, K.TASK_QUEUED, task.id, task.instance_id, task.workflow_id, task.step_id,
                     task.department_id, system_id=system_id, reason=Reason.SYSTEM_DOWN, payload={"retag": True},
                 ))
+                task.last_reason = Reason.SYSTEM_DOWN
         for r in self.company.resources():
             if r.id in freed:
                 self._dispatch_resource(r)
@@ -166,6 +180,9 @@ class Engine:
         # queued tasks on this system: every free resource re-scans its queues
         for r in self.company.resources():
             self._dispatch_resource(r)
+        for key, q in list(self.queues.items()):
+            if any(self._step(t).system_id == system_id for t in q):
+                self._retag_queue(*key)
 
     def _finish(self, task: Task, token: int) -> None:
         if task.run_token != token or task.state != S.IN_PROGRESS:
@@ -249,27 +266,40 @@ class Engine:
             return []
         return [r for r in self._skilled(task) if self.on_shift[r.id] and self.free_slots[r.id] > 0]
 
+    def _wait_reason(self, task: Task) -> Reason:
+        """Why a task with no eligible resource waits."""
+        if self._down(task):
+            return Reason.SYSTEM_DOWN
+        skilled = self._skilled(task)
+        if not skilled:
+            return Reason.NO_ELIGIBLE_RESOURCE
+        if not any(self.on_shift[r.id] for r in skilled):
+            return Reason.OFF_SHIFT
+        return Reason.ALL_RESOURCES_BUSY
+
     def _try_dispatch_task(self, task: Task, rework: bool = False) -> Reason | None:
         """Queue the task (logging why it waits, or None) and start it if a resource is free."""
         eligible = self._eligible(task)
-        reason = None
+        reason = None if eligible else self._wait_reason(task)
         system_id = self._down(task)
-        if system_id:
-            reason = Reason.SYSTEM_DOWN
-        elif not eligible:
-            skilled = self._skilled(task)
-            if not skilled:
-                reason = Reason.NO_ELIGIBLE_RESOURCE
-            elif not any(self.on_shift[r.id] for r in skilled):
-                reason = Reason.OFF_SHIFT
-            else:
-                reason = Reason.ALL_RESOURCES_BUSY
         transition(task, S.QUEUED, self.now, self.events, reason=reason, system_id=system_id, rework=rework)
+        task.last_reason = reason
         if eligible:
             self._start(task, self.policy.choose_resource(task, eligible, self.busy_minutes))
         else:
             self.queues.setdefault((task.department_id, self._step(task).required_skill), []).append(task)
         return reason
+
+    def _retag_queue(self, department_id: str, skill: str) -> None:
+        """Log a retag TASK_QUEUED for each queued task whose wait reason changed."""
+        for task in self.queues.get((department_id, skill), []):
+            reason = self._wait_reason(task)
+            if reason != task.last_reason:
+                self.events.append(Event(
+                    self.now, K.TASK_QUEUED, task.id, task.instance_id, task.workflow_id, task.step_id,
+                    task.department_id, system_id=self._down(task), reason=reason, payload={"retag": True},
+                ))
+                task.last_reason = reason
 
     def _dispatch_resource(self, r: Resource) -> None:
         # on_shift check: a task finishing as overrun after shift end must not pull new work

@@ -8,7 +8,7 @@ from workforce_twin.events import Event
 from workforce_twin.scenario import Scenario
 
 KPI_KEYS = [
-    "throughput_per_day", "cycle_p50", "cycle_p90", "wait_p50",
+    "throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90",
     "sla_breach_rate", "rework_rate", "mean_dept_utilization", "labor_cost",
 ]
 ASSUMPTION = "All parameters are assumed values; results are simulation estimates, not measurements."
@@ -53,9 +53,10 @@ def kpis(m: Metrics) -> dict[str, float]:
     utils = {f"util_{d}": dm.utilization for d, dm in m.departments.items()}
     return {
         "throughput_per_day": sum(w.throughput_per_day for w in ws),
+        "completion_rate": n / started if (started := sum(w.started for w in ws)) else 0.0,
         "cycle_p50": wmean("cycle_p50"),
         "cycle_p90": wmean("cycle_p90"),
-        "wait_p50": wmean("wait_p50"),
+        "wait_p90": wmean("wait_p90"),
         "sla_breach_rate": sum(w.sla_breached for w in ws) / n if n else 0.0,
         "rework_rate": sum(w.failures for w in ws) / steps if steps else 0.0,
         "mean_dept_utilization": sum(utils.values()) / len(utils) if utils else 0.0,

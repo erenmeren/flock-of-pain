@@ -69,9 +69,12 @@ def test_kpis_hand_built():
     from workforce_twin.analytics import DeptMetrics, Metrics, WorkflowMetrics
     from workforce_twin.experiment import kpis
     m = Metrics(1440, {
-        "a": WorkflowMetrics(completed=2, throughput_per_day=2, sla_breached=1, failures=1, steps_completed=4),
-        "b": WorkflowMetrics(completed=2, throughput_per_day=3, sla_breached=0, failures=1, steps_completed=4),
+        "a": WorkflowMetrics(started=4, completed=2, throughput_per_day=2, sla_breached=1, failures=1,
+                             steps_completed=4, wait_p90=10),
+        "b": WorkflowMetrics(started=4, completed=2, throughput_per_day=3, sla_breached=0, failures=1,
+                             steps_completed=4, wait_p90=30),
     }, {"cs": DeptMetrics(utilization=0.5), "it": DeptMetrics(utilization=0.25)}, labor_cost=7.0)
     k = kpis(m)
     assert (k["throughput_per_day"], k["sla_breach_rate"], k["rework_rate"], k["labor_cost"]) == (5, 0.25, 0.25, 7.0)
     assert k["util_cs"] == 0.5 and k["mean_dept_utilization"] == 0.375
+    assert (k["completion_rate"], k["wait_p90"]) == (0.5, 20)

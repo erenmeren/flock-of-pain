@@ -19,6 +19,8 @@ class ArrivalMultiplier:
     workflow_id: str | None = None
 
     def apply(self, c: Company) -> None:
+        if self.workflow_id is not None:
+            c.workflow(self.workflow_id)  # raises ModelError if unknown
         for w in c.workflows:
             if self.workflow_id is None or w.id == self.workflow_id:
                 w.arrival.rate_per_hour *= self.factor
@@ -42,6 +44,8 @@ class AddEmployee:
     employee: Resource
 
     def apply(self, c: Company) -> None:
+        if self.employee.pool_id is not None:
+            raise ModelError(f"AddEmployee {self.employee.id}: pool_id must be None (adds headcount, never carves)")
         c.department(self.department_id).resources.append(copy.deepcopy(self.employee))
 
 
