@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 from workforce_twin.events import Event, EventKind, Reason, Task, TaskState, transition
-from workforce_twin.model import Company, Resource, Step, Workflow
+from workforce_twin.model import Company, ModelError, Resource, Step, Workflow
 from workforce_twin.scheduling import POLICIES
 
 K = EventKind
@@ -27,6 +27,8 @@ class Instance:
     completed: set[str] = field(default_factory=set)
     active: dict[str, str] = field(default_factory=dict)  # step id -> task id
     retries: int = 0
+    done_tasks: dict[str, Task] = field(default_factory=dict)  # step id -> completed task (for rework)
+    cancelled: bool = False
 
 
 class Engine:
@@ -49,6 +51,8 @@ class Engine:
         self.free_slots = {r.id: r.capacity for r in resources}
         self.busy_minutes = {r.id: 0.0 for r in resources}
         self.on_shift = {r.id: False for r in resources}
+        self.system_down = {s.id: 0 for s in company.systems}
+        self._tasks: list[Task] = []
 
         for r in resources:
             t = 0.0
@@ -57,6 +61,11 @@ class Engine:
                 t = r.schedule.next_off(on)
                 if t < self.horizon:
                     self.schedule(t, partial(self._shift, r, False))
+        for system_id, start, end in company.outages:
+            if system_id not in self.system_down:
+                raise ModelError(f"outage: unknown system_id {system_id}")
+            self.schedule(start, partial(self._outage_start, system_id))
+            self.schedule(end, partial(self._outage_end, system_id))
         for w in company.workflows:
             self._next_arrival(w, 0.0)
 
@@ -120,6 +129,36 @@ class Engine:
                 self._create_task(inst, s)
         self._next_arrival(wf, self.now)
 
+    def _outage_start(self, system_id: str) -> None:
+        self.system_down[system_id] += 1
+        if self.system_down[system_id] > 1:
+            return
+        self.events.append(Event(self.now, K.SYSTEM_OUTAGE_STARTED, system_id=system_id))
+        freed = set()
+        for task in self._tasks:
+            if task.state == S.IN_PROGRESS and self._step(task).system_id == system_id:
+                task.remaining = task.ends_at - self.now
+                self.busy_minutes[task.resource_id] += self.now - task.started_at
+                self.free_slots[task.resource_id] += 1
+                transition(task, S.BLOCKED, self.now, self.events, reason=Reason.SYSTEM_DOWN, system_id=system_id)
+                task.run_token += 1
+                freed.add(task.resource_id)
+        for r in self.company.resources():
+            if r.id in freed:
+                self._dispatch_resource(r)
+
+    def _outage_end(self, system_id: str) -> None:
+        self.system_down[system_id] -= 1
+        if self.system_down[system_id] > 0:
+            return
+        self.events.append(Event(self.now, K.SYSTEM_OUTAGE_ENDED, system_id=system_id))
+        for task in self._tasks:
+            if task.state == S.BLOCKED and self._step(task).system_id == system_id:
+                self._try_dispatch_task(task)
+        # queued tasks on this system: every free resource re-scans its queues
+        for r in self.company.resources():
+            self._dispatch_resource(r)
+
     def _finish(self, task: Task, token: int) -> None:
         if task.run_token != token or task.state != S.IN_PROGRESS:
             return
@@ -127,17 +166,40 @@ class Engine:
         self.busy_minutes[r.id] += self.now - task.started_at
         self.free_slots[r.id] += 1
         step = self._step(task)
+        inst = self.instances[task.instance_id]
+        if self.rng.random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
+            transition(task, S.FAILED, self.now, self.events)
+            if not inst.cancelled and inst.retries < step.max_retries:
+                inst.retries += 1
+                if step.rework_to is None or step.rework_to == step.id:
+                    self._try_dispatch_task(task)
+                else:
+                    # failed step is re-created by the dependency rule once rework_to completes again
+                    inst.completed.discard(step.rework_to)
+                    inst.completed.discard(step.id)
+                    inst.active.pop(step.id, None)
+                    redo = inst.done_tasks[step.rework_to]
+                    inst.active[step.rework_to] = redo.id
+                    self._try_dispatch_task(redo, rework=True)
+            else:
+                transition(task, S.CANCELLED, self.now, self.events)
+                inst.active.pop(step.id, None)
+                inst.cancelled = True
+            self._dispatch_resource(r)
+            return
         transition(task, S.COMPLETED, self.now, self.events)
         if step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
             self.events.append(Event(
                 self.now, K.SLA_BREACHED, task.id, task.instance_id, task.workflow_id, step.id,
                 task.department_id, r.id,
             ))
-        inst = self.instances[task.instance_id]
         inst.completed.add(step.id)
         inst.active.pop(step.id, None)
+        inst.done_tasks[step.id] = task
         # freed slot serves already-queued work before this instance's successors
         self._dispatch_resource(r)
+        if inst.cancelled:
+            return
         for s in inst.workflow.steps:
             if s.id not in inst.completed and s.id not in inst.active and set(s.depends_on) <= inst.completed:
                 self._create_task(inst, s)
@@ -158,6 +220,7 @@ class Engine:
             step.department_id, created_at=self.now,
         )
         inst.active[step.id] = task.id
+        self._tasks.append(task)
         self.events.append(Event(
             self.now, K.TASK_CREATED, task.id, inst.id, inst.workflow.id, step.id, step.department_id,
         ))
@@ -168,14 +231,23 @@ class Engine:
         skill = self._step(task).required_skill
         return [r for r in self.company.department(task.department_id).resources if skill in r.skills and r.capacity > 0]
 
+    def _down(self, task: Task) -> str | None:
+        system_id = self._step(task).system_id
+        return system_id if system_id is not None and self.system_down[system_id] > 0 else None
+
     def _eligible(self, task: Task) -> list[Resource]:
+        if self._down(task):
+            return []
         return [r for r in self._skilled(task) if self.on_shift[r.id] and self.free_slots[r.id] > 0]
 
-    def _try_dispatch_task(self, task: Task) -> Reason | None:
+    def _try_dispatch_task(self, task: Task, rework: bool = False) -> Reason | None:
         """Queue the task (logging why it waits, or None) and start it if a resource is free."""
         eligible = self._eligible(task)
         reason = None
-        if not eligible:
+        system_id = self._down(task)
+        if system_id:
+            reason = Reason.SYSTEM_DOWN
+        elif not eligible:
             skilled = self._skilled(task)
             if not skilled:
                 reason = Reason.NO_ELIGIBLE_RESOURCE
@@ -183,7 +255,7 @@ class Engine:
                 reason = Reason.OFF_SHIFT
             else:
                 reason = Reason.ALL_RESOURCES_BUSY
-        transition(task, S.QUEUED, self.now, self.events, reason=reason)
+        transition(task, S.QUEUED, self.now, self.events, reason=reason, system_id=system_id, rework=rework)
         if eligible:
             self._start(task, self.policy.choose_resource(task, eligible, self.busy_minutes))
         else:
@@ -193,7 +265,9 @@ class Engine:
     def _dispatch_resource(self, r: Resource) -> None:
         # on_shift check: a task finishing as overrun after shift end must not pull new work
         while self.on_shift[r.id] and self.free_slots[r.id] > 0:
-            waiting = [t for s in sorted(r.skills) for t in self.queues.get((r.department_id, s), [])]
+            waiting = [
+                t for s in sorted(r.skills) for t in self.queues.get((r.department_id, s), []) if not self._down(t)
+            ]
             if not waiting:
                 return
             task = min(waiting, key=lambda t: self.policy.order_key(t, self._step(t)))
