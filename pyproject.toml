@@ -6,7 +6,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]
-api = ["fastapi", "uvicorn", "httpx"]
+api = ["fastapi", "uvicorn", "httpx2"]
 
 [build-system]
 requires = ["setuptools>=68"]
