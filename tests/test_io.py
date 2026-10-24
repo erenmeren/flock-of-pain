@@ -140,3 +140,59 @@ def test_non_finite_number_is_schema_error(v):
     with pytest.raises(SchemaError) as e:
         dist_from_dict({"kind": "const", "a": v}, "d")
     assert (e.value.path, e.value.message) == ("d.a", "must be finite")
+
+
+def _res(**kw):
+    return {"departments": [{"resources": [{"id": "r", "skills": [], **kw}]}]}
+
+
+@pytest.mark.parametrize("patch,path", [
+    ({"speed_factor": 0}, "departments[0].resources[0].speed_factor"),
+    ({"speed_factor": -1}, "departments[0].resources[0].speed_factor"),
+    ({"headcount": -1}, "departments[0].resources[0].headcount"),
+    ({"cost_per_hour": -1}, "departments[0].resources[0].cost_per_hour"),
+    ({"schedule": {"weekday_hours": {"0": [17, 9]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
+    ({"schedule": {"weekday_hours": {"0": [-1, 9]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
+    ({"schedule": {"weekday_hours": {"0": [24, 30]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
+    ({"schedule": {"weekday_hours": {"0": [2, 30]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
+])
+def test_resource_ranges(patch, path):
+    d = company_to_dict(reynolds.build())
+    d["departments"][0]["resources"][0].update(patch)
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == path
+
+
+def test_overnight_message_and_ok():
+    d = company_to_dict(reynolds.build())
+    d["departments"][0]["resources"][0]["schedule"] = {"weekday_hours": {"0": [22, 6]}}
+    with pytest.raises(SchemaError, match=r"\[22, 30\]"):
+        company_from_dict(d)
+    d["departments"][0]["resources"][0]["schedule"] = {"weekday_hours": {"0": [22, 30]}}
+    company_from_dict(d)
+
+
+def test_arrival_rate_range():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["arrival"]["rate_per_hour"] = -1
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].arrival.rate_per_hour"
+
+
+@pytest.mark.parametrize("dist,key", [
+    ({"kind": "exponential", "a": 0}, "a"), ({"kind": "uniform", "a": 2, "b": 1}, "b"),
+    ({"kind": "triangular", "a": 2, "b": 1, "c": 3}, "b"), ({"kind": "triangular", "a": 1, "b": 3, "c": 2}, "c"),
+    ({"kind": "lognormal", "a": 1, "b": -0.1}, "b"), ({"kind": "lognormal", "a": 900, "b": 0.4}, "a"),
+])
+def test_dist_ranges(dist, key):
+    with pytest.raises(SchemaError) as e:
+        dist_from_dict(dist, "d")
+    assert e.value.path == f"d.{key}"
+
+
+def test_dist_ranges_ok():
+    for d in ({"kind": "uniform", "a": 1, "b": 1}, {"kind": "triangular", "a": 1, "b": 2, "c": 3},
+              {"kind": "lognormal", "a": 2, "b": 0}, {"kind": "exponential", "a": 0.5}):
+        dist_from_dict(d, "d")

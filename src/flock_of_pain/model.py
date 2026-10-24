@@ -114,6 +114,13 @@ class Company:
                 raise ModelError(f"duplicate resource id: {r.id}")
             by_id[r.id] = r
         self._index = by_id
+        for kind, items in (("department", self.departments), ("system", self.systems), ("workflow", self.workflows),
+                            *((f"step in workflow {w.id}", w.steps) for w in self.workflows)):
+            seen: set[str] = set()
+            for x in items:
+                if x.id in seen:
+                    raise ModelError(f"duplicate {kind} id: {x.id}")
+                seen.add(x.id)
 
         carved: dict[str, int] = {}
         for r in resources:

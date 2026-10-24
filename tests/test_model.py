@@ -1,4 +1,5 @@
 import pytest
+import copy
 
 from flock_of_pain.dist import const
 from flock_of_pain.model import (
@@ -184,3 +185,15 @@ def test_missing_lookups_raise_model_error():
     c.resolve()
     with pytest.raises(ModelError, match="zz"):
         c.resource("zz")
+
+
+@pytest.mark.parametrize("collection", ["departments", "systems", "workflows", "steps"])
+def test_duplicate_ids(collection):
+    c = make_company(steps=[Step("s1", "S1", "d1", "x", const(5)), Step("s2", "S2", "d1", "x", const(5))])
+    owner = c.workflows[0] if collection == "steps" else c
+    items = getattr(owner, collection)
+    items.append(copy.copy(items[0]))
+    if collection == "departments":
+        items[-1] = Department(items[0].id, "D2", [])
+    with pytest.raises(ModelError, match="duplicate"):
+        c.resolve()

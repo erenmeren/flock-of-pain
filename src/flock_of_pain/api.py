@@ -37,11 +37,25 @@ def example():
     return {"company": company_to_dict(base), "scenarios": [scenario_to_dict(s) for s in reynolds.scenarios(base)]}
 
 
+def _section(prefix: str, fn, *args):
+    try:
+        return fn(*args)
+    except SchemaError as e:
+        raise SchemaError(f"{prefix}.{e.path}" if e.path else prefix, e.message) from e
+
+
 @app.post("/simulate")
 def simulate(req: SimulateRequest):
-    company = company_from_dict(req.company)
-    scenarios = [scenario_from_dict(s, company) for s in req.scenarios]
-    config = run_config_from_dict(req.config)
+    company = _section("company", company_from_dict, req.company)
+    scenarios = [_section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(req.scenarios)]
+    if len({s.id for s in scenarios}) != len(scenarios):
+        raise SchemaError("scenarios", "duplicate scenario id")
+    for i, s in enumerate(scenarios):
+        try:
+            s.materialize()
+        except ModelError as e:
+            raise SchemaError(f"scenarios[{i}]", str(e)) from e
+    config = _section("config", run_config_from_dict, req.config)
     budget = config.horizon_minutes / 1440 * config.replications * max(1, len(scenarios))  # run-days
     limit = MAX_EVENT_RUN_DAYS if req.include_events else MAX_RUN_DAYS
     if budget > limit:

@@ -46,12 +46,18 @@ def _get(d: dict, key: str, path: str, typ, default=_REQUIRED):
     v = d.pop(key)
     if v is None and default is None:
         return None
-    types = (int, float) if typ is float else typ
-    if not isinstance(v, types) or (isinstance(v, bool) and typ is not bool):
+    allowed = (int, float) if typ is float else typ
+    if not isinstance(v, allowed) or (isinstance(v, bool) and typ is not bool):
         raise SchemaError(p, f"expected {getattr(typ, '__name__', typ)}")
     if isinstance(v, float) and not math.isfinite(v):
         raise SchemaError(p, "must be finite")
     return v
+
+
+def _check(path: str, *rules) -> None:
+    for key, ok, message in rules:
+        if not ok:
+            raise SchemaError(_join(path, key), message)
 
 
 def _done(d: dict, path: str) -> None:
@@ -89,7 +95,14 @@ def dist_from_dict(d: dict, path: str) -> Dist:
                 raise SchemaError(_join(path, k), "must be > 0")
         out = lognormal_mean(mean, sigma)
     elif kind in _KINDS:
-        out = Dist(kind, _get(d, "a", path, float), _get(d, "b", path, float, 0.0), _get(d, "c", path, float, 0.0))
+        a, b, c = _get(d, "a", path, float), _get(d, "b", path, float, 0.0), _get(d, "c", path, float, 0.0)
+        _check(path, ("a", kind != "exponential" or a > 0, "must be > 0"),
+               ("b", kind != "uniform" or a <= b, "must be >= a"),
+               ("b", kind != "triangular" or a <= b, "must be >= a (a=low, b=mode, c=high)"),
+               ("c", kind != "triangular" or b <= c, "must be >= b (a=low, b=mode, c=high)"),
+               ("b", kind != "lognormal" or b >= 0, "must be >= 0"),
+               ("a", kind != "lognormal" or a < 20, "must be < 20 (mean of the underlying normal)"))
+        out = Dist(kind, a, b, c)
     else:
         raise SchemaError(_join(path, "kind"), f"unknown kind {kind!r}")
     _done(d, path)
@@ -109,7 +122,9 @@ def schedule_from_dict(d: dict | None, path: str) -> Schedule | None:
     for k, v in _get(d, "weekday_hours", path, dict).items():
         if k not in {str(i) for i in range(7)}:
             raise SchemaError(_join(hp, k), "weekday key must be '0'..'6'")
-        hours[int(k)] = _pair(v, _join(hp, k))
+        start, end = hours[int(k)] = _pair(v, _join(hp, k))
+        _check(hp, (k, 0 <= start < 24 and start < end <= start + 24,
+                    "expected 0 <= start < 24 and start < end <= start + 24; write an overnight shift as e.g. [22, 30]"))
     ap = _join(path, "absences")
     absences = [_pair(a, f"{ap}[{i}]") for i, a in enumerate(_get(d, "absences", path, list, []))]
     _done(d, path)
@@ -134,6 +149,8 @@ def resource_from_dict(d: dict, department_id: str, path: str) -> Resource:
         schedule=schedule_from_dict(_get(d, "schedule", path, dict, None), _join(path, "schedule")),
         pool_id=_get(d, "pool_id", path, str, None), headcount=_get(d, "headcount", path, int, None))
     _done(d, path)
+    _check(path, ("cost_per_hour", r.cost_per_hour >= 0, "must be >= 0"), ("speed_factor", r.speed_factor > 0, "must be > 0"),
+           ("headcount", r.headcount is None or r.headcount >= 0, "must be >= 0"))
     return r
 
 
@@ -177,6 +194,7 @@ def _workflow_from_dict(d: dict, path: str) -> Workflow:
     a = _obj(_get(d, "arrival", path, dict), ap)
     arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")))
     _done(a, ap)
+    _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"))
     w = Workflow(_get(d, "id", path, str), _get(d, "name", path, str), _items(d, "steps", path, _step_from_dict), arrival)
     _done(d, path)
     return w

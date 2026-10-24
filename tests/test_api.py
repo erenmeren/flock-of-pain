@@ -39,7 +39,7 @@ def test_schema_error_422():
     ex = client.get("/example").json()
     ex["company"]["departments"][0]["resources"][0]["skills"] = "x"
     r = client.post("/simulate", json={"company": ex["company"], "scenarios": [], "config": {"seed": 1, "days": 1}})
-    assert r.status_code == 422 and r.json()["path"] == "departments[0].resources[0].skills"
+    assert r.status_code == 422 and r.json()["path"] == "company.departments[0].resources[0].skills"
 
 
 def test_model_error_422():
@@ -56,3 +56,37 @@ def test_run_budget_422(config, n, events):
     r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"][:n], "config": config,
                                        "include_events": events})
     assert r.status_code == 422 and r.json()["path"] == "config"
+
+
+def _post(**patch):
+    ex = client.get("/example").json()
+    body = {"company": ex["company"], "scenarios": ex["scenarios"][:1], "config": {"seed": 1, "days": 1}, **patch}
+    return client.post("/simulate", json=body)
+
+
+def test_fastapi_native_422():
+    r = _post(config="x")
+    assert r.status_code == 422 and "detail" in r.json()
+
+
+def test_config_schema_error_path():
+    r = _post(config={"seed": 1, "days": "x"})
+    assert r.status_code == 422 and r.json()["path"] == "config.days"
+
+
+def test_scenario_schema_error_path():
+    r = _post(scenarios=[{"id": "x", "name": "x", "overlays": [{"type": "nope"}]}])
+    assert r.status_code == 422 and r.json()["path"] == "scenarios[0].overlays[0].type"
+
+
+def test_scenario_model_error_path():
+    ok = client.get("/example").json()["scenarios"][0]
+    bad = {"id": "bad", "name": "bad", "overlays": [{"type": "remove_resource", "resource_id": "nope"}]}
+    r = _post(scenarios=[ok, bad])
+    assert r.status_code == 422 and r.json()["path"] == "scenarios[1]" and "nope" in r.json()["message"]
+
+
+def test_duplicate_scenario_ids_422():
+    s = client.get("/example").json()["scenarios"][0]
+    r = _post(scenarios=[s, s])
+    assert r.status_code == 422 and r.json()["path"] == "scenarios"
