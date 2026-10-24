@@ -33,6 +33,7 @@ class WorkflowMetrics:
     wait_p90: float = 0.0
     sla_breached: int = 0
     sla_breach_rate: float = 0.0
+    steps_completed: int = 0
     failures: int = 0
     rework_rate: float = 0.0
     cost_per_completed: float = 0.0
@@ -63,7 +64,7 @@ class LedgerRow:
     reason: Reason | None
     blocker_id: str | None
     minutes: float
-    count: int
+    count: float
 
 
 @dataclass
@@ -95,10 +96,11 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     waits_wf: dict[str, list[float]] = defaultdict(list)
     waits_dept: dict[str, list[float]] = defaultdict(list)
     wf_cost: dict[str, float] = defaultdict(float)
-    steps_done: dict[str, int] = defaultdict(int)
     wf_started: dict[str, float] = {}
     cycles: dict[str, list[float]] = defaultdict(list)
     cancelled: dict[str, set[str]] = defaultdict(set)
+    breached: dict[str, set[str]] = defaultdict(set)  # workflow -> instances with any SLA breach
+    done: dict[str, set[str]] = defaultdict(set)  # workflow -> completed instances
     queued: dict[str, set[str]] = defaultdict(set)  # department -> task ids waiting
     last_t = None
 
@@ -141,10 +143,11 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
             wf_started[e.instance_id] = e.t
         elif e.kind == K.WORKFLOW_COMPLETED:
             w.completed += 1
+            done[e.workflow_id].add(e.instance_id)
             if e.instance_id in wf_started:
                 cycles[e.workflow_id].append(e.t - wf_started[e.instance_id])
         elif e.kind == K.SLA_BREACHED:
-            w.sla_breached += 1
+            breached[e.workflow_id].add(e.instance_id)
         if e.task_id is None:
             continue
         tr = tracks[e.task_id]
@@ -167,7 +170,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         elif e.kind in (K.TASK_COMPLETED, K.TASK_FAILED, K.TASK_BLOCKED):
             close_run(e, tr, e.t)
             if e.kind == K.TASK_COMPLETED:
-                steps_done[e.workflow_id] += 1
+                w.steps_completed += 1
                 if e.resource_id in rm:
                     rm[e.resource_id].tasks_completed += 1
                 if e.department_id in dm:
@@ -210,8 +213,9 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         w.throughput_per_day = _div(w.completed, days)
         w.cycle_p50, w.cycle_p90 = percentile(cycles[w_id], 50), percentile(cycles[w_id], 90)
         w.wait_p50, w.wait_p90 = percentile(waits_wf[w_id], 50), percentile(waits_wf[w_id], 90)
-        w.sla_breach_rate = _div(w.sla_breached, steps_done[w_id])
-        w.rework_rate = _div(w.failures, steps_done[w_id])
+        w.sla_breached = len(breached[w_id] & done[w_id])
+        w.sla_breach_rate = _div(w.sla_breached, w.completed)
+        w.rework_rate = _div(w.failures, w.steps_completed)
         w.cost_per_completed = _div(wf_cost[w_id], w.completed)
 
     rows = [LedgerRow(d, reason, blocker, minutes, n) for (d, reason, blocker), (minutes, n) in ledger.items()]

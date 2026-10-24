@@ -129,3 +129,19 @@ def test_engine_run_consistent():
     assert all(row.minutes >= 0 and row.count > 0 for row in m.ledger)
     # analytics also counts work still in progress at the horizon; the engine does not
     assert sum(r.busy_minutes for r in m.resources.values()) >= sum(e.busy_minutes.values()) - 1e-6
+
+
+def _wfev(t, kind, inst, task=None):
+    return Event(t, kind, task, inst, "w", "a" if task else None, "cs" if task else None)
+
+
+def test_sla_counts_instances_not_steps():
+    c = tiny_company()
+    evs = [
+        _wfev(0, K.WORKFLOW_STARTED, "i1"), _wfev(0, K.WORKFLOW_STARTED, "i2"),
+        _wfev(5, K.SLA_BREACHED, "i1", "i1:a:0"), _wfev(6, K.SLA_BREACHED, "i1", "i1:b:0"),
+        _wfev(7, K.SLA_BREACHED, "i2", "i2:a:0"),
+        _wfev(10, K.WORKFLOW_COMPLETED, "i1"),
+    ]
+    w = compute_metrics(evs, c, DAY).workflows["w"]
+    assert (w.completed, w.sla_breached, w.sla_breach_rate) == (1, 1, 1.0)
