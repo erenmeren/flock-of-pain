@@ -24,6 +24,15 @@ The demo runs the synthetic Reynolds company (`src/flock_of_pain/examples/reynol
 
 All demo parameters are assumed values, not measurements.
 
+## API
+
+```
+uv run --extra api uvicorn flock_of_pain.api:app
+```
+
+- `GET /example`: Reynolds company and its four scenarios as JSON.
+- `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`.
+
 ## Docs
 
 - Spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-core-design.md`

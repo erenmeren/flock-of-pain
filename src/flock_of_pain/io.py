@@ -275,6 +275,9 @@ def run_config_from_dict(d: dict) -> RunConfig:
     seed, days = _get(d, "seed", "", int), _get(d, "days", "", float)
     reps, policy = _get(d, "replications", "", int, 1), _get(d, "policy", "", str, "priority")
     _done(d, "")
+    for k, ok in (("days", days > 0), ("replications", reps >= 1)):
+        if not ok:
+            raise SchemaError(k, "must be > 0" if k == "days" else "must be >= 1")
     if policy not in POLICIES:
         raise SchemaError("policy", f"unknown policy {policy!r}")
     return RunConfig(seed, days * 1440, reps, policy)

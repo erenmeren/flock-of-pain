@@ -120,6 +120,13 @@ def test_run_config():
     assert e.value.path == "policy"
 
 
+@pytest.mark.parametrize("bad,path", [({"days": 0}, "days"), ({"days": 1, "replications": 0}, "replications")])
+def test_run_config_ranges(bad, path):
+    with pytest.raises(SchemaError) as e:
+        run_config_from_dict({"seed": 1, **bad})
+    assert e.value.path == path
+
+
 def test_metrics_to_dict_is_json():
     c = reynolds.build(); e = Engine(c, RunConfig(seed=1, horizon_minutes=1440)); e.run()
     from flock_of_pain.analytics import compute_metrics
