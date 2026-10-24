@@ -5,6 +5,7 @@ from workforce_twin.engine import Engine, RunConfig
 from workforce_twin.events import EventKind as K
 from workforce_twin.events import Reason
 from workforce_twin.model import Step
+from workforce_twin.schedule import business_hours
 
 DAY = 1440
 
@@ -107,6 +108,10 @@ def test_capacity_invariant():
 
 def test_step_and_pause():
     e = Engine(tiny_company(), RunConfig(seed=1, horizon_minutes=DAY))
+    e.pause()
+    e.run()
+    assert len(e.events) == 0 and e.now == 0
+    e.resume()
     assert e.step() is True
     assert e.now == 9 * 60
     e.schedule(600, e.pause)
@@ -124,3 +129,19 @@ def test_sla_breach_logged_on_late_completion():
     arrive_at(e, 9 * 60, n=3)
     e.run()
     assert [x.task_id for x in e.events if x.kind == K.SLA_BREACHED] == ["w-000003:a:0"]
+
+
+def test_successor_does_not_jump_queue():
+    e = Engine(tiny_company(pool_headcount=1), RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 9 * 60, n=2)
+    e.run()
+    assert first(e, K.TASK_STARTED, "w-000002:a:0").t == 550
+    assert first(e, K.TASK_STARTED, "w-000001:b:0").t == 560
+
+
+def test_fully_carved_pool_ignored_for_reason():
+    c = tiny_company(pool_headcount=1, steps=one_step())
+    c.resource("e1").schedule = business_hours(10, 17)  # pool (capacity 0) on at 9, e1 not yet
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 9 * 60)
+    assert first(e, K.TASK_QUEUED, "w-000001:a:0").reason == Reason.OFF_SHIFT

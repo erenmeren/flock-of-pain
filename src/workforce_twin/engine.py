@@ -74,12 +74,11 @@ class Engine:
         return True
 
     def run_until(self, t: float) -> None:
-        while self._heap and self._heap[0][0] <= t:
+        while not self._paused and self._heap and self._heap[0][0] <= t:
             self.now, _, fn = heapq.heappop(self._heap)
             fn()
-            if self._paused:
-                return
-        self.now = max(self.now, t)
+        if not self._paused:
+            self.now = max(self.now, t)
 
     def run(self) -> None:
         self.run_until(self.horizon)
@@ -137,6 +136,8 @@ class Engine:
         inst = self.instances[task.instance_id]
         inst.completed.add(step.id)
         inst.active.pop(step.id, None)
+        # freed slot serves already-queued work before this instance's successors
+        self._dispatch_resource(r)
         for s in inst.workflow.steps:
             if s.id not in inst.completed and s.id not in inst.active and set(s.depends_on) <= inst.completed:
                 self._create_task(inst, s)
@@ -145,7 +146,6 @@ class Engine:
                 self.now, K.WORKFLOW_COMPLETED, instance_id=inst.id, workflow_id=inst.workflow.id,
             ))
             del self.instances[inst.id]
-        self._dispatch_resource(r)
 
     # --- dispatch ---
 
@@ -166,7 +166,7 @@ class Engine:
 
     def _skilled(self, task: Task) -> list[Resource]:
         skill = self._step(task).required_skill
-        return [r for r in self.company.department(task.department_id).resources if skill in r.skills]
+        return [r for r in self.company.department(task.department_id).resources if skill in r.skills and r.capacity > 0]
 
     def _eligible(self, task: Task) -> list[Resource]:
         return [r for r in self._skilled(task) if self.on_shift[r.id] and self.free_slots[r.id] > 0]
