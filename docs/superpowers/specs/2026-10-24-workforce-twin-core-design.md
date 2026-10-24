@@ -55,6 +55,9 @@ API layer.
   labeled "assumed".
 - Performance beyond: 500 resources, 90 simulated days, ~100k task
   instances, one replication in under ~30 s on a laptop.
+- Time series (WIP over time, queue length over time) and idle time:
+  deferred past v0; `backlog_max` per department is the only queue-size
+  metric.
 
 ## 4. Anti-goals
 
@@ -228,10 +231,12 @@ kept in memory (list) and optionally written as JSON lines.
 log only:
 
 - Per workflow: throughput (completed/day), cycle time p50/p90, waiting
-  time p50/p90, SLA breach rate, failure/rework rate, WIP over time
-  (sampled hourly), completion rate.
+  time p50/p90, SLA breach rate, failure/rework rate, started/completed
+  counts (the KPI table pools completion rate = completed/started).
 - Per department and per resource: utilization (busy minutes / on-shift
-  minutes), idle, blocked time, tasks completed, queue length over time.
+  minutes), blocked time, tasks completed, `backlog_max` (peak queued
+  tasks per department). WIP and queue-length time series and idle time
+  are deferred (see Non-goals).
 - Blocked-time ledger: minutes per `(department, reason_code, blocking
   resource/system)`. This is the bottleneck input.
 - Cost: labor cost = busy minutes × cost_per_hour; cost per completed
