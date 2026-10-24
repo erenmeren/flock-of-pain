@@ -64,6 +64,8 @@ class Engine:
         for system_id, start, end in company.outages:
             if system_id not in self.system_down:
                 raise ModelError(f"outage: unknown system_id {system_id}")
+            if end <= start:
+                raise ModelError(f"outage on {system_id}: end {end} must be after start {start}")
             self.schedule(start, partial(self._outage_start, system_id))
             self.schedule(end, partial(self._outage_end, system_id))
         for w in company.workflows:
@@ -143,6 +145,12 @@ class Engine:
                 transition(task, S.BLOCKED, self.now, self.events, reason=Reason.SYSTEM_DOWN, system_id=system_id)
                 task.run_token += 1
                 freed.add(task.resource_id)
+            elif task.state == S.QUEUED and self._step(task).system_id == system_id:
+                # no state change: log that the queued task now waits on the system
+                self.events.append(Event(
+                    self.now, K.TASK_QUEUED, task.id, task.instance_id, task.workflow_id, task.step_id,
+                    task.department_id, system_id=system_id, reason=Reason.SYSTEM_DOWN, payload={"retag": True},
+                ))
         for r in self.company.resources():
             if r.id in freed:
                 self._dispatch_resource(r)
@@ -169,23 +177,24 @@ class Engine:
         inst = self.instances[task.instance_id]
         if self.rng.random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
             transition(task, S.FAILED, self.now, self.events)
+            self._dispatch_resource(r)  # older queued work goes before the retry
             if not inst.cancelled and inst.retries < step.max_retries:
                 inst.retries += 1
                 if step.rework_to is None or step.rework_to == step.id:
                     self._try_dispatch_task(task)
                 else:
                     # failed step is re-created by the dependency rule once rework_to completes again
-                    inst.completed.discard(step.rework_to)
                     inst.completed.discard(step.id)
                     inst.active.pop(step.id, None)
                     redo = inst.done_tasks[step.rework_to]
-                    inst.active[step.rework_to] = redo.id
-                    self._try_dispatch_task(redo, rework=True)
+                    if redo.state == S.COMPLETED:  # else already re-queued by another failed step
+                        inst.completed.discard(step.rework_to)
+                        inst.active[step.rework_to] = redo.id
+                        self._try_dispatch_task(redo, rework=True)
             else:
                 transition(task, S.CANCELLED, self.now, self.events)
                 inst.active.pop(step.id, None)
                 inst.cancelled = True
-            self._dispatch_resource(r)
             return
         transition(task, S.COMPLETED, self.now, self.events)
         if step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
