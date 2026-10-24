@@ -203,8 +203,12 @@ class Engine:
         inst = self.instances[task.instance_id]
         if self.rng.random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
             transition(task, S.FAILED, self.now, self.events)
+            retry = not inst.cancelled and inst.retries < step.max_retries
+            if not retry:
+                inst.cancelled = True
+                self._cancel_queued(inst)  # before dispatch, so the freed slot cannot start a sibling
             self._dispatch_resource(r)  # older queued work goes before the retry
-            if not inst.cancelled and inst.retries < step.max_retries:
+            if retry:
                 inst.retries += 1
                 if step.rework_to is None or step.rework_to == step.id:
                     self._try_dispatch_task(task)
@@ -220,7 +224,6 @@ class Engine:
             else:
                 transition(task, S.CANCELLED, self.now, self.events)
                 inst.active.pop(step.id, None)
-                inst.cancelled = True
             return
         transition(task, S.COMPLETED, self.now, self.events)
         if step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
@@ -243,6 +246,18 @@ class Engine:
                 self.now, K.WORKFLOW_COMPLETED, instance_id=inst.id, workflow_id=inst.workflow.id,
             ))
             del self.instances[inst.id]
+
+    def _cancel_queued(self, inst: Instance) -> None:
+        for step_id, task_id in list(inst.active.items()):
+            if task_id not in self._queue_keys:
+                continue  # running or blocked: finishes normally and spawns nothing
+            step = self.steps[inst.workflow.id, step_id]
+            q = self.queues[step.department_id, step.required_skill]
+            task = next(t for t in q if t.id == task_id)
+            q.remove(task)
+            del self._queue_keys[task_id]
+            transition(task, S.CANCELLED, self.now, self.events)
+            del inst.active[step_id]
 
     # --- dispatch ---
 

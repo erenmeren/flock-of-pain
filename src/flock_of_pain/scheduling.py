@@ -5,6 +5,7 @@ from flock_of_pain.model import Resource, Step
 
 
 class SchedulingPolicy(Protocol):
+    # order_key must stay constant while a task is queued: the engine caches it at enqueue
     def order_key(self, task: Task, step: Step) -> tuple: ...
 
     def choose_resource(

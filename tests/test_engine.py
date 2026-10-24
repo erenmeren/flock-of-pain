@@ -145,3 +145,29 @@ def test_fully_carved_pool_ignored_for_reason():
     e = Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
     arrive_at(e, 9 * 60)
     assert first(e, K.TASK_QUEUED, "w-000001:a:0").reason == Reason.OFF_SHIFT
+
+
+def test_cancel_removes_queued_sibling():
+    # two parallel steps, one employee: a fails with no retries while b waits in the queue
+    from flock_of_pain.events import TaskState as S
+    steps = [
+        Step("a", "A", "cs", "support", const(10), failure_prob=1.0, max_retries=0),
+        Step("b", "B", "cs", "support", const(10)),
+    ]
+    e = Engine(tiny_company(rate_per_hour=1, pool_headcount=1, employees=1, steps=steps),
+               RunConfig(seed=1, horizon_minutes=7 * DAY))
+    e.run()
+    first = next(ev.instance_id for ev in e.events if ev.kind == K.WORKFLOW_STARTED)
+    kinds = [ev.kind for ev in e.events if ev.instance_id == first and ev.step_id == "b"]
+    assert K.TASK_CANCELLED in kinds and K.TASK_STARTED not in kinds
+    assert all(t.state == S.QUEUED for q in e.queues.values() for t in q)
+    assert len(e._queue_keys) == sum(len(q) for q in e.queues.values())
+
+
+def test_bounded_tracking_after_reynolds_run():
+    from flock_of_pain.examples import reynolds
+    e = Engine(reynolds.build(), RunConfig(seed=1, horizon_minutes=3 * DAY))
+    e.run()
+    assert not e.tasks_by_id
+    assert not any(e.in_progress.values())
+    assert len(e._queue_keys) == sum(len(q) for q in e.queues.values())

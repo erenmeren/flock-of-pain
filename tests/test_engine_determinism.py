@@ -6,10 +6,10 @@ from flock_of_pain.engine import Engine, RunConfig
 from flock_of_pain.examples import reynolds
 
 HASHES = {
-    "baseline": "55196c5154ef758bd8056a369f132f83e8dc006155822401d81d7ca77d71e17a",
-    "demand_plus_30": "57302e42cd2377c71703d7ca52f18e57bf51781e8230893216b34b0e4dc0be2a",
-    "erp_outage_2h": "40f1341b2652608457f8e6fcaa38a506c97ac0f990b25c4c5de39d8066de98a3",
-    "extra_cs_employee": "24fb2c6d33e370385839d1c97edc8994df8f03d91931d49109e077fd571ced49",
+    "baseline": "4f60379ed5d3de5bddc73e9e80d97f3076f6cfe57b19f3901fcbd7239345a15e",
+    "demand_plus_30": "3f8def688118b1edc4456b2cee7d7d6a978c213c95c6cd9ed92c9a033ae292ac",
+    "erp_outage_2h": "376496f88aee7f631654addb5c623d8372d98e206421075b102c51e41db7a8d2",
+    "extra_cs_employee": "8dec7b8f3f6904a71f3ee59c9299a1af44c6cc8754dbcaa4202295f7ae6303b4",
 }
 
 

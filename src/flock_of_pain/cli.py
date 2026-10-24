@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flock_of_pain.engine import RunConfig
 from flock_of_pain.examples import reynolds
-from flock_of_pain.experiment import compare, run_experiment, top_ledger
+from flock_of_pain.experiment import compare, off_shift_minutes, run_experiment, top_ledger
 from flock_of_pain.io import company_to_dict, load_company
 from flock_of_pain.scheduling import POLICIES
 
@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     print(compare(results))
     for r in results:
         print(f"\nTop blocked time: {r.name}")
+        print(f"OFF_SHIFT total: {off_shift_minutes(r):.1f}")
         print("department | reason | blocker | minutes | count")
         for row in top_ledger(r):
             print(f"{row.department_id} | {row.reason or '-'} | {row.blocker_id or '-'} | "

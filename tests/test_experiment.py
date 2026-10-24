@@ -78,3 +78,13 @@ def test_kpis_hand_built():
     assert (k["throughput_per_day"], k["sla_breach_rate"], k["rework_rate"], k["labor_cost"]) == (5, 0.25, 0.25, 7.0)
     assert k["util_cs"] == 0.5 and k["mean_dept_utilization"] == 0.375
     assert (k["completion_rate"], k["wait_p90"]) == (0.5, 20)
+
+
+def test_top_ledger_excludes_off_shift_by_default():
+    from flock_of_pain.events import Reason
+    from flock_of_pain.examples import reynolds
+    from flock_of_pain.experiment import off_shift_minutes
+    r = run_experiment("b", Scenario("b", "b", reynolds.build()), RunConfig(seed=42, horizon_minutes=3 * 1440))
+    assert all(row.reason != Reason.OFF_SHIFT for row in top_ledger(r))
+    assert any(row.reason == Reason.OFF_SHIFT for row in top_ledger(r, exclude=()))
+    assert off_shift_minutes(r) > 0

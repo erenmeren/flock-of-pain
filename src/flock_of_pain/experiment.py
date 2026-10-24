@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 
 from flock_of_pain.analytics import LedgerRow, Metrics, compute_metrics, percentile
 from flock_of_pain.engine import Engine, RunConfig
-from flock_of_pain.events import Event
+from flock_of_pain.events import Event, Reason
 from flock_of_pain.scenario import Scenario
 
 KPI_KEYS = [
@@ -93,10 +93,12 @@ def compare(results: list[ExperimentResult]) -> str:
     return "\n".join([ASSUMPTION, *lines])
 
 
-def top_ledger(result: ExperimentResult, n: int = 5) -> list[LedgerRow]:
+def top_ledger(result: ExperimentResult, n: int = 5, exclude=(Reason.OFF_SHIFT,)) -> list[LedgerRow]:
     acc: dict[tuple, list] = defaultdict(lambda: [0.0, 0])
     for run in result.runs:
         for r in run.metrics.ledger:
+            if r.reason in exclude:
+                continue
             a = acc[r.department_id, r.reason, r.blocker_id]
             a[0] += r.minutes
             a[1] += r.count
@@ -104,3 +106,7 @@ def top_ledger(result: ExperimentResult, n: int = 5) -> list[LedgerRow]:
     rows = [LedgerRow(d, reason, b, m / k, c / k) for (d, reason, b), (m, c) in acc.items()]
     rows.sort(key=lambda r: (-r.minutes, r.department_id, r.reason or "", r.blocker_id or ""))
     return rows[:n]
+
+
+def off_shift_minutes(result: ExperimentResult) -> float:
+    return sum(r.minutes for run in result.runs for r in run.metrics.ledger if r.reason == Reason.OFF_SHIFT)
