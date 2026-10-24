@@ -28,3 +28,11 @@ All demo parameters are assumed values, not measurements.
 
 - Spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-core-design.md`
 - Plan: `docs/superpowers/plans/2026-10-24-flock-of-pain-core.md`
+
+## Web
+
+```
+cd web && npm install && npm run dev
+```
+
+Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`, see `web/.env.example`) to point at the API.
