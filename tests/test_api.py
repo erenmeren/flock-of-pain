@@ -50,7 +50,8 @@ def test_model_error_422():
 
 
 @pytest.mark.parametrize("config,n,events", [({"seed": 1, "days": 365, "replications": 50}, 4, False),
-                                             ({"seed": 1, "days": 31}, 1, True)])
+                                             ({"seed": 1, "days": 31}, 1, True),
+                                             ({"seed": 1, "days": 0.001, "replications": 1000}, 1, False)])
 def test_run_budget_422(config, n, events):
     ex = client.get("/example").json()
     r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"][:n], "config": config,
