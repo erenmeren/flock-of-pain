@@ -1,5 +1,7 @@
 import copy
 
+import pytest
+
 from conftest import tiny_company
 from flock_of_pain.engine import Engine, RunConfig
 from flock_of_pain.experiment import KPI_KEYS, Stat, compare, run_experiment, top_ledger
@@ -88,3 +90,7 @@ def test_top_ledger_excludes_off_shift_by_default():
     assert all(row.reason != Reason.OFF_SHIFT for row in top_ledger(r))
     assert any(row.reason == Reason.OFF_SHIFT for row in top_ledger(r, exclude=()))
     assert off_shift_minutes(r) > 0
+    r2 = run_experiment("b", Scenario("b", "b", reynolds.build()),
+                        RunConfig(seed=42, horizon_minutes=3 * 1440, replications=2))
+    per_run = [sum(x.minutes for x in run.metrics.ledger if x.reason == Reason.OFF_SHIFT) for run in r2.runs]
+    assert off_shift_minutes(r2) == pytest.approx(sum(per_run) / 2)

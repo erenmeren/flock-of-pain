@@ -109,4 +109,5 @@ def top_ledger(result: ExperimentResult, n: int = 5, exclude=(Reason.OFF_SHIFT,)
 
 
 def off_shift_minutes(result: ExperimentResult) -> float:
-    return sum(r.minutes for run in result.runs for r in run.metrics.ledger if r.reason == Reason.OFF_SHIFT)
+    total = sum(r.minutes for run in result.runs for r in run.metrics.ledger if r.reason == Reason.OFF_SHIFT)
+    return total / (len(result.runs) or 1)  # per-run mean, same scale as top_ledger
