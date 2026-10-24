@@ -33,10 +33,10 @@ Format rules (units are the engine's; time zero is Monday 00:00):
 - ids are unique snake_case strings. Every department_id, system_id, resource_id, workflow_id and step id you reference must exist.
 - resources: a pool has "headcount"; a named employee has "pool_id" (carved out of that pool) or stands alone. Never write "capacity".
 - "skills" is a list; a step's "required_skill" must be a skill of a resource in the step's department.
-- schedule.weekday_hours keys are "0".."6" (0 = Monday), values [start_hour, end_hour]; an overnight shift ends past 24, e.g. [22, 30]. absences and outages are [start_minute, end_minute] from time zero; sla_minutes in minutes.
+- schedule.weekday_hours keys are "0".."6" (0 = Monday), values [start_hour, end_hour]; an overnight shift ends past 24, e.g. [22, 30]. schedule.absences are [start_minute, end_minute] from time zero; company.outages are [system_id, start_minute, end_minute]; sla_minutes in minutes.
 - arrival: {{"rate_per_hour": x, "window": {{"weekday_hours": ...}}}}.
 - duration: prefer {{"kind": "lognormal_mean", "mean": minutes, "sigma": 0.4}}; other kinds: const (a), uniform (a, b), triangular (a=low, b=mode, c=high), exponential (a=mean).
-- depends_on lists step ids in the same workflow, no cycles; rework_to is a step id or null.
+- depends_on lists step ids in the same workflow, no cycles; rework_to is null, the step's own id, or one of its depends_on.
 - scenario overlays, by "type": arrival_multiplier (factor, workflow_id|null), system_outage (system_id, start, end), add_employee (department_id, employee), remove_resource (resource_id), set_pool_headcount (pool_id, headcount), absence (resource_id, start, end).
 - Keep it proportionate to the description: a handful of departments and workflows, 3-4 scenarios that test the question the user is asking. Invent plausible numbers for anything unspecified; the first scenario is the baseline with no overlays.
 
@@ -52,17 +52,19 @@ def _ask(messages: list[dict]) -> str:
             model=MODEL, max_tokens=16000,
             system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
             messages=messages)
-    except anthropic.AnthropicError as e:  # includes the missing-credentials error raised by the constructor
+    except (anthropic.AnthropicError, TypeError) as e:  # TypeError: SDK 2.x "Could not resolve authentication method"
         raise AgentError(f"{MODEL}: {e}") from e
     if r.stop_reason == "refusal":
         raise AgentError("the model declined the request")
+    if r.stop_reason == "max_tokens":
+        raise AgentError("the model's output was truncated; describe a smaller company")
     return "".join(b.text for b in r.content if b.type == "text")
 
 
 def _validate(text: str) -> dict:
     body = text.strip()
     if body.startswith("```"):
-        body = body.split("\n", 1)[1].rsplit("```", 1)[0]
+        body = body.split("\n", 1)[-1].rsplit("```", 1)[0]
     try:
         d = json.loads(body)
     except ValueError as e:
@@ -73,13 +75,21 @@ def _validate(text: str) -> dict:
         company = company_from_dict(d["company"])
     except SchemaError as e:
         raise SchemaError(f"company.{e.path}", e.message) from e
+    # The engine tolerates a step nobody can do (NO_ELIGIBLE_RESOURCE, a legitimate what-if via overlays),
+    # but in a generated base company it is a model mistake worth a repair round.
+    skills = {dep.id: {sk for r in dep.resources for sk in r.skills} for dep in company.departments}
+    for wi, w in enumerate(company.workflows):
+        for si, st in enumerate(w.steps):
+            if st.required_skill not in skills[st.department_id]:
+                raise SchemaError(f"company.workflows[{wi}].steps[{si}].required_skill",
+                                  f"no resource in department {st.department_id} has skill {st.required_skill}")
     scenarios = []
     for i, s in enumerate(d["scenarios"]):
         try:
             scenarios.append(scenario_from_dict(s, company))
             scenarios[-1].materialize()
         except SchemaError as e:
-            raise SchemaError(f"scenarios[{i}].{e.path}", e.message) from e
+            raise SchemaError(f"scenarios[{i}].{e.path}".rstrip("."), e.message) from e
         except ModelError as e:
             raise SchemaError(f"scenarios[{i}]", str(e)) from e
     if len({s.id for s in scenarios}) != len(scenarios):
@@ -96,7 +106,7 @@ def generate(prompt: str, ask: Ask | None = None, repairs: int = 1) -> dict:
         try:
             return _validate(text)
         except ModelError as e:
-            err = f"{e.path}: {e.message}" if isinstance(e, SchemaError) and e.path else str(e)
+            err = (f"{e.path}: {e.message}" if e.path else e.message) if isinstance(e, SchemaError) else str(e)
             if attempt == repairs:
                 raise AgentError(f"invalid definition after {repairs + 1} attempts: {err}") from e
             messages += [{"role": "assistant", "content": text},

@@ -102,6 +102,10 @@ def test_generate_endpoint(monkeypatch):
     assert r.status_code == 200 and r.json() == ex
 
 
+def test_generate_empty_prompt_422():
+    assert client.post("/generate", json={"prompt": ""}).status_code == 422
+
+
 def test_generate_502(monkeypatch):
     from flock_of_pain import agent
     monkeypatch.setattr(agent, "_ask", lambda messages: "not json")

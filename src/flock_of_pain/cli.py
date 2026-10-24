@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from flock_of_pain.engine import RunConfig
@@ -29,8 +30,12 @@ def main(argv: list[str] | None = None) -> int:
         args.path.write_text(json.dumps(company_to_dict(reynolds.build()), indent=2))
         return 0
     if args.command == "generate":
-        from flock_of_pain.agent import generate  # optional dependency
-        text = json.dumps(generate(args.prompt), indent=2)
+        from flock_of_pain.agent import AgentError, generate  # optional dependency
+        try:
+            text = json.dumps(generate(args.prompt), indent=2)
+        except AgentError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
         if args.out:
             args.out.write_text(text)
         else:

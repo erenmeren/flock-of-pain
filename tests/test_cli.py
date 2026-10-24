@@ -24,3 +24,6 @@ def test_generate_and_demo_bundle(tmp_path, capsys, monkeypatch):
     assert main(["demo", "--company", str(p), "--days", "1", "--reps", "1"]) == 0
     out = capsys.readouterr().out
     assert "baseline" in out and out.count("Top blocked time") == 2
+    monkeypatch.setattr(agent, "_ask", lambda messages: "nope")
+    assert main(["generate", "a bakery"]) == 1
+    assert "error: invalid definition" in capsys.readouterr().err

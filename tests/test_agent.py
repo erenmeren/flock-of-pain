@@ -36,8 +36,20 @@ def test_generate_repairs_once_with_error_path():
 
 
 def test_generate_gives_up():
-    with pytest.raises(agent.AgentError, match="2 attempts: : not JSON"):
+    with pytest.raises(agent.AgentError, match="2 attempts: not JSON"):
         agent.generate("x", ask=lambda m: "nope")
+
+
+def test_generate_bare_fence_is_schema_error():
+    with pytest.raises(agent.AgentError, match="not JSON"):
+        agent.generate("x", ask=lambda m: "```", repairs=0)
+
+
+def test_generate_unskilled_step_rejected():
+    bad = bundle()
+    bad["company"]["workflows"][0]["steps"][0]["required_skill"] = "juggling"
+    with pytest.raises(agent.AgentError, match="juggling"):
+        agent.generate("x", ask=lambda m: json.dumps(bad), repairs=0)
 
 
 def test_generate_rejects_wrong_shape():

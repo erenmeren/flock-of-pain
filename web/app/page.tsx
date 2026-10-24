@@ -35,6 +35,7 @@ export default function Home() {
 
   async function gen() {
     setError(null);
+    setResult(null);
     setBusy(true);
     try {
       const x = await generate(prompt);
