@@ -1,7 +1,7 @@
 from typing import Protocol
 
-from workforce_twin.events import Task
-from workforce_twin.model import Resource, Step
+from flock_of_pain.events import Task
+from flock_of_pain.model import Resource, Step
 
 
 class SchedulingPolicy(Protocol):

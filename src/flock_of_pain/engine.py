@@ -4,10 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 
-from workforce_twin.events import Event, EventKind, Reason, Task, TaskState, transition
-from workforce_twin.model import Company, ModelError, Resource, Step, Workflow
-from workforce_twin.schedule import MINUTES_PER_WEEK
-from workforce_twin.scheduling import POLICIES
+from flock_of_pain.events import Event, EventKind, Reason, Task, TaskState, transition
+from flock_of_pain.model import Company, ModelError, Resource, Step, Workflow
+from flock_of_pain.schedule import MINUTES_PER_WEEK
+from flock_of_pain.scheduling import POLICIES
 
 K = EventKind
 S = TaskState

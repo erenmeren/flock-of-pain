@@ -1,14 +1,14 @@
 import pytest
 from conftest import tiny_company
 
-from workforce_twin.dist import const
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.events import EventKind as K
-from workforce_twin.events import Reason
-from workforce_twin.model import (
+from flock_of_pain.dist import const
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.events import EventKind as K
+from flock_of_pain.events import Reason
+from flock_of_pain.model import (
     ArrivalSpec, BusinessSystem, Company, Department, ModelError, Resource, Step, Workflow,
 )
-from workforce_twin.schedule import business_hours
+from flock_of_pain.schedule import business_hours
 
 DAY = 1440
 
@@ -195,7 +195,7 @@ def test_unresolved_company_rejected():
 
 
 def test_shift_walk_survives_long_absence():
-    from workforce_twin.scenario import Absence, Scenario
+    from flock_of_pain.scenario import Absence, Scenario
     c = Scenario("s", "S", tiny_company(), [Absence("e1", 1 * DAY, 16 * DAY)]).materialize()
     e = Engine(c, RunConfig(seed=1, horizon_minutes=30 * DAY))
     e.run()

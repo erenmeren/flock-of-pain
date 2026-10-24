@@ -2,10 +2,10 @@ import time
 
 import pytest
 
-from workforce_twin.cli import main
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.examples import reynolds
-from workforce_twin.experiment import ASSUMPTION
+from flock_of_pain.cli import main
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.examples import reynolds
+from flock_of_pain.experiment import ASSUMPTION
 
 
 def test_build_has_24_employees_and_3_pools():

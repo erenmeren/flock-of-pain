@@ -1,6 +1,6 @@
 import pytest
 
-from workforce_twin.events import Event, EventKind, Task, TaskState, transition
+from flock_of_pain.events import Event, EventKind, Task, TaskState, transition
 
 
 def _task():

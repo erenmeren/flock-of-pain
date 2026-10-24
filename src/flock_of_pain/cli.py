@@ -1,14 +1,14 @@
 import argparse
 from pathlib import Path
 
-from workforce_twin.engine import RunConfig
-from workforce_twin.examples import reynolds
-from workforce_twin.experiment import compare, run_experiment, top_ledger
-from workforce_twin.scheduling import POLICIES
+from flock_of_pain.engine import RunConfig
+from flock_of_pain.examples import reynolds
+from flock_of_pain.experiment import compare, run_experiment, top_ledger
+from flock_of_pain.scheduling import POLICIES
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="workforce_twin")
+    parser = argparse.ArgumentParser(prog="flock_of_pain")
     sub = parser.add_subparsers(dest="command", required=True)
     demo = sub.add_parser("demo", help="run the Reynolds example scenarios")
     demo.add_argument("--days", type=float, default=10)

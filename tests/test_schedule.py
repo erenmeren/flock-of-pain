@@ -1,4 +1,4 @@
-from workforce_twin.schedule import Schedule, business_hours
+from flock_of_pain.schedule import Schedule, business_hours
 
 D = 1440
 

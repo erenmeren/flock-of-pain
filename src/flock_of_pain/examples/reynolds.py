@@ -1,10 +1,10 @@
 """Reynolds: a synthetic five-department company. Every number here is an assumed value."""
 from math import log
 
-from workforce_twin.dist import Dist, lognormal
-from workforce_twin.model import ArrivalSpec, BusinessSystem, Company, Department, Resource, Step, Workflow
-from workforce_twin.scenario import AddEmployee, ArrivalMultiplier, Scenario, SystemOutage
-from workforce_twin.schedule import MINUTES_PER_DAY, Schedule, business_hours
+from flock_of_pain.dist import Dist, lognormal
+from flock_of_pain.model import ArrivalSpec, BusinessSystem, Company, Department, Resource, Step, Workflow
+from flock_of_pain.scenario import AddEmployee, ArrivalMultiplier, Scenario, SystemOutage
+from flock_of_pain.schedule import MINUTES_PER_DAY, Schedule, business_hours
 
 
 def lognormal_minutes(m: float, s: float = 0.4) -> Dist:

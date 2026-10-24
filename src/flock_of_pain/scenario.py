@@ -2,7 +2,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Union
 
-from workforce_twin.model import Company, ModelError, Resource
+from flock_of_pain.model import Company, ModelError, Resource
 
 
 def _find(c: Company, id: str) -> Resource:

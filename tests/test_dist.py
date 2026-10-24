@@ -1,6 +1,6 @@
 import random
 
-from workforce_twin.dist import const, exponential, lognormal, triangular, uniform
+from flock_of_pain.dist import const, exponential, lognormal, triangular, uniform
 
 
 def test_const_ignores_rng():

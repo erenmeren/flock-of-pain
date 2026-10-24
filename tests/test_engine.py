@@ -1,11 +1,11 @@
 from conftest import tiny_company
 
-from workforce_twin.dist import const
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.events import EventKind as K
-from workforce_twin.events import Reason
-from workforce_twin.model import Step
-from workforce_twin.schedule import business_hours
+from flock_of_pain.dist import const
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.events import EventKind as K
+from flock_of_pain.events import Reason
+from flock_of_pain.model import Step
+from flock_of_pain.schedule import business_hours
 
 DAY = 1440
 

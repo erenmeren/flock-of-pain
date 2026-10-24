@@ -2,10 +2,10 @@
 from collections import defaultdict
 from dataclasses import dataclass, replace
 
-from workforce_twin.analytics import LedgerRow, Metrics, compute_metrics, percentile
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.events import Event
-from workforce_twin.scenario import Scenario
+from flock_of_pain.analytics import LedgerRow, Metrics, compute_metrics, percentile
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.events import Event
+from flock_of_pain.scenario import Scenario
 
 KPI_KEYS = [
     "throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90",

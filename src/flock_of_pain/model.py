@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
-from workforce_twin.dist import Dist
-from workforce_twin.schedule import Schedule
+from flock_of_pain.dist import Dist
+from flock_of_pain.schedule import Schedule
 
 
 class ModelError(ValueError):

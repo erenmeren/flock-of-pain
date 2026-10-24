@@ -3,12 +3,12 @@ import copy
 import pytest
 from conftest import tiny_company
 
-from workforce_twin.model import ModelError, Resource
-from workforce_twin.scenario import (
+from flock_of_pain.model import ModelError, Resource
+from flock_of_pain.scenario import (
     Absence, AddEmployee, ArrivalMultiplier, RemoveResource, Scenario,
     SetPoolHeadcount, SystemOutage,
 )
-from workforce_twin.schedule import business_hours
+from flock_of_pain.schedule import business_hours
 
 
 def test_base_untouched_by_all_overlays():

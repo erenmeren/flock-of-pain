@@ -1,9 +1,9 @@
 from conftest import tiny_company
 
-from workforce_twin.analytics import LedgerRow, compute_metrics, percentile
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.events import Event, EventKind as K
-from workforce_twin.events import Reason
+from flock_of_pain.analytics import LedgerRow, compute_metrics, percentile
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.events import Event, EventKind as K
+from flock_of_pain.events import Reason
 
 DAY = 1440
 TID = "w-000001:a:0"

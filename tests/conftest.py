@@ -1,8 +1,8 @@
-from workforce_twin.dist import const
-from workforce_twin.model import (
+from flock_of_pain.dist import const
+from flock_of_pain.model import (
     ArrivalSpec, BusinessSystem, Company, Department, Resource, Step, Workflow,
 )
-from workforce_twin.schedule import business_hours
+from flock_of_pain.schedule import business_hours
 
 
 def tiny_company(

@@ -1,9 +1,9 @@
 import copy
 
 from conftest import tiny_company
-from workforce_twin.engine import Engine, RunConfig
-from workforce_twin.experiment import KPI_KEYS, Stat, compare, run_experiment, top_ledger
-from workforce_twin.scenario import Scenario
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.experiment import KPI_KEYS, Stat, compare, run_experiment, top_ledger
+from flock_of_pain.scenario import Scenario
 
 CFG = RunConfig(seed=42, horizon_minutes=3 * 1440, replications=3)
 SENTENCE = "All parameters are assumed values; results are simulation estimates, not measurements."
@@ -24,7 +24,7 @@ def test_replications_seeds_and_determinism():
 
 
 def test_stat_mean():
-    from workforce_twin.experiment import _stat
+    from flock_of_pain.experiment import _stat
     assert _stat([1, 2, 3]) == Stat(2, 1, 2, 3)
 
 
@@ -41,8 +41,8 @@ def test_compare_and_ledger_and_base_unchanged():
 
 
 def _res(name, summary, ledgers=()):
-    from workforce_twin.analytics import Metrics
-    from workforce_twin.experiment import ExperimentResult, RunResult
+    from flock_of_pain.analytics import Metrics
+    from flock_of_pain.experiment import ExperimentResult, RunResult
     return ExperimentResult(name, [RunResult(0, [], Metrics(1, ledger=l)) for l in ledgers], summary)
 
 
@@ -57,7 +57,7 @@ def test_compare_two_experiments_missing_util():
 
 
 def test_top_ledger_averages_and_orders():
-    from workforce_twin.analytics import LedgerRow
+    from flock_of_pain.analytics import LedgerRow
     r1 = [LedgerRow("cs", None, None, 10, 1), LedgerRow("it", None, None, 4, 2)]
     r2 = [LedgerRow("cs", None, None, 20, 3)]
     top = top_ledger(_res("x", {}, [r1, r2]), 5)
@@ -66,8 +66,8 @@ def test_top_ledger_averages_and_orders():
 
 
 def test_kpis_hand_built():
-    from workforce_twin.analytics import DeptMetrics, Metrics, WorkflowMetrics
-    from workforce_twin.experiment import kpis
+    from flock_of_pain.analytics import DeptMetrics, Metrics, WorkflowMetrics
+    from flock_of_pain.experiment import kpis
     m = Metrics(1440, {
         "a": WorkflowMetrics(started=4, completed=2, throughput_per_day=2, sla_breached=1, failures=1,
                              steps_completed=4, wait_p90=10),

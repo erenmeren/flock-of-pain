@@ -1,7 +1,7 @@
-from workforce_twin.dist import const
-from workforce_twin.events import Task
-from workforce_twin.model import Resource, Step
-from workforce_twin.scheduling import POLICIES, Fifo, LeastLoaded, Priority
+from flock_of_pain.dist import const
+from flock_of_pain.events import Task
+from flock_of_pain.model import Resource, Step
+from flock_of_pain.scheduling import POLICIES, Fifo, LeastLoaded, Priority
 
 
 def task(id: str, queued_at: float) -> Task:

@@ -3,8 +3,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from math import ceil
 
-from workforce_twin.events import Event, EventKind, Reason
-from workforce_twin.model import Company
+from flock_of_pain.events import Event, EventKind, Reason
+from flock_of_pain.model import Company
 
 K = EventKind
 
