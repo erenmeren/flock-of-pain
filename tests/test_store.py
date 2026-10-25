@@ -74,3 +74,53 @@ def test_migrates_pre_tenant_database(tmp_path, monkeypatch):
     assert store.tenant_for_key("unset") is None  # no key until rotated
     assert store.new_key("default").startswith("fop_")
     store.save_company("default", bundle())  # schema works after migration
+
+
+def test_failed_migration_keeps_old_tables_and_retries(tmp_path, monkeypatch):
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+        CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT NOT NULL, bundle TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE runs (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id TEXT, name TEXT NOT NULL,
+            request TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL);
+        INSERT INTO companies VALUES ('acme', 'Acme', '{}', '2026-01-01T00:00:00+00:00');
+        CREATE TABLE runs_v1 (x);  -- makes the second ALTER fail midway
+    """)
+    con.commit(); con.close()
+    monkeypatch.setenv("FLOCK_DB", str(path))
+    with pytest.raises(sqlite3.OperationalError):
+        store.list_tenants()
+    con = sqlite3.connect(path)
+    names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert names == {"companies", "runs", "runs_v1", "sqlite_sequence"}  # rolled back, nothing renamed
+    assert con.execute("SELECT count(*) FROM companies").fetchone()[0] == 1
+    con.execute("DROP TABLE runs_v1"); con.commit(); con.close()
+    assert store.get_company("default", "acme") == {}  # the next open migrates
+
+
+def test_concurrent_opens_migrate_once(tmp_path, monkeypatch):
+    import threading
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+        CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT NOT NULL, bundle TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE runs (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id TEXT, name TEXT NOT NULL,
+            request TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL);
+        INSERT INTO companies VALUES ('acme', 'Acme', '{}', '2026-01-01T00:00:00+00:00');
+    """)
+    con.commit(); con.close()
+    monkeypatch.setenv("FLOCK_DB", str(path))
+    errors, start = [], threading.Barrier(8)
+
+    def go():
+        try:
+            start.wait()
+            store.list_companies("default")
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    assert errors == []
+    assert [c["id"] for c in store.list_companies("default")] == ["acme"]

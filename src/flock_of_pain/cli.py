@@ -36,7 +36,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "tenant":
         from flock_of_pain import store
         if args.tenant_command == "create":
-            print(store.create_tenant(args.id, args.name or args.id))
+            import re
+            import sqlite3
+            if not re.fullmatch(r"[\w.-]+", args.id):
+                print("error: tenant id: use letters, digits, '_', '.' or '-'", file=sys.stderr)
+                return 1
+            try:
+                print(store.create_tenant(args.id, args.name or args.id))
+            except sqlite3.IntegrityError:
+                print(f"error: tenant {args.id!r} exists", file=sys.stderr)
+                return 1
         elif args.tenant_command == "rotate":
             key = store.new_key(args.id)
             if key is None:

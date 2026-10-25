@@ -54,7 +54,9 @@ export default function Home() {
 
   function changeKey(k: string) {
     setApiKey(k);
-    if (k) refreshLists(false);
+    setSaved([]); // the previous tenant's lists must not linger
+    setRuns([]);
+    setSelected("");
   }
 
   function refreshLists(report = true) {
@@ -168,7 +170,8 @@ export default function Home() {
       <div className="flex flex-col gap-4">
         <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the JSON below" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         <Button variant="outline" onClick={gen} disabled={busy || !prompt.trim()}>Generate</Button>
-        <Input ref={keyRef} type="password" aria-label="api key" placeholder="tenant API key (flock_of_pain tenant create)" onChange={(e) => changeKey(e.target.value)} />
+        <Input ref={keyRef} type="password" aria-label="api key" placeholder="tenant API key (flock_of_pain tenant create)"
+          onChange={(e) => changeKey(e.target.value)} onBlur={(e) => e.target.value && refreshLists()} />
         <div className="flex flex-wrap items-center gap-2">
           <Select value={selected} items={Object.fromEntries(saved.map((c) => [c.id, c.name]))} onValueChange={(v) => setSelected(v ?? "")}>
             <SelectTrigger aria-label="saved company" className="w-48"><SelectValue placeholder="saved companies" /></SelectTrigger>

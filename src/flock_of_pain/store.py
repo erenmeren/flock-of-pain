@@ -24,30 +24,44 @@ CREATE INDEX IF NOT EXISTS runs_tenant ON runs (tenant_id, id);
 """
 
 
+MIGRATION_V1 = [  # pre-tenant databases (one user): rows move to the tenant 'default'; its key is set with new_key()
+    "ALTER TABLE companies RENAME TO companies_v1",
+    "ALTER TABLE runs RENAME TO runs_v1",
+    *[stmt.strip() for stmt in SCHEMA.split(";") if stmt.strip()],
+    "INSERT INTO companies SELECT 'default', id, name, bundle, updated_at FROM companies_v1",
+    "INSERT INTO runs (id, tenant_id, company_id, name, request, result, created_at) "
+    "SELECT id, 'default', company_id, name, request, result, created_at FROM runs_v1",
+    "INSERT OR IGNORE INTO tenants VALUES ('default', 'default', 'unset', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'))",
+    "DROP TABLE companies_v1",
+    "DROP TABLE runs_v1",
+]
+
+
+def _needs_v1(con: sqlite3.Connection) -> bool:
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(companies)")}
+    return bool(cols) and "tenant_id" not in cols
+
+
 def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(os.environ.get("FLOCK_DB", "flock.db"))
     con.row_factory = sqlite3.Row
-    _migrate(con)
+    if _needs_v1(con):
+        _migrate(con)
     con.executescript(SCHEMA)
     return con
 
 
 def _migrate(con: sqlite3.Connection) -> None:
-    """Pre-tenant databases (one user) move their rows to the tenant 'default'; a key must then be set with new_key()."""
-    cols = {r["name"] for r in con.execute("PRAGMA table_info(companies)")}
-    if not cols or "tenant_id" in cols:
-        return
-    with con:
-        con.executescript("""
-            ALTER TABLE companies RENAME TO companies_v1;
-            ALTER TABLE runs RENAME TO runs_v1;
-        """ + SCHEMA + """
-            INSERT INTO companies SELECT 'default', id, name, bundle, updated_at FROM companies_v1;
-            INSERT INTO runs (id, tenant_id, company_id, name, request, result, created_at)
-                SELECT id, 'default', company_id, name, request, result, created_at FROM runs_v1;
-            INSERT OR IGNORE INTO tenants VALUES ('default', 'default', 'unset', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'));
-            DROP TABLE companies_v1; DROP TABLE runs_v1;
-        """)
+    """One transaction under a write lock, so a failure keeps the old tables and concurrent openers wait, then skip."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        if _needs_v1(con):  # re-check under the lock: another connection may have migrated meanwhile
+            for stmt in MIGRATION_V1:
+                con.execute(stmt)
+        con.execute("COMMIT")
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
 
 
 def _now() -> str:

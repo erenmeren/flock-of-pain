@@ -39,4 +39,6 @@ def test_tenant_commands(tmp_path, capsys, monkeypatch):
     key2 = capsys.readouterr().out.strip()
     assert key2 != key and store.tenant_for_key(key2) == "acme" and store.tenant_for_key(key) is None
     assert main(["tenant", "rotate", "ghost"]) == 1 and "no tenant" in capsys.readouterr().err
+    assert main(["tenant", "create", "acme"]) == 1 and "exists" in capsys.readouterr().err
+    assert main(["tenant", "create", "bad id"]) == 1 and "tenant id" in capsys.readouterr().err
     assert main(["tenant", "list"]) == 0 and capsys.readouterr().out.startswith("acme | Acme Inc | ")
