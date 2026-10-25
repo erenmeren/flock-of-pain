@@ -44,13 +44,15 @@ export function parseCompany(text: string): Company {
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
   if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(isObj)))
     throw new Error("workflows must be a list of objects with steps");
-  if (out.outages !== undefined && !Array.isArray(out.outages)) throw new Error("outages must be a list");
+  if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
+    throw new Error("outages must be a list of [system_id, start, end]");
   for (const d of out.departments) {
     if (!isObj(d) || !Array.isArray(d.resources)) throw new Error("each department needs a resources list");
     for (const r of d.resources) {
       if (!isObj(r) || !Array.isArray(r.skills)) throw new Error("each resource needs a skills list");
-      if (r.schedule != null && (!isObj(r.schedule) || !isObj(r.schedule.weekday_hours)))
-        throw new Error("schedule needs weekday_hours");
+      if (r.schedule != null && (!isObj(r.schedule) || !isObj(r.schedule.weekday_hours)
+          || !Object.values(r.schedule.weekday_hours).every((h) => Array.isArray(h) && h.length === 2)))
+        throw new Error("schedule needs weekday_hours of [start, end] pairs");
     }
   }
   return out;
