@@ -13,7 +13,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { CompanyEditor } from "@/components/company-editor";
 import { Playback } from "@/components/playback";
-import { type ApiError, type SimulateResponse, generate, getExample, simulate } from "@/lib/api";
+import {
+  type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
+  deleteCompany, generate, getExample, getRun, listCompanies, listRuns, loadCompany, saveCompany, simulate,
+} from "@/lib/api";
 import { type Company, parseCompany } from "@/lib/company";
 
 const POLICIES = ["priority", "fifo", "least_loaded"];
@@ -28,6 +31,10 @@ export default function Home() {
   const [reps, setReps] = useState("5");
   const [policy, setPolicy] = useState("priority");
   const [withEvents, setWithEvents] = useState(false);
+  const [saveRun, setSaveRun] = useState(false);
+  const [saved, setSaved] = useState<CompanyMeta[]>([]);
+  const [selected, setSelected] = useState("");
+  const [runs, setRuns] = useState<RunMeta[]>([]);
   const [result, setResult] = useState<SimulateResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,7 +46,50 @@ export default function Home() {
         setScenarios(JSON.stringify(x.scenarios, null, 2));
       })
       .catch(setError);
+    refreshLists();
   }, []);
+
+  function refreshLists() {
+    listCompanies().then(setSaved).catch(() => {}); // the example load already reports an unreachable API
+    listRuns().then(setRuns).catch(() => {});
+  }
+
+  function bundle() {
+    return { company: JSON.parse(company), scenarios: JSON.parse(scenarios) as unknown[] };
+  }
+
+  async function act(fn: () => Promise<void>) {
+    setError(null);
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof SyntaxError ? { path: null, message: `Invalid JSON: ${e.message}` } : (e as ApiError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const save = () => act(async () => {
+    const b = bundle();
+    await saveCompany((b.company as Company).id, b);
+    setSelected((b.company as Company).id);
+    refreshLists();
+  });
+  const load = () => act(async () => {
+    const b = await loadCompany(selected);
+    setBoth(b.company as Company);
+    setScenarios(JSON.stringify(b.scenarios, null, 2));
+    setResult(null);
+  });
+  const remove = () => act(async () => {
+    await deleteCompany(selected);
+    setSelected("");
+    refreshLists();
+  });
+  const showRun = (id: number) => act(async () => {
+    setResult((await getRun(id)).result);
+  });
 
   function setBoth(c: Company) {
     setCompanyObj(c);
@@ -79,6 +129,8 @@ export default function Home() {
         scenarios: JSON.parse(scenarios),
         config: { seed: Number(seed), days: Number(days), replications: Number(reps), policy },
         include_events: withEvents,
+        save: saveRun,
+        company_id: saved.some((c) => c.id === companyObj?.id) ? companyObj?.id : null,
       };
     } catch (e) {
       setError({ path: null, message: `Invalid JSON: ${(e as Error).message}` });
@@ -87,6 +139,7 @@ export default function Home() {
     setBusy(true);
     try {
       setResult(await simulate(body));
+      if (saveRun) refreshLists();
     } catch (e) {
       setError(e as ApiError);
     } finally {
@@ -103,6 +156,15 @@ export default function Home() {
       <div className="flex flex-col gap-4">
         <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the JSON below" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         <Button variant="outline" onClick={gen} disabled={busy || !prompt.trim()}>Generate</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={selected} items={Object.fromEntries(saved.map((c) => [c.id, c.name]))} onValueChange={(v) => setSelected(v ?? "")}>
+            <SelectTrigger aria-label="saved company" className="w-48"><SelectValue placeholder="saved companies" /></SelectTrigger>
+            <SelectContent>{saved.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={load} disabled={busy || !selected}>Load</Button>
+          <Button variant="outline" size="sm" onClick={remove} disabled={busy || !selected}>Delete</Button>
+          <Button variant="outline" size="sm" onClick={save} disabled={busy}>Save company</Button>
+        </div>
         <Tabs defaultValue="editor">
           <TabsList>
             <TabsTrigger value="editor">Editor</TabsTrigger>
@@ -136,6 +198,10 @@ export default function Home() {
           <Checkbox aria-label="include events" checked={withEvents} onCheckedChange={(c) => setWithEvents(!!c)} />
           Include events for playback (at most 30 run-days: days x reps x scenarios)
         </Label>
+        <Label className="flex items-center gap-2 text-sm">
+          <Checkbox aria-label="save run" checked={saveRun} onCheckedChange={(c) => setSaveRun(!!c)} />
+          Save the result to run history (without events)
+        </Label>
         <Button onClick={run} disabled={busy}>Run</Button>
       </div>
       <div className="flex flex-col gap-4">
@@ -144,6 +210,27 @@ export default function Home() {
             <AlertTitle>{error.path ?? "Error"}</AlertTitle>
             <AlertDescription>{error.message}</AlertDescription>
           </Alert>
+        )}
+        {runs.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle>Run history</CardTitle></CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow><TableHead>#</TableHead><TableHead>Name</TableHead><TableHead>Company</TableHead><TableHead>When (UTC)</TableHead><TableHead /></TableRow>
+                </TableHeader>
+                <TableBody>
+                  {runs.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>{r.id}</TableCell><TableCell>{r.name}</TableCell><TableCell>{r.company_id ?? ""}</TableCell>
+                      <TableCell>{r.created_at.replace("T", " ").replace("+00:00", "")}</TableCell>
+                      <TableCell><Button variant="ghost" size="sm" aria-label={`show run ${r.id}`} onClick={() => showRun(r.id)} disabled={busy}>Show</Button></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
         {result && (
           <>

@@ -32,22 +32,20 @@ export type SimulateResponse = {
   disclaimer: string;
   kpi_keys: string[];
   scenarios: ScenarioResult[];
+  run_id?: number; // present when the request asked to save
 };
+export type Bundle = { company: unknown; scenarios: unknown[] };
+export type CompanyMeta = { id: string; name: string; updated_at: string };
+export type RunMeta = { id: number; company_id: string | null; name: string; created_at: string };
 export type ApiError = { path: string | null; message: string };
 
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export async function getExample(): Promise<{ company: unknown; scenarios: unknown[] }> {
-  const res = await fetch(`${API}/example`);
-  if (!res.ok) throw { path: null, message: `GET /example failed: ${res.status}` } as ApiError;
-  return res.json();
-}
-
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.ok) return res.json();
   const j = await res.json().catch(() => null);
@@ -55,14 +53,19 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   if (j && typeof j.message === "string") throw j as ApiError;
   throw {
     path: null,
-    message: j?.detail ? JSON.stringify(j.detail) : `POST ${path} failed: ${res.status}`,
+    message: j?.detail ? JSON.stringify(j.detail) : `${method} ${path} failed: ${res.status}`,
   } as ApiError;
 }
 
-export function simulate(body: unknown): Promise<SimulateResponse> {
-  return post("/simulate", body);
-}
+export const getExample = () => request<Bundle>("GET", "/example");
+export const simulate = (body: unknown) => request<SimulateResponse>("POST", "/simulate", body);
+export const generate = (prompt: string) => request<Bundle>("POST", "/generate", { prompt });
 
-export function generate(prompt: string): Promise<{ company: unknown; scenarios: unknown[] }> {
-  return post("/generate", { prompt });
-}
+const enc = encodeURIComponent;
+export const listCompanies = () => request<CompanyMeta[]>("GET", "/companies");
+export const saveCompany = (id: string, bundle: Bundle) => request<CompanyMeta>("PUT", `/companies/${enc(id)}`, bundle);
+export const loadCompany = (id: string) => request<Bundle>("GET", `/companies/${enc(id)}`);
+export const deleteCompany = (id: string) => request<{ deleted: string }>("DELETE", `/companies/${enc(id)}`);
+export const listRuns = (companyId?: string | null) =>
+  request<RunMeta[]>("GET", `/runs?limit=20${companyId ? `&company_id=${enc(companyId)}` : ""}`);
+export const getRun = (id: number) => request<{ request: Bundle & { config: unknown }; result: SimulateResponse }>("GET", `/runs/${id}`);
