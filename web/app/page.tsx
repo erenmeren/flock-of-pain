@@ -1,124 +1,134 @@
 "use client";
 
-import { Delta, KPI_LABEL, MiniBars, NoResult, Panel, fmtKpi, sourceLabel } from "@/components/dashboard/kpi";
-import { PageHeader, StatCard, fmt } from "@/components/page";
-import { Card, CardContent } from "@/components/ui/card";
-import { StepChain, cycleMean } from "@/components/process/step-chain";
-import { headcount } from "@/lib/company";
+import Link from "next/link";
+import { Activity, FlaskConical, Gauge as GaugeIcon, HeartPulse, Loader2, Network, Play, Sparkles, Timer, Workflow } from "lucide-react";
+import { cn } from "cn";
+import { Delta, KPI_LABEL, Panel, direction, fmtKpi, sourceLabel } from "@/components/dashboard/kpi";
+import { FlowStrip } from "@/components/dashboard/flow";
+import { Gauge } from "@/components/dashboard/health";
+import { healthScores } from "@/components/dashboard/derive";
+import { OrgMap } from "@/components/dashboard/org-map";
+import { StatCard } from "@/components/page";
+import { buttonVariants } from "@/components/ui/button";
+import { accent } from "@/components/org/parts";
 import { useTwin } from "@/lib/store";
 
-const ACCENTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
-const RESULT_TILES = ["throughput_per_day", "cycle_p50", "mean_dept_utilization", "sla_breach_rate"];
+const TILES = [["throughput_per_day", Activity], ["cycle_p50", Timer], ["mean_dept_utilization", GaugeIcon]] as const;
 const WHAT_IF = ["throughput_per_day", "cycle_p50", "labor_cost", "sla_breach_rate"];
 
 export default function Overview() {
-  const { company, scenarios, result, resultSource, run, busy } = useTwin();
+  const { company, scenarios, config, result, resultSource, run, busy } = useTwin();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const wf = company.workflows[0];
   // a result from another company (or from history) must not sit under this company's name
-  const own = resultSource?.kind === "run" && resultSource.company_id === company.id;
-  const base = own ? result?.scenarios[0] : undefined;
+  const own = result && resultSource?.kind === "run" && resultSource.company_id === company.id;
+  const base = own ? result.scenarios[0] : undefined;
+  const others = own ? result.scenarios.slice(1) : [];
+  const health = healthScores(base?.summary);
+  // the what-if card shows the scenario that moves throughput the most
+  const spotlight = base && others.length ? others.reduce((a, b) => (Math.abs((b.summary.throughput_per_day?.mean ?? 0) - (base.summary.throughput_per_day?.mean ?? 0)) > Math.abs((a.summary.throughput_per_day?.mean ?? 0) - (base.summary.throughput_per_day?.mean ?? 0)) ? b : a)) : undefined;
+  const runDays = config.days * config.replications * scenarios.length;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="Overview" subtitle={company.name} />
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="Departments" value={company.departments.length} />
-        <StatCard label="Headcount" value={headcount(company)} />
-        <StatCard label="Workflows" value={company.workflows.length} />
-        <StatCard label="Systems" value={company.systems.length} />
-        <StatCard label="Scenarios" value={scenarios.length} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Organization System" href="/organization" className="lg:col-span-2">
-          <div className="relative">
-            <div className="absolute inset-x-4 top-1/2 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" aria-hidden />
-            <div className="relative grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-              {company.departments.map((d, i) => {
-                const pools = d.resources.filter((r) => r.headcount !== undefined).length;
-                return (
-                  <div key={d.id} className="rounded-xl border border-border bg-card p-3 shadow-[0_0_20px_-12px_var(--accent-color)]"
-                    style={{ "--accent-color": ACCENTS[i % ACCENTS.length], borderTopColor: ACCENTS[i % ACCENTS.length] } as React.CSSProperties}>
-                    <div className="flex items-center gap-2">
-                      <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-                      <span className="truncate text-sm font-medium" title={d.id}>{d.name}</span>
-                    </div>
-                    <p className="mt-2 text-2xl font-semibold tabular-nums">{headcount({ ...company, departments: [d] })}</p>
-                    <p className="text-xs text-muted-foreground">{pools} pools · {d.resources.length - pools} people</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Panel>
-
-        <Panel title="Active Scenarios" href="/scenarios">
-          <ul className="flex flex-col gap-2">
-            {scenarios.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
-                <span className="truncate">{s.name}</span>
-                <span className={s.overlays.length ? "rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary" : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"}>
-                  {s.overlays.length ? `${s.overlays.length} change${s.overlays.length === 1 ? "" : "s"}` : "baseline"}
-                </span>
-              </li>
-            ))}
-            {scenarios.length === 0 && <li className="text-sm text-muted-foreground">No scenarios.</li>}
-          </ul>
-        </Panel>
-      </div>
-
-      <Panel title={wf ? `Process Flow: ${wf.name}` : "Process Flow"} href="/processes">
-        {wf ? (
-          <div className="flex flex-col gap-3">
-            <StepChain wf={wf} company={company} />
-            <p className="text-xs text-muted-foreground">Total mean step time: <span className="tabular-nums text-foreground">{fmt(cycleMean(wf), 0)} min</span> (sum of step means, excluding waits)</p>
-          </div>
-        ) : <p className="text-sm text-muted-foreground">No workflows.</p>}
+    <div className="grid gap-4 lg:grid-cols-12">
+      <Panel icon={Network} title="Organization System" subtitle="Inflows, departments, systems and hand-offs" href="/organization" linkLabel="View details" className="lg:col-span-7" contentClassName="flex flex-1 flex-col justify-center">
+        <OrgMap company={company} />
       </Panel>
 
-      {result && base ? (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground">{sourceLabel(resultSource)} · baseline: {base.name}</p>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {RESULT_TILES.map((k) => (
-              <Card key={k} size="sm" className="bg-[radial-gradient(circle_at_top_left,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_60%)]">
-                <CardContent className="flex items-end justify-between gap-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">{KPI_LABEL[k]}</span>
-                    <span className="text-2xl font-semibold tabular-nums">{fmtKpi(k, base.summary[k]?.mean)}</span>
-                  </div>
-                  <MiniBars values={result.scenarios.map((s) => s.summary[k]?.mean ?? 0)} />
-                </CardContent>
-              </Card>
-            ))}
+      <div className="flex flex-col gap-4 lg:col-span-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Panel icon={HeartPulse} title="Organization Health" subtitle={base ? `Baseline · ${base.name}` : "Run to score"} contentClassName="flex flex-col gap-3">
+            <Gauge score={health?.total ?? null} label={health?.label ?? "no result"} />
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+              {(health?.parts ?? [{ label: "Delivery" }, { label: "SLA" }, { label: "Quality" }, { label: "Balance" }]).map((p) => (
+                <li key={p.label} className="flex items-center gap-2" title={"hint" in p ? p.hint : undefined}>
+                  <span className={cn("size-1.5 rounded-full", "score" in p ? (p.score >= 80 ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : p.score >= 60 ? "bg-amber-400" : "bg-rose-400") : "bg-muted-foreground/40")} />
+                  <span className="text-muted-foreground">{p.label}</span>
+                  <span className="ml-auto tabular-nums">{"score" in p ? Math.round(p.score) : "–"}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+
+          <Panel icon={FlaskConical} title="Active Scenarios" href="/scenarios" linkLabel="All" contentClassName="flex flex-col gap-3">
+            <span className="text-4xl font-semibold tabular-nums leading-none tracking-tight">{scenarios.length}</span>
+            <ul className="flex flex-col gap-1.5">
+              {scenarios.slice(0, 5).map((s, i) => (
+                <li key={s.id} className="glass-inset flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: accent(i), boxShadow: `0 0 6px ${accent(i)}` }} />
+                  <span className="truncate" title={s.id}>{s.name}</span>
+                  <span className={cn("ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px]", s.overlays.length ? "bg-primary/15 text-primary" : "bg-emerald-400/15 text-emerald-400")}>
+                    {s.overlays.length ? `${s.overlays.length} change${s.overlays.length === 1 ? "" : "s"}` : "baseline"}
+                  </span>
+                </li>
+              ))}
+              {scenarios.length > 5 && <li className="px-1 text-[11px] text-muted-foreground">+{scenarios.length - 5} more</li>}
+              {!scenarios.length && <li className="text-xs text-muted-foreground">No scenarios.</li>}
+            </ul>
+          </Panel>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {TILES.map(([k, icon]) => {
+            const vals = own ? result.scenarios.map((s) => s.summary[k]?.mean ?? 0) : undefined;
+            const best = vals && vals.length > 1 ? (direction(k) > 0 ? Math.max : Math.min)(...vals.slice(1)) : undefined;
+            return <StatCard key={k} icon={icon} label={KPI_LABEL[k]} value={fmtKpi(k, base?.summary[k]?.mean)} bars={vals}
+              hint={best !== undefined ? <span className="tabular-nums">→ {fmtKpi(k, best)} best scenario</span> : base ? "baseline" : "no result yet"} />;
+          })}
+        </div>
+      </div>
+
+      <Panel icon={Workflow} title={wf ? wf.name : "Process Flow"} subtitle={wf ? `Process flow · ${wf.steps.length} steps` : "No workflows"} href={wf ? `/processes/${encodeURIComponent(wf.id)}` : "/processes"} linkLabel="View details" className="lg:col-span-7">
+        {wf ? <FlowStrip wf={wf} company={company} base={base} /> : <p className="text-sm text-muted-foreground">No workflows.</p>}
+      </Panel>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:col-span-5">
+        <Panel icon={Play} title={<span className="flex items-center gap-2"><span className={cn("size-2 rounded-full", busy ? "bg-rose-500 shadow-[0_0_10px_#f43f5e] animate-pulse" : "bg-rose-500/70")} />Simulation Controls</span>}
+          subtitle={own ? sourceLabel(resultSource) : "No result yet"} contentClassName="flex flex-col gap-4">
+          <dl className="grid grid-cols-2 gap-2 text-xs">
+            <Row k="Horizon" v={`${config.days} days × ${config.replications} reps`} />
+            <Row k="Scenarios" v={scenarios.length} />
+            <Row k="Policy" v={config.policy} />
+            <Row k="Run-days" v={<span className={cn(config.include_events && runDays > 30 && "text-rose-400")}>{runDays}{config.include_events ? " / 30" : ""}</span>} />
+          </dl>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={run} disabled={busy} aria-label="run simulation"
+              className="press glow-primary flex size-14 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,color-mix(in_oklch,var(--primary),white_14%),var(--primary))] text-primary-foreground disabled:opacity-60">
+              {busy ? <Loader2 className="size-6 animate-spin" /> : <Play className="size-6 fill-current" />}
+            </button>
+            <span className="flex flex-col text-xs">
+              <span className="font-medium">{busy ? "Simulating…" : "Run simulation"}</span>
+              <Link href="/simulation" className="text-muted-foreground underline-offset-4 hover:underline">Playback and ledgers</Link>
+            </span>
           </div>
-          {result.scenarios.length > 1 && (
-            <Panel title="What-If Scenarios" href="/analysis" linkLabel="Analysis">
-              <div className="flex flex-col divide-y divide-border">
-                {result.scenarios.slice(1).map((s) => (
-                  <div key={s.id} className="grid grid-cols-2 gap-2 py-2 text-sm md:grid-cols-5">
-                    <span className="col-span-2 font-medium md:col-span-1">{s.name}</span>
-                    {WHAT_IF.map((k) => (
-                      <span key={k} className="flex flex-col">
-                        <span className="text-xs text-muted-foreground">{KPI_LABEL[k]}</span>
-                        <Delta k={k} value={s.summary[k]?.mean} base={base.summary[k]?.mean} />
-                      </span>
-                    ))}
-                  </div>
+        </Panel>
+
+        <Panel icon={Sparkles} title="What-If Scenario" subtitle={spotlight ? spotlight.name : others.length || scenarios.length > 1 ? "Run to see the impact" : "Add a scenario to compare"} contentClassName="flex flex-col gap-3">
+          {spotlight && base ? (
+            <>
+              <ul className="flex flex-col divide-y divide-white/[0.06]">
+                {WHAT_IF.map((k) => (
+                  <li key={k} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                    <span className="text-muted-foreground">{KPI_LABEL[k]}</span>
+                    <Delta k={k} value={spotlight.summary[k]?.mean} base={base.summary[k]?.mean} />
+                  </li>
                 ))}
+              </ul>
+              <div className="flex gap-2">
+                <Link href="/analysis" className={buttonVariants({ variant: "outline", size: "sm", className: "flex-1 rounded-full" })}>Compare</Link>
+                <Link href="/scenarios" className={buttonVariants({ variant: "outline", size: "sm", className: "flex-1 rounded-full" })}>Edit</Link>
               </div>
-            </Panel>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">{scenarios.length > 1 ? `${scenarios.length - 1} what-if scenario${scenarios.length > 2 ? "s" : ""} waiting for a run.` : "Scenarios overlay changes on the base company: more demand, an outage, an extra hire."}</p>
           )}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {result && resultSource && <p className="text-xs text-muted-foreground">Last result belongs to {resultSource.name}.</p>}
-          <NoResult run={run} busy={busy} />
-        </div>
-      )}
+        </Panel>
+      </div>
     </div>
   );
 }
+
+const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
+  <div className="glass-inset flex flex-col rounded-lg px-2.5 py-1.5"><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</dt><dd className="tabular-nums">{v}</dd></div>
+);

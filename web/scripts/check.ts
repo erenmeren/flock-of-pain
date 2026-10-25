@@ -1,6 +1,7 @@
 // Assert-based checks for the pure Company/Scenario edits: `npm test`.
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
+import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
 import { type Company, type Scenario, checkScenarios, headcount, renameInScenarios } from "@/lib/company";
 
 const sched = { weekday_hours: { "0": [9, 17] as [number, number] } };
@@ -56,3 +57,16 @@ assert.throws(() => checkScenarios([{ id: "s", name: "s", overlays: [{ type: "ab
 assert.equal(checkScenarios(sc), sc);
 
 console.log("ok");
+
+// overview derived numbers
+const stat = (mean: number) => ({ mean, p10: mean, p50: mean, p90: mean });
+const h = healthScores({ completion_rate: stat(1), sla_breach_rate: stat(0), rework_rate: stat(0), mean_dept_utilization: stat(0.75) })!;
+assert.equal(h.total, 100); assert.equal(h.label, "Healthy");
+assert.equal(healthScores({ completion_rate: stat(0.5), sla_breach_rate: stat(0.5), rework_rate: stat(0.5), mean_dept_utilization: stat(0.35) })!.total, 38);
+assert.equal(healthScores({ completion_rate: stat(1) }), null); // partial summary (old saved run) scores nothing
+assert.equal(minutes(95), "95 min"); assert.equal(minutes(135), "2.3 h"); assert.equal(minutes(null), "–");
+const step = (id: string, department_id: string, system_id?: string) => ({ id, name: id, department_id, required_skill: "s", duration: { kind: "const", a: 1 }, system_id });
+const wf = { id: "w", name: "w", arrival: { rate_per_hour: 1, window: sched }, steps: [step("1", "a"), step("2", "a", "erp"), step("3", "b"), step("4", "a")] };
+assert.equal(handoffs(wf), 2);
+const edges = mapEdges({ ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [wf] });
+assert.deepEqual(edges.map((e) => `${e.from}>${e.to}:${e.n}`), ["w:w>d:a:1", "d:a>d:b:1", "d:b>d:a:1", "d:a>s:erp:1"]);
