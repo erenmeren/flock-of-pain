@@ -45,19 +45,19 @@ export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedul
     onChange({ ...schedule, weekday_hours: Object.fromEntries(keys.sort().map((k) => [k, [s, e] as [number, number]])) });
   };
   return (
-    <div className="flex flex-col gap-1 text-xs">
-      <div className="flex gap-2">
+    <div className="flex flex-col gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex gap-1.5">
         {DAYS.map((name, d) => (
-          <Label key={d} className="flex items-center gap-1">
+          <Label key={d} className="flex items-center gap-1 text-[11px] font-normal">
             <Checkbox aria-label={`${name} for ${id}`} checked={days.includes(String(d))}
               onCheckedChange={(c) => rebuild(c ? [...days, String(d)] : days.filter((k) => k !== String(d)), start, end)} /> {name}
           </Label>
         ))}
       </div>
       <div className="flex items-center gap-1">
-        <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`shift start hour of ${id}`} className="w-16" defaultValue={start} onBlur={(e) => rebuild(days, Number(e.target.value), end)} />
+        <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`shift start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => rebuild(days, Number(e.target.value), end)} />
         to
-        <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`shift end hour of ${id}`} className="w-16" defaultValue={end} onBlur={(e) => rebuild(days, start, Number(e.target.value))} />
+        <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`shift end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => rebuild(days, start, Number(e.target.value))} />
         h (overnight: end past 24)
       </div>
     </div>

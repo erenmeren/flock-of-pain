@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Server } from "lucide-react";
+import { IconTile } from "@/components/page";
 import { PageHeader } from "@/components/page";
 import { IdInput, uniqueId } from "@/components/editor-fields";
-import { Loading, OrgNav, StatusDot, TableCard } from "@/components/org/parts";
+import { INLINE_INPUT, Loading, OrgNav, Pill, StatusDot, TableCard } from "@/components/org/parts";
 import { stepsIn } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,10 +30,11 @@ export default function SystemsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Systems" subtitle={`${company.systems.length} systems`} />
       <OrgNav />
-      <TableCard title="Systems" action={<Button size="sm" onClick={add}><Plus /> Add system</Button>}>
+      <TableCard title="Systems" subtitle="Tools steps depend on; outages block them" icon={Server}
+        action={<Button variant="outline" size="sm" className="rounded-full" onClick={add}><Plus /> Add system</Button>}>
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Id</TableHead><TableHead>Name</TableHead><TableHead>Used by</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>System</TableHead><TableHead className="text-right">Used by</TableHead><TableHead /></TableRow>
           </TableHeader>
           <TableBody>
             {company.systems.map((s, i) => {
@@ -42,12 +44,19 @@ export default function SystemsPage() {
               const scen = inScenarios.has(s.id);
               return (
                 <TableRow key={i}>
-                  <TableCell><IdInput aria-label={`system id ${s.id}`} className="w-40" value={s.id} onCommit={(id) => setSystem(i, { id })} /></TableCell>
-                  <TableCell><Input aria-label={`system name ${s.id}`} className="w-56" value={s.name} onChange={(e) => setSystem(i, { name: e.target.value })} /></TableCell>
                   <TableCell>
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                    <div className="flex items-center gap-3">
+                      <IconTile icon={Server} color="var(--chart-5)" />
+                      <div className="flex flex-col gap-0.5">
+                        <Input aria-label={`system name ${s.id}`} className={`w-56 font-medium ${INLINE_INPUT}`} value={s.name} onChange={(e) => setSystem(i, { name: e.target.value })} />
+                        <IdInput aria-label={`system id ${s.id}`} className={`h-6! w-56 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={s.id} onCommit={(id) => setSystem(i, { id })} />
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className="inline-flex items-center gap-2">
                       <StatusDot ok={used} title={used ? "in use" : "unused"} />
-                      {nSteps} step{nSteps === 1 ? "" : "s"}, {nOutages} outage{nOutages === 1 ? "" : "s"}
+                      <Pill tone={used ? "primary" : "muted"}>{nSteps} step{nSteps === 1 ? "" : "s"}, {nOutages} outage{nOutages === 1 ? "" : "s"}</Pill>
                     </span>
                   </TableCell>
                   <TableCell className="text-right">

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Workflow as WorkflowIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader, fmt } from "@/components/page";
 import { WorkflowCard } from "@/components/workflow-editor";
 import { StepChain, cycleMean, windowSummary } from "@/components/process/step-chain";
@@ -18,11 +18,11 @@ export function WorkflowPage() {
   const router = useRouter();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
-  const back = <Button variant="ghost" size="sm" render={<Link href="/processes" />} nativeButton={false}><ArrowLeft className="size-4" /> Processes</Button>;
+  const back = <Button variant="outline" size="sm" className="rounded-full" render={<Link href="/processes" />} nativeButton={false}><ArrowLeft className="size-4" /> Processes</Button>;
   const i = company.workflows.findIndex((w) => w.id === id);
   if (i < 0) return (
-    <div className="flex flex-col items-start gap-2">
-      <p className="text-sm">Unknown workflow <span className="font-mono">{id}</span>.</p>
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-10">
+      <p className="text-sm text-muted-foreground">Unknown workflow <span className="font-mono">{id}</span>.</p>
       {back}
     </div>
   );
@@ -45,7 +45,7 @@ export function WorkflowPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(wf.arrival.rate_per_hour, 2)}/h · ${windowSummary(wf.arrival.window)} · mean cycle ${fmt(cycleMean(wf))} min`}>{back}</PageHeader>
-      <Card><CardContent><StepChain wf={wf} company={company} /></CardContent></Card>
+      <Panel title="Process flow" subtitle={`${wf.steps.length} step${wf.steps.length === 1 ? "" : "s"} in list order`} icon={WorkflowIcon}><StepChain wf={wf} company={company} /></Panel>
       <WorkflowCard wf={wf} company={company} onChange={onChange} onRemove={onRemove} />
     </div>
   );

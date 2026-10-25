@@ -1,9 +1,9 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Building2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/page";
 import { IdInput, uniqueId } from "@/components/editor-fields";
-import { Loading, OrgNav, TableCard, accent } from "@/components/org/parts";
+import { DeptMark, INLINE_INPUT, Loading, OrgNav, TableCard } from "@/components/org/parts";
 import { deptHeadcount, isPool, removeDepartment, stepsIn } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,11 +29,12 @@ export default function DepartmentsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Departments" subtitle={`${company.departments.length} departments`} />
       <OrgNav />
-      <TableCard title="Departments" action={<Button size="sm" onClick={add}><Plus /> Add department</Button>}>
+      <TableCard title="Departments" subtitle="Teams that own workflow steps and staff" icon={Building2}
+        action={<Button variant="outline" size="sm" className="rounded-full" onClick={add}><Plus /> Add department</Button>}>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Id</TableHead><TableHead>Name</TableHead><TableHead className="text-right">Headcount</TableHead>
+              <TableHead>Department</TableHead><TableHead className="text-right">Headcount</TableHead>
               <TableHead className="text-right">Pools</TableHead><TableHead className="text-right">People</TableHead>
               <TableHead className="text-right">Workflow steps</TableHead><TableHead />
             </TableRow>
@@ -45,12 +46,14 @@ export default function DepartmentsPage() {
               return (
                 <TableRow key={i}>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="size-2.5 shrink-0 rounded-full" style={{ background: accent(i) }} />
-                      <IdInput aria-label={`department id ${d.id}`} className="w-36" value={d.id} onCommit={(id) => setDept(i, { ...d, id })} />
+                    <div className="flex items-center gap-3">
+                      <DeptMark index={i} size="size-8" />
+                      <div className="flex flex-col gap-0.5">
+                        <Input aria-label={`department name ${d.id}`} className={`w-52 font-medium ${INLINE_INPUT}`} value={d.name} onChange={(e) => setDept(i, { ...d, name: e.target.value })} />
+                        <IdInput aria-label={`department id ${d.id}`} className={`h-6! w-52 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={d.id} onCommit={(id) => setDept(i, { ...d, id })} />
+                      </div>
                     </div>
                   </TableCell>
-                  <TableCell><Input aria-label={`department name ${d.id}`} className="w-48" value={d.name} onChange={(e) => setDept(i, { ...d, name: e.target.value })} /></TableCell>
                   <TableCell className="text-right tabular-nums">{deptHeadcount(company, d)}</TableCell>
                   <TableCell className="text-right tabular-nums">{d.resources.filter(isPool).length}</TableCell>
                   <TableCell className="text-right tabular-nums">{d.resources.filter((r) => !isPool(r)).length}</TableCell>

@@ -20,17 +20,17 @@ export function minuteLabel(m: number): string {
 }
 
 /** Plain Select over {value: label}; base-ui may hand back null. */
-export function Pick({ label, value, items, onChange, className = "w-48" }: { label: string; value: string; items: Record<string, string>; onChange: (v: string) => void; className?: string }) {
+export function Pick({ label, value, items, onChange, className = "w-48", placeholder = "select…" }: { label: string; value: string; items: Record<string, string>; onChange: (v: string) => void; className?: string; placeholder?: string }) {
   return (
     <Select value={value || null} items={items} onValueChange={(v) => v !== null && onChange(v)}>
-      <SelectTrigger aria-label={label} className={className}><SelectValue placeholder="select…" /></SelectTrigger>
+      <SelectTrigger aria-label={label} className={className}><SelectValue placeholder={placeholder} /></SelectTrigger>
       <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
     </Select>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">{label}{children}</label>;
+  return <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-muted-foreground [&>*]:normal-case [&>*]:tracking-normal">{label}{children}</label>;
 }
 
 /** start < end in whole minutes; each box shows the weekday clock time it means. */
@@ -101,7 +101,7 @@ export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overla
         </Field>
         <Field label="Cost/h"><NumInput aria-label="new employee cost per hour" className="w-20" value={e.cost_per_hour} onCommit={(cost_per_hour) => setE({ ...e, cost_per_hour })} /></Field>
         <Field label="Speed"><NumInput aria-label="new employee speed factor" className="w-20" value={e.speed_factor ?? 1} lo={0.01} onCommit={(speed_factor) => setE({ ...e, speed_factor })} /></Field>
-        <div className="basis-full text-[11px] text-muted-foreground">Schedule
+        <div className="flex basis-full flex-col gap-1 text-[11px] uppercase tracking-wide text-muted-foreground [&>*]:normal-case [&>*]:tracking-normal">Schedule
           <ScheduleEditor id="new employee" schedule={e.schedule ?? weekdays9to5()} onChange={(schedule) => setE({ ...e, schedule })} />
         </div>
       </>;
@@ -126,10 +126,9 @@ export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overla
       break;
   }
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-muted/30 p-3 ring-1 ring-foreground/10">
+    <div className="rise flex flex-col gap-3 rounded-xl p-3 glass-inset">
       <div className="flex items-center gap-2">
-        <span className="size-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]" />
-        <span className="font-mono text-xs">{o.type}</span>
+        <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-xs text-primary">{o.type}</span>
         <Button variant="ghost" size="icon" className="ml-auto size-7" aria-label={`remove ${o.type} overlay`} onClick={onRemove}><Trash2 className="size-3.5" /></Button>
       </div>
       <div className="flex flex-wrap items-end gap-3">{body}</div>

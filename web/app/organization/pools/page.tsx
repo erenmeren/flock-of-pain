@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Boxes, Plus } from "lucide-react";
 import { PageHeader } from "@/components/page";
 import { IdInput, NumInput, ScheduleEditor, uniqueId } from "@/components/editor-fields";
-import { Loading, OrgNav, SkillsInput, TableCard, accent } from "@/components/org/parts";
+import { DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
 import { type Loc, addResource, allResources, isPool, membersOf, removeResource, setResource } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,22 +27,22 @@ export default function PoolsPage() {
   const action = company.departments.length ? (
     <>
       <Select value={company.departments[di].id} items={deptItems} onValueChange={(v) => v && setTarget(v)}>
-        <SelectTrigger aria-label="department for new pool" size="sm" className="w-40"><SelectValue /></SelectTrigger>
+        <SelectTrigger aria-label="department for new pool" size="sm" className="w-40 rounded-full"><SelectValue /></SelectTrigger>
         <SelectContent>{company.departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
       </Select>
-      <Button size="sm" onClick={add}><Plus /> Add pool</Button>
+      <Button variant="outline" size="sm" className="rounded-full" onClick={add}><Plus /> Add pool</Button>
     </>
   ) : undefined;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Pools" subtitle={`${pools.length} pools, ${pools.reduce((n, p) => n + (p.r.headcount ?? 0), 0)} heads`} />
       <OrgNav />
-      <TableCard title="Pools" action={action}>
+      <TableCard title="Pools" subtitle="Interchangeable staff sharing skills, cost and a schedule" icon={Boxes} action={action}>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Id</TableHead><TableHead>Department</TableHead><TableHead>Headcount</TableHead><TableHead className="text-right">Members</TableHead>
-              <TableHead>Skills (comma)</TableHead><TableHead>Cost/h</TableHead><TableHead>Schedule</TableHead><TableHead />
+              <TableHead>Pool</TableHead><TableHead className="text-right">Headcount</TableHead><TableHead className="text-right">Members</TableHead>
+              <TableHead>Skills (comma)</TableHead><TableHead className="text-right">Cost/h</TableHead><TableHead>Schedule</TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -57,18 +57,23 @@ export default function PoolsPage() {
               const d = company.departments[loc.di];
               return (
                 <TableRow key={`${loc.di}:${loc.ri}`}>
-                  <TableCell><IdInput aria-label={`id of ${r.id}`} className="w-32" value={r.id} onCommit={(id) => set({ ...r, id })} /></TableCell>
                   <TableCell>
-                    <span className="flex items-center gap-2"><span className="size-2 rounded-full" style={{ background: accent(loc.di) }} />{d.name}</span>
+                    <div className="flex items-center gap-3">
+                      <DeptMark index={loc.di} size="size-8" />
+                      <div className="flex flex-col gap-0.5">
+                        <IdInput aria-label={`id of ${r.id}`} className={`w-40 font-mono font-medium ${INLINE_INPUT}`} value={r.id} onCommit={(id) => set({ ...r, id })} />
+                        <span className="px-1.5 text-xs text-muted-foreground">{d.name}</span>
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell>
-                    <NumInput aria-label={`headcount of ${r.id}`} className="w-20" lo={members} value={r.headcount ?? 0}
+                  <TableCell className="text-right">
+                    <NumInput aria-label={`headcount of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={members} value={r.headcount ?? 0}
                       title={members ? `at least ${members}: named members are carved out of the pool` : undefined}
                       onCommit={(v) => set({ ...r, headcount: Math.floor(v) })} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{members}</TableCell>
                   <TableCell><SkillsInput id={r.id} skills={r.skills} onCommit={(skills) => set({ ...r, skills })} /></TableCell>
-                  <TableCell><NumInput aria-label={`cost per hour of ${r.id}`} className="w-20" value={r.cost_per_hour} onCommit={(v) => set({ ...r, cost_per_hour: v })} /></TableCell>
+                  <TableCell className="text-right"><NumInput aria-label={`cost per hour of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" value={r.cost_per_hour} onCommit={(v) => set({ ...r, cost_per_hour: v })} /></TableCell>
                   <TableCell>
                     {r.schedule ? <ScheduleEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
                       : <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}

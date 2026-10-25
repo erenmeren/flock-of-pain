@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Plus, Trash2, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader, fmt } from "@/components/page";
 import { uniqueId } from "@/components/editor-fields";
 import { StepChain, cycleMean, unskilled, windowSummary } from "@/components/process/step-chain";
@@ -34,41 +34,25 @@ export default function ProcessesPage() {
         const href = `/processes/${encodeURIComponent(wf.id)}`;
         const warn = wf.steps.filter((st) => unskilled(company, st)).length;
         return (
-          <Card key={i} className="transition-shadow hover:ring-primary/40 hover:shadow-[0_0_24px_-12px_var(--primary)]">
-            <CardContent className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
-                <Link href={href} className="min-w-48 hover:text-primary">
-                  <span className="block text-base font-semibold">{wf.name}</span>
-                  <span className="block font-mono text-xs text-muted-foreground">{wf.id}</span>
-                </Link>
-                <Stat label="Arrivals/h" value={fmt(wf.arrival.rate_per_hour, 2)} />
-                <Stat label="Window" value={windowSummary(wf.arrival.window)} small />
-                <Stat label="Steps" value={wf.steps.length} />
-                <Stat label="Mean cycle min" value={fmt(cycleMean(wf))} />
+          <Panel key={i} icon={Workflow}
+            title={<Link href={href} className="hover:text-primary">{wf.name} <span className="ml-1 font-mono text-xs font-normal text-muted-foreground">{wf.id}</span></Link>}
+            subtitle={<span className="tabular-nums">{fmt(wf.arrival.rate_per_hour, 2)} arrivals/h · {windowSummary(wf.arrival.window)} · {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"} · mean cycle {fmt(cycleMean(wf))} min</span>}
+            action={
+              <div className="flex items-center gap-1">
                 {warn > 0 && (
-                  <span className="flex items-center gap-1.5 self-center text-xs text-amber-400">
-                    <span className="size-2 rounded-full bg-amber-400" /> {warn} step{warn > 1 ? "s" : ""} without skilled staff
+                  <span className="mr-2 flex items-center gap-1.5 text-xs text-amber-400">
+                    <span className="size-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]" /> {warn} step{warn > 1 ? "s" : ""} without skilled staff
                   </span>
                 )}
-                <div className="ml-auto flex gap-1">
-                  <Button variant="outline" size="sm" render={<Link href={href} />} nativeButton={false}>Edit</Button>
-                  <Button variant="ghost" size="sm" aria-label={`remove workflow ${wf.id}`} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
-                </div>
+                <Button variant="outline" size="sm" className="rounded-full" render={<Link href={href} />} nativeButton={false}>Edit <ArrowRight className="size-3.5" /></Button>
+                <Button variant="ghost" size="sm" aria-label={`remove workflow ${wf.id}`} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
               </div>
-              <StepChain wf={wf} company={company} />
-            </CardContent>
-          </Card>
+            }>
+            <StepChain wf={wf} company={company} />
+          </Panel>
         );
       })}
+      {!company.workflows.length && <p className="rounded-2xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">No workflows yet.</p>}
     </div>
-  );
-}
-
-function Stat({ label, value, small }: { label: string; value: React.ReactNode; small?: boolean }) {
-  return (
-    <span className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={small ? "text-sm" : "text-lg font-semibold tabular-nums"}>{value}</span>
-    </span>
   );
 }
