@@ -52,3 +52,5 @@ cd web && npm install && npm run dev
 ```
 
 Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`, see `web/.env.example`) to point at the API.
+
+One page: describe the company in words and press Generate, or edit it directly. The Editor tab has forms for systems, departments, pools and people (skills, cost, headcount, pool membership, weekly shift); the JSON tab holds the full company JSON (workflows, per-day hours, absences, outages) and the scenarios. Both views edit the same company JSON, which Run sends to `/simulate`. Nothing is saved: copy the JSON out to keep it.

@@ -7,14 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { CompanyEditor } from "@/components/company-editor";
 import { type ApiError, type SimulateResponse, generate, getExample, simulate } from "@/lib/api";
+import { type Company, parseCompany } from "@/lib/company";
 
 const POLICIES = ["priority", "fifo", "least_loaded"];
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
-  const [company, setCompany] = useState("");
+  const [company, setCompany] = useState(""); // JSON text: what Run sends
+  const [companyObj, setCompanyObj] = useState<Company | null>(null); // parsed twin for the editor; null = text is not valid JSON
   const [scenarios, setScenarios] = useState("");
   const [seed, setSeed] = useState("42");
   const [days, setDays] = useState("10");
@@ -27,11 +31,24 @@ export default function Home() {
   useEffect(() => {
     getExample()
       .then((x) => {
-        setCompany(JSON.stringify(x.company, null, 2));
+        setBoth(x.company as Company);
         setScenarios(JSON.stringify(x.scenarios, null, 2));
       })
       .catch(setError);
   }, []);
+
+  function setBoth(c: Company) {
+    setCompanyObj(c);
+    setCompany(JSON.stringify(c, null, 2));
+  }
+
+  function syncFromText(text: string) {
+    try {
+      setCompanyObj(parseCompany(text));
+    } catch {
+      setCompanyObj(null);
+    }
+  }
 
   async function gen() {
     setError(null);
@@ -39,7 +56,7 @@ export default function Home() {
     setBusy(true);
     try {
       const x = await generate(prompt);
-      setCompany(JSON.stringify(x.company, null, 2));
+      setBoth(x.company as Company);
       setScenarios(JSON.stringify(x.scenarios, null, 2));
     } catch (e) {
       setError(e as ApiError);
@@ -81,8 +98,24 @@ export default function Home() {
       <div className="flex flex-col gap-4">
         <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the JSON below" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         <Button variant="outline" onClick={gen} disabled={busy || !prompt.trim()}>Generate</Button>
-        <Textarea aria-label="company JSON" className="h-64 font-mono" value={company} onChange={(e) => setCompany(e.target.value)} />
-        <Textarea aria-label="scenarios JSON" className="h-64 font-mono" value={scenarios} onChange={(e) => setScenarios(e.target.value)} />
+        <Tabs defaultValue="editor">
+          <TabsList>
+            <TabsTrigger value="editor">Editor</TabsTrigger>
+            <TabsTrigger value="json">JSON</TabsTrigger>
+          </TabsList>
+          <TabsContent value="editor">
+            {companyObj ? (
+              <CompanyEditor company={companyObj} onChange={setBoth} />
+            ) : (
+              <p className="text-sm">Company JSON is invalid; fix it in the JSON tab.</p>
+            )}
+          </TabsContent>
+          <TabsContent value="json" className="flex flex-col gap-4">
+            <Textarea aria-label="company JSON" className="h-64 font-mono" value={company}
+              onChange={(e) => setCompany(e.target.value)} onBlur={(e) => syncFromText(e.target.value)} />
+            <Textarea aria-label="scenarios JSON" className="h-64 font-mono" value={scenarios} onChange={(e) => setScenarios(e.target.value)} />
+          </TabsContent>
+        </Tabs>
         <div className="grid grid-cols-3 gap-2">
           <Input type="number" aria-label="seed" value={seed} onChange={(e) => setSeed(e.target.value)} />
           <Input type="number" aria-label="days" value={days} onChange={(e) => setDays(e.target.value)} />
