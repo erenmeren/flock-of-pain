@@ -9,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { CompanyEditor } from "@/components/company-editor";
+import { Playback } from "@/components/playback";
 import { type ApiError, type SimulateResponse, generate, getExample, simulate } from "@/lib/api";
 import { type Company, parseCompany } from "@/lib/company";
 
@@ -24,6 +27,7 @@ export default function Home() {
   const [days, setDays] = useState("10");
   const [reps, setReps] = useState("5");
   const [policy, setPolicy] = useState("priority");
+  const [withEvents, setWithEvents] = useState(false);
   const [result, setResult] = useState<SimulateResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,6 +78,7 @@ export default function Home() {
         company: JSON.parse(company),
         scenarios: JSON.parse(scenarios),
         config: { seed: Number(seed), days: Number(days), replications: Number(reps), policy },
+        include_events: withEvents,
       };
     } catch (e) {
       setError({ path: null, message: `Invalid JSON: ${(e as Error).message}` });
@@ -127,6 +132,10 @@ export default function Home() {
             {POLICIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Label className="flex items-center gap-2 text-sm">
+          <Checkbox aria-label="include events" checked={withEvents} onCheckedChange={(c) => setWithEvents(!!c)} />
+          Include events for playback (days x reps x scenarios must stay under 30)
+        </Label>
         <Button onClick={run} disabled={busy}>Run</Button>
       </div>
       <div className="flex flex-col gap-4">
@@ -139,6 +148,7 @@ export default function Home() {
         {result && (
           <>
             <p className="text-sm">{result.disclaimer}</p>
+            <Playback scenarios={result.scenarios} />
             <Table>
               <TableHeader>
                 <TableRow>

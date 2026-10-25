@@ -6,12 +6,27 @@ export type LedgerRow = {
   minutes: number;
   count: number;
 };
+export type SimEvent = {
+  t: number;
+  kind: string;
+  task_id: string | null;
+  instance_id: string | null;
+  workflow_id: string | null;
+  step_id: string | null;
+  department_id: string | null;
+  resource_id: string | null;
+  system_id: string | null;
+  reason: string | null;
+  payload: Record<string, unknown>;
+};
+export type RunResult = { seed: number; metrics: Record<string, unknown>; events?: SimEvent[] };
 export type ScenarioResult = {
   id: string;
   name: string;
   summary: Record<string, Stat>;
   ledger: LedgerRow[];
   off_shift_minutes: number;
+  runs: RunResult[];
 };
 export type SimulateResponse = {
   disclaimer: string;
