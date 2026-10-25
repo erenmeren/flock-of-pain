@@ -5,11 +5,17 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { IdInput, ScheduleEditor, uniqueId } from "@/components/company-editor";
-import { type Company, type Step, type Workflow, durationMean, weekdays9to5 } from "@/lib/company";
+import { IdInput, NumInput, ScheduleEditor, clamp, uniqueId } from "@/components/editor-fields";
+import { type Company, type Dist, type Step, type Workflow, durationMean, weekdays9to5 } from "@/lib/company";
 
 const NONE = "__none__";
-const num = (v: string, lo = 0) => Math.max(lo, Number(v) || 0);
+
+/** The duration written when the mean is edited: const stays const, anything else becomes lognormal_mean. */
+function withMean(d: Dist, mean: number): Dist {
+  if (d.kind === "const") return { kind: "const", a: mean };
+  const sigma = (d.kind === "lognormal" ? d.b : d.sigma) || 0.4; // the loader rejects sigma 0
+  return { kind: "lognormal_mean", mean, sigma };
+}
 
 export function WorkflowsEditor({ company, onChange }: { company: Company; onChange: (c: Company) => void }) {
   const setWf = (i: number, w: Workflow) => onChange({ ...company, workflows: company.workflows.map((x, j) => (j === i ? w : x)) });
@@ -53,11 +59,12 @@ function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; compa
     <Card>
       <CardHeader>
         <div className="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-2">
+          {/* shortcut: a workflow rename does not follow into scenario overlays (arrival_multiplier.workflow_id), which live in the scenarios JSON */}
           <IdInput aria-label={`workflow id ${wf.id}`} value={wf.id} onCommit={(id) => onChange({ ...wf, id })} />
           <Input aria-label={`workflow name ${wf.id}`} value={wf.name} onChange={(e) => onChange({ ...wf, name: e.target.value })} />
           <label className="flex items-center gap-1 text-xs">arrivals/h
-            <Input type="number" step="any" min={0} aria-label={`arrival rate of ${wf.id}`} className="w-20" value={wf.arrival.rate_per_hour}
-              onChange={(e) => onChange({ ...wf, arrival: { ...wf.arrival, rate_per_hour: num(e.target.value) } })} />
+            <NumInput min={0} aria-label={`arrival rate of ${wf.id}`} className="w-20" value={wf.arrival.rate_per_hour}
+              onCommit={(v) => onChange({ ...wf, arrival: { ...wf.arrival, rate_per_hour: v } })} />
           </label>
           <Button variant="ghost" size="sm" onClick={onRemove}>Remove</Button>
         </div>
@@ -75,7 +82,9 @@ function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; compa
           <TableBody>
             {wf.steps.map((st, i) => {
               const skills = skillsOf(st.department_id);
-              const skillItems = Object.fromEntries((skills.includes(st.required_skill) ? skills : [st.required_skill, ...skills]).map((s) => [s, s]));
+              const unskilled = !skills.includes(st.required_skill); // the engine would queue these tasks forever
+              const skillValue = st.required_skill || NONE;
+              const skillItems = Object.fromEntries([...(unskilled ? [[skillValue, st.required_skill || "(none)"]] : []), ...skills.map((s) => [s, s])]);
               const mean = durationMean(st.duration);
               const reworkItems = { [NONE]: "none", [st.id]: `${st.id} (self)`, ...Object.fromEntries((st.depends_on ?? []).map((d) => [d, d])) };
               return (
@@ -90,20 +99,25 @@ function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; compa
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <Select items={skillItems} value={st.required_skill} onValueChange={(v) => v && setStep(i, { ...st, required_skill: v })}>
-                      <SelectTrigger aria-label={`skill of step ${st.id}`} className="w-32"><SelectValue /></SelectTrigger>
+                    <Select items={skillItems} value={skillValue} onValueChange={(v) => v && v !== NONE && setStep(i, { ...st, required_skill: v })}>
+                      <SelectTrigger aria-label={`skill of step ${st.id}`} className="w-32" aria-invalid={unskilled} title={unskilled ? "no resource in this department has this skill" : undefined}><SelectValue /></SelectTrigger>
                       <SelectContent>{Object.keys(skillItems).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                     </Select>
                   </TableCell>
                   <TableCell>
                     {mean === null ? <span className="text-xs">{st.duration.kind}: JSON tab</span> : (
-                      <Input type="number" step="any" min={0} aria-label={`mean minutes of step ${st.id}`} className="w-20" value={Number(mean.toFixed(2))}
-                        onChange={(e) => setStep(i, { ...st, duration: { kind: "lognormal_mean", mean: num(e.target.value, 0.01), sigma: st.duration.kind === "lognormal" ? st.duration.b : st.duration.sigma ?? 0.4 } })} />
+                      <NumInput min={0.01} lo={0.01} aria-label={`mean minutes of step ${st.id}`} className="w-20" value={Number(mean.toFixed(2))}
+                        onCommit={(v) => setStep(i, { ...st, duration: withMean(st.duration, v) })} />
                     )}
                   </TableCell>
                   <TableCell>
                     <Input key={(st.depends_on ?? []).join(",")} aria-label={`dependencies of step ${st.id}`} className="w-32" defaultValue={(st.depends_on ?? []).join(", ")}
-                      onBlur={(e) => setStep(i, { ...st, depends_on: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                      onBlur={(e) => {
+                        const ids = new Set(wf.steps.filter((x) => x.id !== st.id).map((x) => x.id));
+                        const depends_on = [...new Set(e.target.value.split(",").map((s) => s.trim()).filter((d) => ids.has(d)))]; // unknown and self dropped
+                        const rework_to = st.rework_to === st.id || (st.rework_to && depends_on.includes(st.rework_to)) ? st.rework_to : null;
+                        setStep(i, { ...st, depends_on, rework_to });
+                      }} />
                   </TableCell>
                   <TableCell>
                     <Select items={systemItems} value={st.system_id ?? NONE} onValueChange={(v) => setStep(i, { ...st, system_id: v && v !== NONE ? v : null })}>
@@ -111,18 +125,18 @@ function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; compa
                       <SelectContent>{Object.entries(systemItems).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell><Input type="number" aria-label={`priority of step ${st.id}`} className="w-16" value={st.priority ?? 0} onChange={(e) => setStep(i, { ...st, priority: Math.floor(Number(e.target.value) || 0) })} /></TableCell>
-                  <TableCell><Input type="number" min={0} aria-label={`sla minutes of step ${st.id}`} className="w-20" value={st.sla_minutes ?? ""} placeholder="none"
-                    onChange={(e) => setStep(i, { ...st, sla_minutes: e.target.value === "" ? null : num(e.target.value) })} /></TableCell>
-                  <TableCell><Input type="number" min={0} max={100} step="any" aria-label={`failure percent of step ${st.id}`} className="w-16" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))}
-                    onChange={(e) => setStep(i, { ...st, failure_prob: Math.min(100, num(e.target.value)) / 100 })} /></TableCell>
+                  <TableCell><NumInput lo={-1e9} hi={1e9} aria-label={`priority of step ${st.id}`} className="w-16" value={st.priority ?? 0} onCommit={(v) => setStep(i, { ...st, priority: Math.floor(v) })} /></TableCell>
+                  <TableCell><Input key={st.sla_minutes ?? "none"} type="number" min={0} aria-label={`sla minutes of step ${st.id}`} className="w-20" defaultValue={st.sla_minutes ?? ""} placeholder="none"
+                    onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity); setStep(i, { ...st, sla_minutes: v > 0 ? v : null }); }} /></TableCell>
+                  <TableCell><NumInput hi={100} aria-label={`failure percent of step ${st.id}`} className="w-16" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))}
+                    onCommit={(v) => setStep(i, { ...st, failure_prob: v / 100 })} /></TableCell>
                   <TableCell>
                     <Select items={reworkItems} value={st.rework_to ?? NONE} onValueChange={(v) => setStep(i, { ...st, rework_to: v && v !== NONE ? v : null })}>
                       <SelectTrigger aria-label={`rework target of step ${st.id}`} className="w-28"><SelectValue /></SelectTrigger>
                       <SelectContent>{Object.entries(reworkItems).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell><Input type="number" min={0} aria-label={`retries of step ${st.id}`} className="w-16" value={st.max_retries ?? 0} onChange={(e) => setStep(i, { ...st, max_retries: Math.floor(num(e.target.value)) })} /></TableCell>
+                  <TableCell><NumInput aria-label={`retries of step ${st.id}`} className="w-16" value={st.max_retries ?? 0} onCommit={(v) => setStep(i, { ...st, max_retries: Math.floor(v) })} /></TableCell>
                   <TableCell><Button variant="ghost" size="sm" aria-label={`remove step ${st.id}`} onClick={() => removeStep(i)}>Remove</Button></TableCell>
                 </TableRow>
               );

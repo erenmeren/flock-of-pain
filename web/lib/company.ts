@@ -1,4 +1,4 @@
-// TypeScript mirror of the Company JSON contract (src/flock_of_pain/io.py). Workflows stay opaque: edited as JSON.
+// TypeScript mirror of the Company JSON contract (src/flock_of_pain/io.py).
 export type Hours = [number, number];
 export type Schedule = { weekday_hours: Record<string, Hours>; absences?: Hours[] };
 export type Resource = {
@@ -55,8 +55,11 @@ export function parseCompany(text: string): Company {
   if (!isObj(c) || !Array.isArray(c.departments)) throw new Error("expected a company object with departments");
   const out = { systems: [], workflows: [], ...c } as unknown as Company;
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
-  if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps)
-      && w.steps.every((st) => isObj(st) && isObj(st.duration)) && isObj(w.arrival) && isObj(w.arrival.window) && isObj(w.arrival.window.weekday_hours)))
+  const hoursOk = (h: unknown) => isObj(h) && Object.values(h).every((v) => Array.isArray(v) && v.length === 2);
+  const stepOk = (st: unknown) => isObj(st) && typeof st.id === "string" && typeof st.required_skill === "string" && isObj(st.duration)
+    && (st.depends_on === undefined || Array.isArray(st.depends_on));
+  if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(stepOk)
+      && isObj(w.arrival) && typeof w.arrival.rate_per_hour === "number" && isObj(w.arrival.window) && hoursOk(w.arrival.window.weekday_hours)))
     throw new Error("workflows must be a list of objects with steps, durations and an arrival window");
   if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
     throw new Error("outages must be a list of [system_id, start, end]");
@@ -64,8 +67,7 @@ export function parseCompany(text: string): Company {
     if (!isObj(d) || !Array.isArray(d.resources)) throw new Error("each department needs a resources list");
     for (const r of d.resources) {
       if (!isObj(r) || !Array.isArray(r.skills)) throw new Error("each resource needs a skills list");
-      if (r.schedule != null && (!isObj(r.schedule) || !isObj(r.schedule.weekday_hours)
-          || !Object.values(r.schedule.weekday_hours).every((h) => Array.isArray(h) && h.length === 2)))
+      if (r.schedule != null && (!isObj(r.schedule) || !hoursOk(r.schedule.weekday_hours)))
         throw new Error("schedule needs weekday_hours of [start, end] pairs");
     }
   }
