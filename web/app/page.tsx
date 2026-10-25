@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { CompanyEditor } from "@/components/company-editor";
 import { Playback } from "@/components/playback";
 import {
   type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
-  deleteCompany, generate, getExample, getRun, listCompanies, listRuns, loadCompany, saveCompany, simulate,
+  deleteCompany, generate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
 } from "@/lib/api";
 import { type Company, parseCompany } from "@/lib/company";
 
@@ -35,11 +35,14 @@ export default function Home() {
   const [saved, setSaved] = useState<CompanyMeta[]>([]);
   const [selected, setSelected] = useState("");
   const [runs, setRuns] = useState<RunMeta[]>([]);
+  const keyRef = useRef<HTMLInputElement>(null); // uncontrolled: the stored key is written into the DOM after mount
   const [result, setResult] = useState<SimulateResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    const k = loadApiKey();
+    if (keyRef.current) keyRef.current.value = k;
     getExample()
       .then((x) => {
         setBoth(x.company as Company);
@@ -48,6 +51,11 @@ export default function Home() {
       .catch(setError);
     refreshLists(false);
   }, []);
+
+  function changeKey(k: string) {
+    setApiKey(k);
+    if (k) refreshLists(false);
+  }
 
   function refreshLists(report = true) {
     const onErr = report ? setError : () => {}; // the first load already reports an unreachable API
@@ -160,6 +168,7 @@ export default function Home() {
       <div className="flex flex-col gap-4">
         <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the JSON below" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         <Button variant="outline" onClick={gen} disabled={busy || !prompt.trim()}>Generate</Button>
+        <Input ref={keyRef} type="password" aria-label="api key" placeholder="tenant API key (flock_of_pain tenant create)" onChange={(e) => changeKey(e.target.value)} />
         <div className="flex flex-wrap items-center gap-2">
           <Select value={selected} items={Object.fromEntries(saved.map((c) => [c.id, c.name]))} onValueChange={(v) => setSelected(v ?? "")}>
             <SelectTrigger aria-label="saved company" className="w-48"><SelectValue placeholder="saved companies" /></SelectTrigger>

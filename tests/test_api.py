@@ -9,7 +9,11 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def db(tmp_path, monkeypatch):
+    from flock_of_pain import store
     monkeypatch.setenv("FLOCK_DB", str(tmp_path / "t.db"))
+    client.headers["X-API-Key"] = store.create_tenant("t1", "Tenant 1")
+    yield
+    del client.headers["X-API-Key"]
 
 
 def test_example():
@@ -153,3 +157,26 @@ def test_simulate_save_and_run_endpoints():
     assert client.get("/runs/2").status_code == 404
     r2 = client.post("/simulate", json={**body, "save": False})
     assert "run_id" not in r2.json()
+
+
+def test_auth_required_except_example():
+    from flock_of_pain import store
+    ex = client.get("/example", headers={"X-API-Key": ""}).json()
+    assert ex["company"]["id"] == "reynolds"
+    body = {"company": ex["company"], "scenarios": [], "config": {"seed": 1, "days": 1}}
+    for key in ("", "fop_wrong"):
+        r = client.post("/simulate", json=body, headers={"X-API-Key": key})
+        assert r.status_code == 401 and r.json()["message"].startswith("missing or unknown")
+        assert client.get("/companies", headers={"X-API-Key": key}).status_code == 401
+        assert client.post("/generate", json={"prompt": "x"}, headers={"X-API-Key": key}).status_code == 401
+    r = client.post("/simulate", json=body, headers={})  # fixture key still set on the client
+    assert r.status_code == 200
+    # a second tenant sees none of the first tenant's data
+    client.put("/companies/reynolds", json=ex)
+    client.post("/simulate", json={**body, "save": True, "company_id": "reynolds"})
+    other = store.create_tenant("t2", "Tenant 2")
+    assert client.get("/companies", headers={"X-API-Key": other}).json() == []
+    assert client.get("/runs", headers={"X-API-Key": other}).json() == []
+    assert client.get("/runs/1", headers={"X-API-Key": other}).status_code == 404
+    assert client.get("/companies/reynolds", headers={"X-API-Key": other}).status_code == 404
+    assert client.get("/runs/1").status_code == 200

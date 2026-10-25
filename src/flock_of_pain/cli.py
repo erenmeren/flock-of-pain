@@ -25,7 +25,28 @@ def main(argv: list[str] | None = None) -> int:
     gen = sub.add_parser("generate", help="describe a company in words; Claude writes the company + scenarios JSON")
     gen.add_argument("prompt")
     gen.add_argument("--out", type=Path, help="write here instead of stdout")
+    tenant = sub.add_parser("tenant", help="manage API tenants and keys (database from FLOCK_DB)")
+    tsub = tenant.add_subparsers(dest="tenant_command", required=True)
+    tc = tsub.add_parser("create", help="create a tenant and print its API key once")
+    tc.add_argument("id")
+    tc.add_argument("--name", help="display name (default: the id)")
+    tsub.add_parser("rotate", help="replace a tenant's API key").add_argument("id")
+    tsub.add_parser("list", help="list tenants")
     args = parser.parse_args(argv)
+    if args.command == "tenant":
+        from flock_of_pain import store
+        if args.tenant_command == "create":
+            print(store.create_tenant(args.id, args.name or args.id))
+        elif args.tenant_command == "rotate":
+            key = store.new_key(args.id)
+            if key is None:
+                print(f"error: no tenant {args.id!r}", file=sys.stderr)
+                return 1
+            print(key)
+        else:
+            for t in store.list_tenants():
+                print(f"{t['id']} | {t['name']} | {t['created_at']}")
+        return 0
     if args.command == "export-example":
         args.path.write_text(json.dumps(company_to_dict(reynolds.build()), indent=2))
         return 0

@@ -32,10 +32,12 @@ All demo parameters are assumed values, not measurements.
 uv run --extra api uvicorn flock_of_pain.api:app
 ```
 
+Every endpoint except `GET /example` needs a tenant API key in the `X-API-Key` header (401 otherwise). Create one with `uv run --extra api python -m flock_of_pain tenant create <id> [--name NAME]` (the key is printed once; only its SHA-256 is stored), rotate with `tenant rotate <id>`, list with `tenant list`. Each tenant sees only its own saved companies and runs. No signup endpoint: tenants are created from the CLI.
+
 - `GET /example`: Reynolds company and its four scenarios as JSON.
 - `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`, with `path` prefixed by the request section (`company.`, `scenarios[i].`, `config.`).
   One request may run at most 2000 run-days (days x replications x scenarios), or 30 with `include_events`.
-- Saved companies (SQLite file from `FLOCK_DB`, default `./flock.db`; single user, no tenants): `GET /companies`, `PUT /companies/{id}` with `{"company", "scenarios"}` (validated, stored in canonical form, `company.id` must equal the URL id), `GET /companies/{id}`, `DELETE /companies/{id}`.
+- Saved companies (SQLite file from `FLOCK_DB`, default `./flock.db`, scoped to the tenant; a pre-tenant database is migrated to the tenant `default`, rotate its key first): `GET /companies`, `PUT /companies/{id}` with `{"company", "scenarios"}` (validated, stored in canonical form, `company.id` must equal the URL id), `GET /companies/{id}`, `DELETE /companies/{id}`.
 - Run history: `POST /simulate` with `"save": true` (plus optional `company_id`, `name`) stores the request and the result without events and returns `run_id`; `GET /runs?company_id=&limit=` lists, `GET /runs/{id}` returns request and result.
 - `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`.
 
@@ -53,7 +55,7 @@ uv run --extra api uvicorn flock_of_pain.api:app
 cd web && npm install && npm run dev
 ```
 
-Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`, see `web/.env.example`) to point at the API.
+Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`, see `web/.env.example`) to point at the API. Paste a tenant API key into the key field at the top; the browser keeps it in localStorage.
 
 One page: describe the company in words and press Generate, or edit it directly. The Editor tab has forms for systems, departments, pools and people (skills, cost, headcount, pool membership, weekly shift) and for workflows (arrival rate and window, steps with department, skill, mean duration, dependencies, system, priority, SLA, failure and rework); the JSON tab holds the full company JSON (per-day hours, absences, outages, non-lognormal durations) and the scenarios. Both views edit the same company JSON, which Run sends to `/simulate`. "Save company" stores the company and its scenarios under the company id (SQLite via the API); the saved-companies dropdown loads or deletes one. Tick "Save the result to run history" before Run to keep the KPI result (without events); the Run history card shows past runs again.
 

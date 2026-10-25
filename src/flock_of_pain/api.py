@@ -2,9 +2,10 @@
 import json
 import re
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from flock_of_pain import agent, store
@@ -19,6 +20,23 @@ MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS, MAX_RUNS = 2000, 30, 400  # ~330 s and ~38 GB 
 app = FastAPI(title="Flock of Pain")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
                    allow_methods=["*"], allow_headers=["*"])
+
+_api_key = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+class AuthError(Exception):
+    pass
+
+
+def current_tenant(key: str | None = Security(_api_key)) -> str:
+    """Every endpoint except /example runs as a tenant; keys come from `flock_of_pain tenant create`."""
+    tenant = store.tenant_for_key(key) if key else None
+    if tenant is None:
+        raise AuthError("missing or unknown X-API-Key")
+    return tenant
+
+
+Tenant = Depends(current_tenant)
 
 
 class SimulateRequest(BaseModel):
@@ -44,6 +62,11 @@ class GenerateRequest(BaseModel):
 async def _model_error(_: Request, e: ModelError):
     path, message = (e.path, e.message) if isinstance(e, SchemaError) else (None, str(e))
     return JSONResponse({"path": path, "message": message}, status_code=422)
+
+
+@app.exception_handler(AuthError)
+async def _auth_error(_: Request, e: AuthError):
+    return JSONResponse({"path": None, "message": str(e)}, status_code=401, headers={"WWW-Authenticate": "ApiKey"})
 
 
 @app.exception_handler(agent.AgentError)
@@ -82,7 +105,7 @@ def _not_found():
 
 
 @app.post("/simulate")
-def simulate(req: SimulateRequest):
+def simulate(req: SimulateRequest, tenant: str = Tenant):
     company, scenarios = _load(req.company, req.scenarios)
     config = _section("config", run_config_from_dict, req.config)
     budget = config.horizon_minutes / 1440 * config.replications * max(1, len(scenarios))  # run-days
@@ -118,45 +141,45 @@ def simulate(req: SimulateRequest):
         request = {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios],
                    "config": {"seed": config.seed, "days": config.horizon_minutes / 1440,
                               "replications": config.replications, "policy": config.policy}}  # resolved, not as sent
-        out["run_id"] = store.save_run(req.company_id, req.name or company.name, request, stored)
+        out["run_id"] = store.save_run(tenant, req.company_id, req.name or company.name, request, stored)
     return out
 
 
 @app.get("/companies")
-def companies():
-    return store.list_companies()
+def companies(tenant: str = Tenant):
+    return store.list_companies(tenant)
 
 
 @app.put("/companies/{cid}")
-def put_company(cid: str, body: Bundle):
+def put_company(cid: str, body: Bundle, tenant: str = Tenant):
     company, scenarios = _load(body.company, body.scenarios)
     if company.id != cid:
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
     if not re.fullmatch(r"[\w.-]+", cid):
         raise SchemaError("company.id", "use letters, digits, '_', '.' or '-' (it is the URL id)")
-    return store.save_company({"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
+    return store.save_company(tenant, {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
 
 
 @app.get("/companies/{cid}")
-def get_company(cid: str):
-    return store.get_company(cid) or _not_found()
+def get_company(cid: str, tenant: str = Tenant):
+    return store.get_company(tenant, cid) or _not_found()
 
 
 @app.delete("/companies/{cid}")
-def delete_company(cid: str):
-    return {"deleted": cid} if store.delete_company(cid) else _not_found()
+def delete_company(cid: str, tenant: str = Tenant):
+    return {"deleted": cid} if store.delete_company(tenant, cid) else _not_found()
 
 
 @app.get("/runs")
-def runs(company_id: str | None = None, limit: int = 50):
-    return store.list_runs(company_id, max(1, min(limit, 500)))
+def runs(company_id: str | None = None, limit: int = 50, tenant: str = Tenant):
+    return store.list_runs(tenant, company_id, max(1, min(limit, 500)))
 
 
 @app.get("/runs/{rid}")
-def get_run(rid: int):
-    return store.get_run(rid) or _not_found()
+def get_run(rid: int, tenant: str = Tenant):
+    return store.get_run(tenant, rid) or _not_found()
 
 
 @app.post("/generate")
-def generate(req: GenerateRequest):
+def generate(req: GenerateRequest, tenant: str = Tenant):  # noqa: ARG001 - authenticated, not tenant-specific
     return agent.generate(req.prompt)

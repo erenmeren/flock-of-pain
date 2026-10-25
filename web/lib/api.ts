@@ -41,15 +41,27 @@ export type ApiError = { path: string | null; message: string };
 
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// Tenant API key (`flock_of_pain tenant create`), sent as X-API-Key on every call except /example.
+const KEY_STORAGE = "flock_api_key";
+let apiKey = "";
+export function loadApiKey(): string {
+  try { apiKey = localStorage.getItem(KEY_STORAGE) ?? ""; } catch { apiKey = ""; }
+  return apiKey;
+}
+export function setApiKey(key: string) {
+  apiKey = key;
+  try { if (key) localStorage.setItem(KEY_STORAGE, key); else localStorage.removeItem(KEY_STORAGE); } catch { /* private window: key lives for this page only */ }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  const res = await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.ok) return res.json();
   const j = await res.json().catch(() => null);
   // FastAPI validation errors carry `detail` instead of {path, message}
+  if (res.status === 401) throw { path: "api key", message: `${j?.message ?? "unauthorized"}: paste a tenant key (flock_of_pain tenant create)` } as ApiError;
   if (j && typeof j.message === "string") throw j as ApiError;
   throw {
     path: null,
