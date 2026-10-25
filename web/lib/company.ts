@@ -13,9 +13,22 @@ export type Resource = {
 };
 export type Department = { id: string; name: string; resources: Resource[] };
 export type System = { id: string; name: string };
-// Only the fields the editor must keep consistent when ids change; the rest passes through untouched.
-export type Step = { department_id: string; system_id?: string | null; [k: string]: unknown };
-export type Workflow = { steps: Step[]; [k: string]: unknown };
+export type Dist = { kind: string; a?: number; b?: number; c?: number; mean?: number; sigma?: number };
+export type Step = {
+  id: string;
+  name: string;
+  department_id: string;
+  required_skill: string;
+  duration: Dist;
+  depends_on?: string[];
+  system_id?: string | null;
+  priority?: number;
+  sla_minutes?: number | null;
+  failure_prob?: number;
+  rework_to?: string | null;
+  max_retries?: number;
+};
+export type Workflow = { id: string; name: string; arrival: { rate_per_hour: number; window: Schedule }; steps: Step[] };
 export type Outage = [string, number, number];
 export type Company = {
   id: string;
@@ -42,8 +55,9 @@ export function parseCompany(text: string): Company {
   if (!isObj(c) || !Array.isArray(c.departments)) throw new Error("expected a company object with departments");
   const out = { systems: [], workflows: [], ...c } as unknown as Company;
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
-  if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(isObj)))
-    throw new Error("workflows must be a list of objects with steps");
+  if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps)
+      && w.steps.every((st) => isObj(st) && isObj(st.duration)) && isObj(w.arrival) && isObj(w.arrival.window) && isObj(w.arrival.window.weekday_hours)))
+    throw new Error("workflows must be a list of objects with steps, durations and an arrival window");
   if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
     throw new Error("outages must be a list of [system_id, start, end]");
   for (const d of out.departments) {
@@ -77,4 +91,12 @@ export function renameSystem(c: Company, from: string, to: string): Company {
     workflows: c.workflows.map((w) => ({ ...w, steps: w.steps.map((s) => (s.system_id === from ? { ...s, system_id: to } : s)) })),
     outages: c.outages?.map((o) => (o[0] === from ? [to, o[1], o[2]] : o)),
   };
+}
+
+/** Mean minutes shown for a duration; null when the kind has no simple mean the editor can round-trip. */
+export function durationMean(d: Dist): number | null {
+  if (d.kind === "lognormal_mean") return d.mean ?? null;
+  if (d.kind === "lognormal") return Math.exp((d.a ?? 0) + (d.b ?? 0) ** 2 / 2); // the exporter writes the raw form
+  if (d.kind === "const") return d.a ?? null;
+  return null;
 }

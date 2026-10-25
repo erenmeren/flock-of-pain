@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { WorkflowsEditor } from "@/components/workflow-editor";
 import {
   type Company, type Department, type Resource, type Schedule,
   DAYS, referencedIds, renameDepartment, renameSystem, slug, weekdays9to5,
@@ -68,6 +69,7 @@ export function CompanyEditor({ company, onChange }: Props) {
       <Button variant="outline" onClick={() => set({ departments: [...company.departments, { id: uniqueId("dept", company.departments), name: "New department", resources: [] }] })}>
         Add department
       </Button>
+      <WorkflowsEditor company={company} onChange={onChange} />
     </div>
   );
 }
@@ -178,7 +180,7 @@ function DepartmentCard({ dept, allResources, used, onChange, onRemove }: DeptPr
 }
 
 // shortcut: one [start, end] for every working day; per-day hours and absences are edited in the JSON tab
-function ScheduleEditor({ id, schedule, onChange }: { id: string; schedule: Schedule; onChange: (s: Schedule) => void }) {
+export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedule: Schedule; onChange: (s: Schedule) => void }) {
   const days = Object.keys(schedule.weekday_hours);
   const [kept, setKept] = useState<[number, number]>([9, 17]); // hours survive unchecking every day
   const [start, end] = days.length ? schedule.weekday_hours[days[0]] : kept;
@@ -211,7 +213,7 @@ function ScheduleEditor({ id, schedule, onChange }: { id: string; schedule: Sche
 }
 
 /** Uncontrolled id field committed on blur, so intermediate ids never rename references. */
-function IdInput({ value, onCommit, ...props }: { value: string; onCommit: (id: string) => void } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur">) {
+export function IdInput({ value, onCommit, ...props }: { value: string; onCommit: (id: string) => void } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur">) {
   return <Input key={value} defaultValue={value} onBlur={(e) => e.target.value !== value && onCommit(e.target.value)} {...props} />;
 }
 
@@ -219,7 +221,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <Label className="flex flex-col items-start gap-1 text-xs">{label}{children}</Label>;
 }
 
-function uniqueId(base: string, items: { id: string }[]): string {
+export function uniqueId(base: string, items: { id: string }[]): string {
   const ids = new Set(items.map((x) => x.id));
   let n = 1;
   while (ids.has(`${base}_${n}`)) n++;
