@@ -1,8 +1,9 @@
 "use client";
 
+import { createElement } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, Building2, Network, Server, Users } from "lucide-react";
+import { Boxes, Building2, Cpu, Headset, Landmark, type LucideIcon, Network, Package, Server, TrendingUp, Users } from "lucide-react";
 import { cn } from "cn";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,21 @@ export const ORG_LINKS = [
 
 /** Accent color per department index, cycling the five chart tokens. */
 export const accent = (i: number) => `var(--chart-${(i % 5) + 1})`;
+
+const DEPT_ICONS: LucideIcon[] = [Headset, Package, Landmark, TrendingUp, Cpu];
+/** Icon per department index, cycling in step with `accent` so a department keeps one colour and one glyph everywhere. */
+export const deptIcon = (i: number) => DEPT_ICONS[i % DEPT_ICONS.length];
+
+/** Coloured glowing disc with the department's icon: the node used on the org map, cards and tables. */
+export function DeptMark({ index, className, size = "size-9" }: { index: number; className?: string; size?: string }) {
+  const color = accent(index);
+  return (
+    <span className={cn("flex shrink-0 items-center justify-center rounded-full text-white [&_svg]:size-[45%]", size, className)}
+      style={{ background: `radial-gradient(circle at 30% 30%, color-mix(in oklch, ${color}, white 25%), ${color} 70%)`, boxShadow: `0 0 0 1px oklch(1 0 0 / 0.12) inset, 0 6px 18px -6px ${color}, 0 0 20px -8px ${color}` }} aria-hidden>
+      {createElement(deptIcon(index))}
+    </span>
+  );
+}
 
 export function OrgNav() {
   const path = usePathname();

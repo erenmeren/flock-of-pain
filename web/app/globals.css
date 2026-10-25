@@ -46,6 +46,12 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-rise: rise 320ms var(--ease-out) both;
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+  }
 }
 
 :root {
@@ -72,7 +78,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.875rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -84,11 +90,11 @@
 }
 
 .dark {
-  --background: oklch(0.14 0.012 260);
+  --background: oklch(0.12 0.014 262);
   --foreground: oklch(0.96 0.005 260);
-  --card: oklch(0.19 0.014 260);
+  --card: oklch(0.18 0.016 262);
   --card-foreground: oklch(0.96 0.005 260);
-  --popover: oklch(0.2 0.014 260);
+  --popover: oklch(0.2 0.016 262);
   --popover-foreground: oklch(0.96 0.005 260);
   --primary: oklch(0.65 0.19 255);
   --primary-foreground: oklch(0.98 0 0);
@@ -99,7 +105,7 @@
   --accent: oklch(0.27 0.02 260);
   --accent-foreground: oklch(0.96 0.005 260);
   --destructive: oklch(0.7 0.19 22);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.65 0.19 255);
   --chart-1: oklch(0.65 0.19 255);
@@ -107,7 +113,7 @@
   --chart-3: oklch(0.72 0.17 150);
   --chart-4: oklch(0.65 0.2 20);
   --chart-5: oklch(0.7 0.15 300);
-  --sidebar: oklch(0.16 0.012 260);
+  --sidebar: oklch(0.16 0.015 262);
   --sidebar-foreground: oklch(0.96 0.005 260);
   --sidebar-primary: oklch(0.65 0.19 255);
   --sidebar-primary-foreground: oklch(0.98 0 0);
@@ -127,4 +133,48 @@
   html {
     @apply font-sans;
   }
+  /* ambient backdrop: three soft colour pools behind the glass panels, like the mock's blurred room */
+  .dark body {
+    background-image:
+      radial-gradient(60rem 36rem at 8% -10%, oklch(0.55 0.18 255 / 0.32), transparent 60%),
+      radial-gradient(44rem 30rem at 100% 20%, oklch(0.7 0.16 60 / 0.16), transparent 60%),
+      radial-gradient(50rem 34rem at 50% 110%, oklch(0.6 0.15 200 / 0.18), transparent 60%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.015em;
+  }
+}
+
+/* glass panel: translucent card, hairline ring, light catching the top edge, deep soft shadow */
+@utility glass {
+  background: color-mix(in oklch, var(--card) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.07),
+    0 0 0 1px oklch(1 0 0 / 0.07),
+    0 24px 48px -32px oklch(0 0 0 / 0.9);
+}
+@utility glass-inset {
+  background: oklch(1 0 0 / 0.035);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06);
+}
+@utility press {
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+  &:active { transform: scale(0.97); }
+}
+@utility rise {
+  animation: var(--animate-rise);
+}
+@utility glow-primary {
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.1) inset, 0 8px 24px -8px var(--primary), 0 0 32px -12px var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise { animation: none; }
+  .press:active { transform: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--card); backdrop-filter: none; }
 }

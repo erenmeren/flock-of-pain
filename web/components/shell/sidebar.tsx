@@ -16,16 +16,27 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+/** Two overlapping discs, blue over orange: the product mark. */
+export function Logo({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative block size-7 shrink-0", className)} aria-hidden>
+      <span className="absolute inset-y-0 right-0 w-5 rounded-full bg-[var(--chart-2)] opacity-90" />
+      <span className="absolute inset-y-0 left-0 w-5 rounded-full bg-primary shadow-[0_0_14px_-2px_var(--primary)]" />
+    </span>
+  );
+}
+
 export function Sidebar() {
   const path = usePathname();
   const { apiKey, selected, company } = useTwin();
   const mounted = useMounted();
+  const keyOk = mounted && !!apiKey;
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-sidebar-border bg-sidebar p-4">
-      <Link href="/" className="flex items-center gap-2 px-2">
-        <span className="size-7 rounded-full bg-[linear-gradient(135deg,var(--primary),oklch(0.75_0.17_60))] shadow-[0_0_16px_var(--primary)]" />
+    <aside className="glass flex w-60 shrink-0 flex-col gap-6 rounded-2xl p-4">
+      <Link href="/" className="flex items-center gap-3 px-1 pt-1">
+        <Logo />
         <span>
-          <span className="block text-base font-semibold leading-tight">Workforce Twin</span>
+          <span className="block text-[15px] font-semibold leading-tight tracking-tight">Workforce Twin</span>
           <span className="block text-[10px] text-muted-foreground">Simulate. Understand. Build.</span>
         </span>
       </Link>
@@ -34,17 +45,28 @@ export function Sidebar() {
           const active = href === "/" ? path === "/" : path.startsWith(href);
           return (
             <Link key={href} href={href} aria-current={active ? "page" : undefined}
-              className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                active && "bg-sidebar-accent text-sidebar-foreground ring-1 ring-primary/40 shadow-[inset_0_0_12px_-6px_var(--primary)]")}>
-              <Icon className="size-4" /> {label}
-              {active && <span className="ml-auto size-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]" />}
+              className={cn("press flex items-center gap-3 rounded-xl px-2 py-1.5 text-sm text-sidebar-foreground/70 hover:bg-white/[0.05] hover:text-sidebar-foreground",
+                active && "bg-primary/12 text-sidebar-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_35%,transparent),0_12px_24px_-16px_var(--primary)]")}>
+              <span className={cn("flex size-8 items-center justify-center rounded-lg", active ? "bg-primary text-primary-foreground shadow-[0_6px_16px_-6px_var(--primary)]" : "glass-inset")}>
+                <Icon className="size-4" />
+              </span>
+              {label}
+              {active && <span className="ml-auto mr-1 size-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]" />}
             </Link>
           );
         })}
       </nav>
-      <div className="mt-auto flex flex-col gap-2 rounded-lg bg-sidebar-accent/60 p-3 text-xs text-muted-foreground">
-        <p className="flex items-center gap-2"><span className={cn("size-2 rounded-full", mounted && apiKey ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400")} />{mounted && apiKey ? "API key set" : "No API key"}</p>
-        <p className="truncate" title={mounted ? company?.id : undefined}>{!mounted || !company ? "Loading…" : selected ? `Saved: ${selected}` : "Unsaved draft"}</p>
+      <div className="glass-inset mt-auto flex flex-col gap-2 rounded-xl p-3 text-xs">
+        <p className="flex items-center gap-2">
+          <span className={cn("size-2 rounded-full", keyOk ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-amber-400 shadow-[0_0_8px_#fbbf24]")} />
+          <span className="text-muted-foreground">API</span>
+          <span className="ml-auto">{keyOk ? "Connected" : "No key"}</span>
+        </p>
+        <p className="flex items-center gap-2" title={mounted ? company?.id : undefined}>
+          <span className="size-2 rounded-full bg-primary/70" />
+          <span className="text-muted-foreground">Draft</span>
+          <span className="ml-auto truncate">{!mounted || !company ? "Loading…" : selected ? `Saved: ${selected}` : "Unsaved"}</span>
+        </p>
       </div>
     </aside>
   );

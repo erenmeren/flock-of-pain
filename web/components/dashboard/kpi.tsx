@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Loader2, Play } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, type LucideIcon, Loader2, Play } from "lucide-react";
 import { cn } from "cn";
-import { fmt } from "@/components/page";
+import { Bars, IconTile, fmt } from "@/components/page";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ScenarioResult } from "@/lib/api";
 import type { ResultSource } from "@/lib/store";
@@ -59,41 +59,42 @@ export function Delta({ k, value, base }: { k: string; value?: number; base?: nu
 }
 
 /** Tiny bar sparkline: first value is the baseline (muted), the rest use --chart-1. */
-export function MiniBars({ values }: { values: number[] }) {
-  const max = Math.max(...values.map(Math.abs), 1e-9);
-  return (
-    <div className="flex h-8 items-end gap-1" aria-hidden>
-      {values.map((v, i) => (
-        <span key={i} className={cn("w-2.5 rounded-sm", i === 0 ? "bg-muted-foreground/40" : "bg-chart-1 shadow-[0_0_6px_var(--chart-1)]")}
-          style={{ height: `${Math.max(6, (Math.abs(v) / max) * 100)}%` }} />
-      ))}
-    </div>
-  );
-}
+export const MiniBars = ({ values }: { values: number[] }) => <Bars values={values} className="h-8" />;
 
-/** Card with a title and an optional "open" link in the corner. */
-export function Panel({ title, href, linkLabel = "Open", className, children }: { title: string; href?: string; linkLabel?: string; className?: string; children: React.ReactNode }) {
+/** Glass card with an icon tile, title, optional subtitle, and either a link or custom `action` top right. */
+export function Panel({ title, subtitle, icon, href, linkLabel = "Open", action, className, contentClassName, children }:
+  { title: React.ReactNode; subtitle?: React.ReactNode; icon?: LucideIcon; href?: string; linkLabel?: string; action?: React.ReactNode; className?: string; contentClassName?: string; children: React.ReactNode }) {
   return (
-    <Card className={cn("bg-card/80 backdrop-blur", className)}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {href && <CardAction><Link href={href} className={buttonVariants({ variant: "ghost", size: "sm" })}>{linkLabel} <ArrowRight className="size-3.5" /></Link></CardAction>}
+    <Card className={cn("rise", className)}>
+      <CardHeader className="items-center">
+        <div className="flex items-center gap-3">
+          {icon && <IconTile icon={icon} />}
+          <div className="flex flex-col">
+            <CardTitle>{title}</CardTitle>
+            {subtitle && <CardDescription className="text-xs">{subtitle}</CardDescription>}
+          </div>
+        </div>
+        {(action || href) && (
+          <CardAction className="row-span-1 self-center">
+            {action ?? <Link href={href!} className={buttonVariants({ variant: "outline", size: "sm", className: "rounded-full" })}>{linkLabel} <ArrowRight className="size-3.5" /></Link>}
+          </CardAction>
+        )}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className={contentClassName}>{children}</CardContent>
     </Card>
   );
 }
 
 export function NoResult({ run, busy, disabled }: { run: () => void; busy: boolean; disabled?: boolean }) {
   return (
-    <Card className="border border-dashed border-border bg-transparent ring-0">
-      <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
+    <div className="rise rounded-2xl border border-dashed border-border">
+      <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
         <p className="text-sm text-muted-foreground">No simulation result yet. Run the scenarios to see KPIs, deltas and the blocked-time ledger.</p>
-        <Button onClick={run} disabled={busy || disabled} className="shadow-[0_0_18px_-2px_var(--primary)]">
+        <Button onClick={run} disabled={busy || disabled}>
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Simulation
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
