@@ -24,12 +24,13 @@ export function snapshot(events: SimEvent[], t: number): Snapshot {
       case "SYSTEM_OUTAGE_ENDED": if (e.system_id) outages.delete(e.system_id); break;
       case "TASK_QUEUED": case "TASK_STARTED": case "TASK_UNBLOCKED": case "TASK_BLOCKED": {
         if (!e.task_id) break;
-        const state = e.kind === "TASK_QUEUED" ? "QUEUED" : e.kind === "TASK_BLOCKED" ? "BLOCKED" : "IN_PROGRESS";
+        // TASK_UNBLOCKED is BLOCKED -> QUEUED in the engine; a TASK_STARTED at the same t follows when a resource is free
+        const state = e.kind === "TASK_STARTED" ? "IN_PROGRESS" : e.kind === "TASK_BLOCKED" ? "BLOCKED" : "QUEUED";
         const prev = tasks.get(e.task_id);
         const sameState = prev?.state === state;
         tasks.set(e.task_id, {
           task_id: e.task_id, state, department_id: e.department_id ?? "", step_id: e.step_id ?? "",
-          reason: e.reason, resource_id: e.resource_id ?? prev?.resource_id ?? null,
+          reason: e.reason, resource_id: state === "QUEUED" ? null : (e.resource_id ?? prev?.resource_id ?? null), // the engine keeps the last attempt's resource on a re-queue
           since: sameState ? prev.since : e.t, // a reason retag keeps the wait start
         });
         break;

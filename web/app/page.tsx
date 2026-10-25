@@ -134,7 +134,7 @@ export default function Home() {
         </Select>
         <Label className="flex items-center gap-2 text-sm">
           <Checkbox aria-label="include events" checked={withEvents} onCheckedChange={(c) => setWithEvents(!!c)} />
-          Include events for playback (days x reps x scenarios must stay under 30)
+          Include events for playback (at most 30 run-days: days x reps x scenarios)
         </Label>
         <Button onClick={run} disabled={busy}>Run</Button>
       </div>

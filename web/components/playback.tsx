@@ -25,15 +25,13 @@ export function Playback({ scenarios }: { scenarios: ScenarioResult[] }) {
   const events = run?.events ?? NO_EVENTS;
   const horizon = events.length ? Math.ceil(events[events.length - 1].t) : 0;
 
+  const done = t >= horizon;
+  const running = playing && !done; // the interval simply stops at the end; Play restarts from 0
   useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setT((x) => {
-      const next = x + Number(speed) / 10;
-      if (next >= horizon) setPlaying(false);
-      return Math.min(next, horizon);
-    }), 100);
+    if (!running) return;
+    const id = setInterval(() => setT((x) => Math.min(x + Number(speed) / 10, horizon)), 100);
     return () => clearInterval(id);
-  }, [playing, speed, horizon]);
+  }, [running, speed, horizon]);
 
   const snap = useMemo(() => snapshot(events, t), [events, t]);
   const depts = Object.keys(snap.perDept).sort();
@@ -53,7 +51,7 @@ export function Playback({ scenarios }: { scenarios: ScenarioResult[] }) {
             <SelectTrigger aria-label="playback run" className="w-32"><SelectValue /></SelectTrigger>
             <SelectContent>{scenario.runs.map((r, i) => <SelectItem key={r.seed} value={String(i)}>seed {r.seed}</SelectItem>)}</SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => setPlaying((p) => !p)} disabled={t >= horizon && !playing}>{playing ? "Pause" : "Play"}</Button>
+          <Button variant="outline" size="sm" onClick={() => { if (done) setT(0); setPlaying(!running); }}>{running ? "Pause" : "Play"}</Button>
           <Button variant="ghost" size="sm" onClick={() => { setT(0); setPlaying(false); }}>Reset</Button>
           <Select value={speed} items={SPEEDS} onValueChange={(v) => v && setSpeed(v)}>
             <SelectTrigger aria-label="playback speed" className="w-28"><SelectValue /></SelectTrigger>
