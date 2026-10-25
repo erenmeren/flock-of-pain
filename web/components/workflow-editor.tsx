@@ -6,34 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IdInput, NumInput, ScheduleEditor, clamp, uniqueId } from "@/components/editor-fields";
-import { type Company, type Dist, type Step, type Workflow, durationMean, weekdays9to5 } from "@/lib/company";
+import { type Company, type Dist, type Step, type Workflow, durationMean } from "@/lib/company";
 
 const NONE = "__none__";
 
 /** The duration written when the mean is edited: const stays const, anything else becomes lognormal_mean. */
 function withMean(d: Dist, mean: number): Dist {
-  if (d.kind === "const") return { kind: "const", a: mean };
-  const sigma = (d.kind === "lognormal" ? d.b : d.sigma) || 0.4; // the loader rejects sigma 0
-  return { kind: "lognormal_mean", mean, sigma };
+  if (d.kind === "const" || (d.kind === "lognormal" && d.b === 0)) return { kind: "const", a: mean }; // sigma 0 is deterministic; the loader rejects it
+  return { kind: "lognormal_mean", mean, sigma: d.b ?? d.sigma ?? 0.4 };
 }
 
-export function WorkflowsEditor({ company, onChange }: { company: Company; onChange: (c: Company) => void }) {
-  const setWf = (i: number, w: Workflow) => onChange({ ...company, workflows: company.workflows.map((x, j) => (j === i ? w : x)) });
-  return (
-    <>
-      {company.workflows.map((w, i) => (
-        <WorkflowCard key={i} wf={w} company={company} onChange={(x) => setWf(i, x)}
-          onRemove={() => onChange({ ...company, workflows: company.workflows.filter((_, j) => j !== i) })} />
-      ))}
-      <Button variant="outline" onClick={() => onChange({ ...company, workflows: [...company.workflows, {
-        id: uniqueId("workflow", company.workflows), name: "New workflow", arrival: { rate_per_hour: 1, window: weekdays9to5() }, steps: [] }] })}>
-        Add workflow
-      </Button>
-    </>
-  );
-}
-
-function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; company: Company; onChange: (w: Workflow) => void; onRemove: () => void }) {
+export function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow; company: Company; onChange: (w: Workflow) => void; onRemove: () => void }) {
   const depts = company.departments;
   const skillsOf = (deptId: string) => [...new Set(depts.find((d) => d.id === deptId)?.resources.flatMap((r) => r.skills) ?? [])].sort();
   const systemItems = { [NONE]: "none", ...Object.fromEntries(company.systems.map((s) => [s.id, s.id])) };

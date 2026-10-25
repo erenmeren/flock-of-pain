@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
   deleteCompany, generate as apiGenerate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
@@ -178,4 +178,10 @@ export function useTwin(): Twin {
   const v = useContext(Ctx);
   if (!v) throw new Error("useTwin outside TwinProvider");
   return v;
+}
+
+const noop = () => () => {};
+/** false during server render and hydration, true after: draft-dependent text must wait for it or React reports a hydration mismatch. */
+export function useMounted(): boolean {
+  return useSyncExternalStore(noop, () => true, () => false);
 }

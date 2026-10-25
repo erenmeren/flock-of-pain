@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
@@ -18,9 +19,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
       <body className="flex h-full min-h-screen">
         <TwinProvider>
-          <Sidebar />
+          <Suspense><Sidebar /></Suspense>
           <div className="flex min-w-0 flex-1 flex-col">
-            <Topbar />
+            <Suspense><Topbar /></Suspense>
             <main className="flex-1 overflow-auto p-6">{children}</main>
           </div>
         </TwinProvider>

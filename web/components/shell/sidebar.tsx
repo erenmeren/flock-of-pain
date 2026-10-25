@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, FlaskConical, LayoutDashboard, Network, Play, Settings, Workflow } from "lucide-react";
 import { cn } from "cn";
-import { useTwin } from "@/lib/store";
+import { useMounted, useTwin } from "@/lib/store";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -19,6 +19,7 @@ const NAV = [
 export function Sidebar() {
   const path = usePathname();
   const { apiKey, selected, company } = useTwin();
+  const mounted = useMounted();
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-6 border-r border-sidebar-border bg-sidebar p-4">
       <Link href="/" className="flex items-center gap-2 px-2">
@@ -42,8 +43,8 @@ export function Sidebar() {
         })}
       </nav>
       <div className="mt-auto flex flex-col gap-2 rounded-lg bg-sidebar-accent/60 p-3 text-xs text-muted-foreground">
-        <p className="flex items-center gap-2"><span className={cn("size-2 rounded-full", apiKey ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400")} />{apiKey ? "API key set" : "No API key"}</p>
-        <p className="truncate" title={company?.id}>{selected ? `Saved: ${selected}` : company ? "Unsaved draft" : "Loading…"}</p>
+        <p className="flex items-center gap-2"><span className={cn("size-2 rounded-full", mounted && apiKey ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400")} />{mounted && apiKey ? "API key set" : "No API key"}</p>
+        <p className="truncate" title={mounted ? company?.id : undefined}>{!mounted || !company ? "Loading…" : selected ? `Saved: ${selected}` : "Unsaved draft"}</p>
       </div>
     </aside>
   );
