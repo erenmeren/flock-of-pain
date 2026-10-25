@@ -18,7 +18,7 @@ export function Topbar() {
   return (
     <header className="flex flex-col gap-2 border-b border-border px-6 py-3">
       <div className="flex items-center gap-3">
-        <Select value={t.selected || null} items={items} onValueChange={pick}>
+        <Select value={t.selected || null} items={items} onValueChange={pick} disabled={t.busy}>
           <SelectTrigger aria-label="company" className="w-64"><SelectValue placeholder={mounted && t.company ? `Draft: ${t.company.name}` : "Loading…"} /></SelectTrigger>
           <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>

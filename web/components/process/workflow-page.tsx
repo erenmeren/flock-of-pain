@@ -8,13 +8,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader, fmt } from "@/components/page";
 import { WorkflowCard } from "@/components/workflow-editor";
 import { StepChain, cycleMean, windowSummary } from "@/components/process/step-chain";
-import { type Workflow } from "@/lib/company";
+import { type Workflow, renameInScenarios } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 export function WorkflowPage() {
   const { id: raw } = useParams<{ id: string }>();
   const id = decodeURIComponent(raw);
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios, setScenarios } = useTwin();
   const router = useRouter();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -31,7 +31,10 @@ export function WorkflowPage() {
   const onChange = (w: Workflow) => {
     if (w.id !== wf.id && (!w.id || company.workflows.some((x) => x.id === w.id))) w = { ...w, id: wf.id }; // ids stay unique and non-empty
     setCompany({ ...company, workflows: company.workflows.map((x, j) => (j === i ? w : x)) });
-    if (w.id !== wf.id) router.replace(`/processes/${encodeURIComponent(w.id)}`);
+    if (w.id !== wf.id) {
+      setScenarios(renameInScenarios(scenarios, "workflow_id", wf.id, w.id));
+      router.replace(`/processes/${encodeURIComponent(w.id)}`);
+    }
   };
   const onRemove = () => {
     if (!confirm(`Remove workflow "${wf.name}"?`)) return;

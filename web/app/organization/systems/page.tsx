@@ -8,19 +8,21 @@ import { stepsIn } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { renameSystem } from "@/lib/company";
+import { renameInScenarios, renameSystem, scenarioRefs } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 export default function SystemsPage() {
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios, setScenarios } = useTwin();
   if (!company) return <Loading />;
   const steps = stepsIn(company);
+  const inScenarios = scenarioRefs(scenarios).systems;
   const setSystem = (i: number, patch: { id?: string; name?: string }) => {
     const old = company.systems[i];
     const taken = company.systems.some((x, j) => j !== i && x.id === patch.id);
-    if (taken) patch = { ...patch, id: old.id }; // duplicate id ignored
+    if (patch.id === "" || taken) patch = { ...patch, id: old.id }; // empty or duplicate id ignored
     const next = patch.id !== undefined && patch.id !== old.id ? renameSystem(company, old.id, patch.id) : company;
     setCompany({ ...next, systems: next.systems.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+    if (patch.id !== undefined && patch.id !== old.id) setScenarios(renameInScenarios(scenarios, "system_id", old.id, patch.id));
   };
   const add = () => setCompany({ ...company, systems: [...company.systems, { id: uniqueId("system", company.systems), name: "New system" }] });
   return (
@@ -37,6 +39,7 @@ export default function SystemsPage() {
               const nSteps = steps.filter((st) => st.system_id === s.id).length;
               const nOutages = (company.outages ?? []).filter((o) => o[0] === s.id).length;
               const used = nSteps + nOutages > 0;
+              const scen = inScenarios.has(s.id);
               return (
                 <TableRow key={i}>
                   <TableCell><IdInput aria-label={`system id ${s.id}`} className="w-40" value={s.id} onCommit={(id) => setSystem(i, { id })} /></TableCell>
@@ -48,7 +51,8 @@ export default function SystemsPage() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" disabled={used} title={used ? "referenced by a workflow step or outage" : undefined}
+                    <Button variant="ghost" size="sm" disabled={used || scen}
+                      title={used ? "referenced by a workflow step or outage" : scen ? "referenced by a scenario" : undefined}
                       aria-label={`remove ${s.id}`} onClick={() => setCompany({ ...company, systems: company.systems.filter((_, j) => j !== i) })}>Remove</Button>
                   </TableCell>
                 </TableRow>

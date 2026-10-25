@@ -10,12 +10,18 @@ export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.ma
 
 /** Uncontrolled id field committed on blur, so intermediate ids never rename references. */
 export function IdInput({ value, onCommit, ...props }: { value: string; onCommit: (id: string) => void } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur">) {
-  return <Input key={value} defaultValue={value} onBlur={(e) => e.target.value !== value && onCommit(e.target.value)} {...props} />;
+  // a rejected id leaves `value` (and the key) unchanged, so the box is reset by hand
+  return <Input key={value} defaultValue={value} onBlur={(e) => { if (e.currentTarget.value !== value) onCommit(e.currentTarget.value); e.currentTarget.value = value; }} {...props} />;
 }
 
-/** Uncontrolled number committed on blur; the box keeps what was typed until then. */
+/** Uncontrolled number committed on blur; the box keeps what was typed until then. An empty box is rejected. */
 export function NumInput({ value, onCommit, lo = 0, hi = Infinity, ...props }: { value: number; onCommit: (v: number) => void; lo?: number; hi?: number } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur" | "type">) {
-  return <Input key={value} type="number" step="any" defaultValue={value} onBlur={(e) => { const v = clamp(Number(e.target.value), lo, hi); if (v !== value) onCommit(v); }} {...props} />;
+  return <Input key={value} type="number" step="any" defaultValue={value} onBlur={(e) => {
+    const t = e.currentTarget.value;
+    const v = t.trim() === "" ? value : clamp(Number(t), lo, hi);
+    if (v !== value) onCommit(v);
+    e.currentTarget.value = String(v); // show what was stored: the clamped value, or the old one when rejected
+  }} {...props} />;
 }
 
 export function uniqueId(base: string, items: { id: string }[]): string {

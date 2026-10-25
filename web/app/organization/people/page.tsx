@@ -12,14 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type Resource, weekdays9to5 } from "@/lib/company";
+import { type Resource, renameInScenarios, scenarioRefs, weekdays9to5 } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 const ALL = "__all__";
 const NONE = "__none__";
 
 export default function PeoplePage() {
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios, setScenarios } = useTwin();
   const [filter, setFilter] = useState(ALL);
   if (!company) return <Loading />;
   const resources = allResources(company);
@@ -27,6 +27,7 @@ export default function PeoplePage() {
     .filter(({ r, loc }) => !isPool(r) && (filter === ALL || company.departments[loc.di].id === filter));
   const deptItems = Object.fromEntries(company.departments.map((d) => [d.id, d.name]));
   const poolById = new Map(resources.filter(isPool).map((p) => [p.id, p]));
+  const inScenarios = scenarioRefs(scenarios).resources;
 
   const addPerson = () => {
     const di = Math.max(0, company.departments.findIndex((d) => d.id === filter));
@@ -64,7 +65,12 @@ export default function PeoplePage() {
           </TableHeader>
           <TableBody>
             {people.map(({ r, loc }) => {
-              const set = (next: Resource) => setCompany(setResource(company, loc, next));
+              const set = (next: Resource) => {
+                const out = setResource(company, loc, next);
+                const id = out.departments[loc.di].resources[loc.ri].id; // setResource may reject the new id
+                setCompany(out);
+                if (id !== r.id) setScenarios(renameInScenarios(scenarios, "resource_id", r.id, id));
+              };
               const dept = company.departments[loc.di];
               const poolItems: Record<string, string> = { [NONE]: "standalone", ...Object.fromEntries(dept.resources.filter(isPool).map((p) => [p.id, p.id])) };
               if (r.pool_id && !(r.pool_id in poolItems)) poolItems[r.pool_id] = `${r.pool_id} (other department)`;
@@ -103,7 +109,8 @@ export default function PeoplePage() {
                       : r.pool_id === undefined && <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} onClick={() => setCompany(removeResource(company, loc))}>Remove</Button>
+                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)} title={inScenarios.has(r.id) ? "referenced by a scenario" : undefined}
+                      onClick={() => confirm(`Remove "${r.id}"?`) && setCompany(removeResource(company, loc))}>Remove</Button>
                   </TableCell>
                 </TableRow>
               );

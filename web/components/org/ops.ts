@@ -26,7 +26,7 @@ const idTaken = (c: Company, id: string, self: Resource) => allResources(c).some
 /** Replace one resource; keeps ids unique, makes pool members follow a pool rename, and moves headcount with membership. */
 export function setResource(c: Company, { di, ri }: Loc, next: Resource): Company {
   const old = c.departments[di].resources[ri];
-  if (next.id !== old.id && idTaken(c, next.id, old)) next = { ...next, id: old.id }; // duplicate id ignored
+  if (next.id !== old.id && (!next.id || idTaken(c, next.id, old))) next = { ...next, id: old.id }; // empty or duplicate id ignored
   let out = mapRes(c, (r, i, j) => (i === di && j === ri ? next : r));
   if (isPool(old) && next.id !== old.id) out = mapRes(out, (r) => (!isPool(r) && r.pool_id === old.id ? { ...r, pool_id: next.id } : r));
   if (!isPool(old) && old.pool_id !== next.pool_id) out = adjustPool(adjustPool(out, old.pool_id, -1), next.pool_id, +1);

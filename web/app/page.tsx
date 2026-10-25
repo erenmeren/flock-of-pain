@@ -1,10 +1,10 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
 import { Delta, KPI_LABEL, MiniBars, NoResult, Panel, fmtKpi, sourceLabel } from "@/components/dashboard/kpi";
 import { PageHeader, StatCard, fmt } from "@/components/page";
 import { Card, CardContent } from "@/components/ui/card";
-import { durationMean, headcount } from "@/lib/company";
+import { StepChain, cycleMean } from "@/components/process/step-chain";
+import { headcount } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 const ACCENTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
@@ -16,10 +16,9 @@ export default function Overview() {
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const wf = company.workflows[0];
-  const means = wf?.steps.map((s) => durationMean(s.duration)) ?? [];
-  const total = means.reduce<number>((a, m) => a + (m ?? 0), 0);
-  const deptName = Object.fromEntries(company.departments.map((d) => [d.id, d.name]));
-  const base = result?.scenarios[0];
+  // a result from another company (or from history) must not sit under this company's name
+  const own = resultSource?.kind === "run" && resultSource.company_id === company.id;
+  const base = own ? result?.scenarios[0] : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,21 +73,8 @@ export default function Overview() {
       <Panel title={wf ? `Process Flow: ${wf.name}` : "Process Flow"} href="/processes">
         {wf ? (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {wf.steps.map((s, i) => (
-                <div key={s.id} className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
-                    <span className="grid size-6 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">{i + 1}</span>
-                    <span>
-                      <span className="block text-sm font-medium">{s.name}</span>
-                      <span className="block text-xs text-muted-foreground">{deptName[s.department_id] ?? s.department_id} · {means[i] === null ? "–" : `${fmt(means[i], 0)} min`}</span>
-                    </span>
-                  </div>
-                  {i < wf.steps.length - 1 && <ChevronRight className="size-4 text-muted-foreground" />}
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">Total mean step time: <span className="tabular-nums text-foreground">{fmt(total, 0)} min</span> (sum of step means, excluding waits)</p>
+            <StepChain wf={wf} company={company} />
+            <p className="text-xs text-muted-foreground">Total mean step time: <span className="tabular-nums text-foreground">{fmt(cycleMean(wf), 0)} min</span> (sum of step means, excluding waits)</p>
           </div>
         ) : <p className="text-sm text-muted-foreground">No workflows.</p>}
       </Panel>
@@ -127,7 +113,12 @@ export default function Overview() {
             </Panel>
           )}
         </div>
-      ) : <NoResult run={run} busy={busy} />}
+      ) : (
+        <div className="flex flex-col gap-2">
+          {result && resultSource && <p className="text-xs text-muted-foreground">Last result belongs to {resultSource.name}.</p>}
+          <NoResult run={run} busy={busy} />
+        </div>
+      )}
     </div>
   );
 }

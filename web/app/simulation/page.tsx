@@ -2,11 +2,11 @@
 
 import { Loader2, Play } from "lucide-react";
 import { KPI_LABEL, LedgerTable, NoResult, Panel, fmtKpi, resultKey, sourceLabel } from "@/components/dashboard/kpi";
+import { NumInput } from "@/components/editor-fields";
 import { PageHeader } from "@/components/page";
 import { Playback } from "@/components/playback";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,8 +29,8 @@ export default function Simulation() {
             {NUMBERS.map(([k, label]) => (
               <Label key={k} className="flex flex-col items-start gap-1.5 text-xs text-muted-foreground">
                 {label}
-                <Input type="number" min={k === "seed" ? undefined : 1} value={config[k] as number}
-                  onChange={(e) => setConfig({ ...config, [k]: Number(e.target.value) })} />
+                <NumInput lo={k === "seed" ? 0 : 1} value={config[k] as number}
+                  onCommit={(v) => setConfig({ ...config, [k]: k === "days" ? v : Math.floor(v) })} />
               </Label>
             ))}
             <Label className="flex flex-col items-start gap-1.5 text-xs text-muted-foreground">

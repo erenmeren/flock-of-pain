@@ -5,7 +5,7 @@ import {
   type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
   deleteCompany, generate as apiGenerate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
 } from "@/lib/api";
-import { type Company, type Scenario } from "@/lib/company";
+import { type Company, type Scenario, checkCompany, checkScenarios } from "@/lib/company";
 
 export type Config = { seed: number; days: number; replications: number; policy: string; include_events: boolean; save: boolean };
 export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", include_events: false, save: false };
@@ -43,6 +43,7 @@ export type Twin = {
 
 const DRAFT = "flock_draft"; // the working copy survives a reload; saved companies live in the API
 const Ctx = createContext<Twin | null>(null);
+const keepDraft = (c: Company | null) => !!c && !confirm("Replace the current draft? Unsaved changes are lost.");
 
 export function TwinProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompanyState] = useState<Company | null>(null);
@@ -77,7 +78,10 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     Promise.resolve().then(() => {
       setKeyState(loadApiKey());
       let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string } | null = null;
-      try { draft = JSON.parse(localStorage.getItem(DRAFT) ?? "null"); } catch { /* corrupt draft: start from the example */ }
+      try {
+        draft = JSON.parse(localStorage.getItem(DRAFT) ?? "null");
+        if (draft?.company) draft = { ...draft, company: checkCompany(draft.company), scenarios: checkScenarios(draft.scenarios ?? []) };
+      } catch { draft = null; /* corrupt draft: start from the example */ }
       if (draft?.company) {
         setCompanyState(draft.company);
         setScenariosState(draft.scenarios ?? []);
@@ -122,15 +126,15 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setResultSource(null);
       if (k) refreshLists();
     },
-    loadExample: () => act(loadExample),
-    generate: (prompt) => act(async () => {
+    loadExample: async () => { if (keepDraft(company)) return; await act(loadExample); },
+    generate: async (prompt) => { if (keepDraft(company)) return; await act(async () => {
       const x = await apiGenerate(prompt);
       setCompanyState(x.company as Company);
       setScenariosState(x.scenarios as Scenario[]);
       setSelected("");
       setResult(null);
       setResultSource(null);
-    }),
+    }); },
     run: () => act(async () => {
       if (!company) return;
       const { include_events, save, ...cfg } = config;
@@ -149,14 +153,14 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setSelected(company.id);
       refreshLists();
     }),
-    load: (id) => act(async () => {
+    load: async (id) => { if (keepDraft(company)) return; await act(async () => {
       const b = await loadCompany(id);
       setCompanyState(b.company as Company);
       setScenariosState(b.scenarios as Scenario[]);
       setSelected(id);
       setResult(null);
       setResultSource(null);
-    }),
+    }); },
     remove: (id) => act(async () => {
       if (!confirm(`Delete the saved company "${id}"? This cannot be undone.`)) return;
       await deleteCompany(id);

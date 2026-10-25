@@ -8,19 +8,21 @@ import { deptHeadcount, isPool, removeDepartment, stepsIn } from "@/components/o
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type Department, renameDepartment } from "@/lib/company";
+import { type Department, renameDepartment, renameInScenarios, scenarioRefs } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 export default function DepartmentsPage() {
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios, setScenarios } = useTwin();
   if (!company) return <Loading />;
   const steps = stepsIn(company);
+  const inScenarios = scenarioRefs(scenarios).departments;
   const setDept = (i: number, d: Department) => {
     const old = company.departments[i];
     const taken = company.departments.some((x, j) => j !== i && x.id === d.id);
-    if (taken) d = { ...d, id: old.id }; // duplicate id ignored
+    if (!d.id || taken) d = { ...d, id: old.id }; // empty or duplicate id ignored
     const next = old.id !== d.id ? renameDepartment(company, old.id, d.id) : company;
     setCompany({ ...next, departments: next.departments.map((x, j) => (j === i ? d : x)) });
+    if (old.id !== d.id) setScenarios(renameInScenarios(scenarios, "department_id", old.id, d.id));
   };
   const add = () => setCompany({ ...company, departments: [...company.departments, { id: uniqueId("dept", company.departments), name: "New department", resources: [] }] });
   return (
@@ -39,6 +41,7 @@ export default function DepartmentsPage() {
           <TableBody>
             {company.departments.map((d, i) => {
               const used = steps.filter((s) => s.department_id === d.id).length;
+              const scen = inScenarios.has(d.id);
               return (
                 <TableRow key={i}>
                   <TableCell>
@@ -53,8 +56,12 @@ export default function DepartmentsPage() {
                   <TableCell className="text-right tabular-nums">{d.resources.filter((r) => !isPool(r)).length}</TableCell>
                   <TableCell className="text-right tabular-nums">{used}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" disabled={used > 0} title={used ? `referenced by ${used} workflow step${used === 1 ? "" : "s"}` : undefined}
-                      aria-label={`remove ${d.id}`} onClick={() => setCompany(removeDepartment(company, i))}>Remove</Button>
+                    <Button variant="ghost" size="sm" disabled={used > 0 || scen}
+                      title={used ? `referenced by ${used} workflow step${used === 1 ? "" : "s"}` : scen ? "referenced by a scenario" : undefined}
+                      aria-label={`remove ${d.id}`} onClick={() => {
+                        if (d.resources.length && !confirm(`Remove department "${d.id}" and its ${d.resources.length} pools/people?`)) return;
+                        setCompany(removeDepartment(company, i));
+                      }}>Remove</Button>
                   </TableCell>
                 </TableRow>
               );

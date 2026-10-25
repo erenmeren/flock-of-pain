@@ -9,15 +9,16 @@ import { type Loc, addResource, allResources, isPool, membersOf, removeResource,
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { slug, weekdays9to5 } from "@/lib/company";
+import { renameInScenarios, scenarioRefs, slug, weekdays9to5 } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 export default function PoolsPage() {
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios, setScenarios } = useTwin();
   const [target, setTarget] = useState(""); // department id new pools go to ("" = first)
   if (!company) return <Loading />;
   const pools = company.departments.flatMap((d, di) => d.resources.map((r, ri) => ({ r, loc: { di, ri } as Loc })).filter((x) => isPool(x.r)));
   const deptItems = Object.fromEntries(company.departments.map((d) => [d.id, d.name]));
+  const inScenarios = scenarioRefs(scenarios).resources;
   const di = Math.max(0, company.departments.findIndex((d) => d.id === target));
   const add = () => {
     const d = company.departments[di];
@@ -46,7 +47,12 @@ export default function PoolsPage() {
           </TableHeader>
           <TableBody>
             {pools.map(({ r, loc }) => {
-              const set = (next: typeof r) => setCompany(setResource(company, loc, next));
+              const set = (next: typeof r) => {
+                const out = setResource(company, loc, next);
+                const id = out.departments[loc.di].resources[loc.ri].id; // setResource may reject the new id
+                setCompany(out);
+                if (id !== r.id) setScenarios(renameInScenarios(renameInScenarios(scenarios, "pool_id", r.id, id), "resource_id", r.id, id));
+              };
               const members = membersOf(company, r.id);
               const d = company.departments[loc.di];
               return (
@@ -68,8 +74,12 @@ export default function PoolsPage() {
                       : <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} title={members ? "members become standalone with this pool's schedule" : undefined}
-                      onClick={() => setCompany(removeResource(company, loc))}>Remove</Button>
+                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)}
+                      title={inScenarios.has(r.id) ? "referenced by a scenario" : members ? "members become standalone with this pool's schedule" : undefined}
+                      onClick={() => {
+                        if (members && !confirm(`Remove pool "${r.id}"? Its ${members} members become standalone with this pool's schedule.`)) return;
+                        setCompany(removeResource(company, loc));
+                      }}>Remove</Button>
                   </TableCell>
                 </TableRow>
               );

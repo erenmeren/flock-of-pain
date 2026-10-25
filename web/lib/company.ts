@@ -49,9 +49,8 @@ export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").r
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
-/** JSON.parse plus the shape checks the editor relies on to render; the API does the full validation. */
-export function parseCompany(text: string): Company {
-  const c = JSON.parse(text);
+/** Shape checks the editor relies on to render; the API does the full validation. */
+export function checkCompany(c: unknown): Company {
   if (!isObj(c) || !Array.isArray(c.departments)) throw new Error("expected a company object with departments");
   const out = { systems: [], workflows: [], ...c } as unknown as Company;
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
@@ -73,6 +72,8 @@ export function parseCompany(text: string): Company {
   }
   return out;
 }
+
+export const parseCompany = (text: string): Company => checkCompany(JSON.parse(text));
 
 /** Ids referenced by workflows/outages; the editor blocks deleting these. */
 export function referencedIds(c: Company): { departments: Set<string>; systems: Set<string> } {
@@ -115,12 +116,42 @@ export type Scenario = { id: string; name: string; overlays: Overlay[] };
 
 export const OVERLAY_TYPES = ["arrival_multiplier", "system_outage", "add_employee", "remove_resource", "set_pool_headcount", "absence"] as const;
 
-/** Light shape check for the scenarios JSON; the API validates fully. */
-export function parseScenarios(text: string): Scenario[] {
-  const s = JSON.parse(text);
-  if (!Array.isArray(s) || !s.every((x) => isObj(x) && typeof x.id === "string" && Array.isArray(x.overlays) && x.overlays.every((o) => isObj(o) && typeof o.type === "string")))
-    throw new Error("scenarios must be a list of {id, name, overlays}");
+type IdField = "department_id" | "system_id" | "resource_id" | "pool_id" | "workflow_id";
+const ID_FIELD = new Map<string, IdField>([["arrival_multiplier", "workflow_id"], ["system_outage", "system_id"], ["add_employee", "department_id"],
+  ["remove_resource", "resource_id"], ["set_pool_headcount", "pool_id"], ["absence", "resource_id"]]);
+
+const overlayOk = (o: unknown) => {
+  if (!isObj(o) || typeof o.type !== "string") return false;
+  const f = ID_FIELD.get(o.type);
+  if (f && typeof o[f] !== "string" && !(f === "workflow_id" && o[f] === null)) return false; // null workflow_id = all workflows
+  return o.type !== "add_employee" || (isObj(o.employee) && typeof o.employee.id === "string" && Array.isArray(o.employee.skills));
+};
+
+/** Light shape check for the scenarios; the API validates fully. */
+export function checkScenarios(s: unknown): Scenario[] {
+  if (!Array.isArray(s) || !s.every((x) => isObj(x) && typeof x.id === "string" && Array.isArray(x.overlays) && x.overlays.every(overlayOk)))
+    throw new Error("scenarios must be a list of {id, name, overlays} with string ids (add_employee needs an employee with id and skills)");
   return s as Scenario[];
+}
+
+export const parseScenarios = (text: string): Scenario[] => checkScenarios(JSON.parse(text));
+
+/** Overlays follow an id rename; `field` names which kind of id changed. */
+export function renameInScenarios(scenarios: Scenario[], field: IdField, from: string, to: string): Scenario[] {
+  return scenarios.map((s) => ({
+    ...s,
+    overlays: s.overlays.map((o) => (ID_FIELD.get(o.type) === field && (o as Record<string, unknown>)[field] === from ? { ...o, [field]: to } : o)),
+  }));
+}
+
+/** Ids scenario overlays point at; the editor blocks deleting these. */
+export function scenarioRefs(scenarios: Scenario[]): { departments: Set<string>; systems: Set<string>; resources: Set<string> } {
+  const refs = scenarios.flatMap((s) => s.overlays).map((o) => {
+    const f = ID_FIELD.get(o.type);
+    return { f, id: f && (o as Record<string, unknown>)[f] };
+  });
+  const ids = (...fields: IdField[]) => new Set(refs.flatMap(({ f, id }) => (f && fields.includes(f) && typeof id === "string" ? [id] : [])));
+  return { departments: ids("department_id"), systems: ids("system_id"), resources: ids("resource_id", "pool_id") };
 }
 
 /** Everyone the company employs: pool headcount counts the carved members already. */
