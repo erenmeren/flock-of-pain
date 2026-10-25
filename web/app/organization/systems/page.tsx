@@ -1,8 +1,7 @@
 "use client";
 
 import { Plus, Server } from "lucide-react";
-import { IconTile } from "@/components/page";
-import { PageHeader } from "@/components/page";
+import { IconTile, PageHeader } from "@/components/page";
 import { IdInput, uniqueId } from "@/components/editor-fields";
 import { INLINE_INPUT, Loading, OrgNav, Pill, StatusDot, TableCard } from "@/components/org/parts";
 import { stepsIn } from "@/components/org/ops";

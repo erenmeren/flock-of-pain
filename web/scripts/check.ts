@@ -56,7 +56,6 @@ assert.throws(() => checkScenarios([{ id: "s", name: "s", overlays: [{ type: "ad
 assert.throws(() => checkScenarios([{ id: "s", name: "s", overlays: [{ type: "absence", resource_id: 3 }] }]));
 assert.equal(checkScenarios(sc), sc);
 
-console.log("ok");
 
 // overview derived numbers
 const stat = (mean: number) => ({ mean, p10: mean, p50: mean, p90: mean });
@@ -70,3 +69,4 @@ const wf = { id: "w", name: "w", arrival: { rate_per_hour: 1, window: sched }, s
 assert.equal(handoffs(wf), 2);
 const edges = mapEdges({ ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [wf] });
 assert.deepEqual(edges.map((e) => `${e.from}>${e.to}:${e.n}`), ["w:w>d:a:1", "d:a>d:b:1", "d:b>d:a:1", "d:a>s:erp:1"]);
+console.log("ok");

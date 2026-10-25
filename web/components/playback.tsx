@@ -21,7 +21,7 @@ const ROW = "hover:bg-white/[0.03]";
 const STATE_TONE = { QUEUED: "bg-white/5 text-muted-foreground", IN_PROGRESS: "bg-primary/15 text-primary", BLOCKED: "bg-rose-400/15 text-rose-400" };
 const SLIDER = "h-1.5 cursor-pointer appearance-none rounded-full border-0 bg-white/10 p-0 accent-[var(--primary)] shadow-none dark:bg-white/10 focus-visible:ring-0 " +
   "[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_var(--primary),0_0_14px_var(--primary)] " +
-  "[&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_0_0_3px_var(--primary),0_0_14px_var(--primary)] " +
+  "focus-visible:[&::-moz-range-thumb]:shadow-[0_0_0_3px_var(--primary),0_0_0_7px_color-mix(in_oklch,var(--primary)_35%,transparent)] [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_0_0_3px_var(--primary),0_0_14px_var(--primary)] " +
   "focus-visible:[&::-webkit-slider-thumb]:shadow-[0_0_0_3px_var(--primary),0_0_0_7px_color-mix(in_oklch,var(--primary)_35%,transparent)]";
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
@@ -91,7 +91,6 @@ export function Playback({ scenarios }: { scenarios: ScenarioResult[] }) {
             {ticks.map((i) => (
               <span key={i} className="absolute -translate-x-1/2 first:translate-x-0" style={{ left: `${((i * 1440) / horizon) * 100}%` }}>D{i + 1}</span>
             ))}
-            {nDays > 1 && <span className="absolute right-0">D{nDays}</span>}
           </div>
         </div>
 
@@ -109,7 +108,7 @@ export function Playback({ scenarios }: { scenarios: ScenarioResult[] }) {
           <div role="group" aria-label="playback speed" className="flex items-center gap-1 rounded-full glass-inset p-1 sm:ml-4">
             {Object.entries(SPEEDS).map(([v, label]) => (
               <Button key={v} variant={speed === v ? "outline" : "ghost"} size="xs" aria-pressed={speed === v} onClick={() => setSpeed(v)}
-                className={cn("rounded-full px-2.5", speed === v && "bg-primary/15 text-primary dark:bg-primary/15")}>
+                className={cn("rounded-full px-2.5", speed === v && "bg-primary/15! text-primary")}>
                 {label}
               </Button>
             ))}

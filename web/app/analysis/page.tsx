@@ -71,7 +71,7 @@ export default function Analysis() {
                       <div key={s.id} className="grid grid-cols-[8rem_1fr_6rem_5.5rem] items-center gap-3 text-sm">
                         <span className="truncate text-xs text-muted-foreground" title={s.name}>{s.name}</span>
                         <div className="h-2 rounded-full bg-white/[0.06]">
-                          <div className="h-full rounded-full transition-[width] duration-300"
+                          <div className="h-full rounded-full motion-safe:transition-[width] duration-300"
                             style={{ width: `${(Math.abs(vals[i]) / max) * 100}%`, background: barColor(i), boxShadow: i === 0 ? undefined : `0 0 10px ${barColor(i)}` }} />
                         </div>
                         <span className="text-right font-medium tabular-nums">{fmtKpi(k, s.summary[k]?.mean)}</span>

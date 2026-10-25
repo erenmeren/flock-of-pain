@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, type LucideIcon, Loader2, Play } from "lucide-react";
 import { cn } from "cn";
-import { Bars, IconTile, fmt } from "@/components/page";
+import { IconTile, fmt } from "@/components/page";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -57,9 +57,6 @@ export function Delta({ k, value, base }: { k: string; value?: number; base?: nu
     </span>
   );
 }
-
-/** Tiny bar sparkline: first value is the baseline (muted), the rest use --chart-1. */
-export const MiniBars = ({ values }: { values: number[] }) => <Bars values={values} className="h-8" />;
 
 /** Glass card with an icon tile, title, optional subtitle, and either a link or custom `action` top right. */
 export function Panel({ title, subtitle, icon, href, linkLabel = "Open", action, className, contentClassName, children }:

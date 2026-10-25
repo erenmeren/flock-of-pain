@@ -33,7 +33,7 @@ export default function ScenariosPage() {
         <Panel title="Scenarios" subtitle={`${scenarios.length} what-if variant${scenarios.length === 1 ? "" : "s"}`} icon={Layers} contentClassName="flex flex-col gap-2">
           {scenarios.map((x, j) => (
             <div key={j} className={cn("flex items-center gap-2 rounded-xl p-2.5 glass-inset transition-shadow duration-200 hover:shadow-[inset_0_0_0_1px_oklch(1_0_0/0.14)]",
-              j === i && "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_60%,transparent),0_0_20px_-8px_var(--primary)]! bg-primary/10")}>
+              j === i && "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_60%,transparent),0_0_20px_-8px_var(--primary)]! bg-primary/10!")}>
               <span className="size-2.5 shrink-0 rounded-full" style={{ background: accent(j), boxShadow: `0 0 8px ${accent(j)}` }} />
               <button type="button" className="min-w-0 flex-1 cursor-pointer text-left" aria-pressed={j === i} onClick={() => setSel(j)}>
                 <span className="block truncate text-sm font-medium">{x.name}</span>

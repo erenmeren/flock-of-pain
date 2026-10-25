@@ -84,7 +84,7 @@ export default function Settings() {
         <div className="flex flex-col gap-2">
           {t.saved.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No saved companies{t.apiKey ? "" : " (set an API key first)"}.</p>}
           {t.saved.map((c) => (
-            <div key={c.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm", t.selected === c.id && "ring-1 ring-primary/40")}>
+            <div key={c.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm", t.selected === c.id && "ring-1! ring-primary/40")}>
               <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">{c.name.slice(0, 2).toUpperCase()}</span>
               <span className="font-medium">{c.name}</span>
               <span className="font-mono text-xs text-muted-foreground">{c.id}</span>

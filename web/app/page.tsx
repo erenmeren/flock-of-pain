@@ -32,6 +32,7 @@ export default function Overview() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-12">
+      <h1 className="sr-only">Overview</h1>
       <Panel icon={Network} title="Organization System" subtitle="Inflows, departments, systems and hand-offs" href="/organization" linkLabel="View details" className="lg:col-span-7" contentClassName="flex flex-1 flex-col justify-center">
         <OrgMap company={company} />
       </Panel>
@@ -85,16 +86,16 @@ export default function Overview() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:col-span-5">
         <Panel icon={Play} title={<span className="flex items-center gap-2"><span className={cn("size-2 rounded-full", busy ? "bg-rose-500 shadow-[0_0_10px_#f43f5e] animate-pulse" : "bg-rose-500/70")} />Simulation Controls</span>}
-          subtitle={own ? sourceLabel(resultSource) : "No result yet"} contentClassName="flex flex-col gap-4">
+          subtitle={own ? sourceLabel(resultSource) : result && resultSource ? `Last result belongs to ${resultSource.name}` : "No result yet"} contentClassName="flex flex-col gap-4">
           <dl className="grid grid-cols-2 gap-2 text-xs">
             <Row k="Horizon" v={`${config.days} days × ${config.replications} reps`} />
             <Row k="Scenarios" v={scenarios.length} />
             <Row k="Policy" v={config.policy} />
-            <Row k="Run-days" v={<span className={cn(config.include_events && runDays > 30 && "text-rose-400")}>{runDays}{config.include_events ? " / 30" : ""}</span>} />
+            <Row k="Run-days" v={<span className={cn(config.include_events && runDays > 30 && "text-rose-400")}>{runDays}{config.include_events ? ` / 30${runDays > 30 ? " over budget" : ""}` : ""}</span>} />
           </dl>
           <div className="flex items-center gap-3">
             <button type="button" onClick={run} disabled={busy} aria-label="run simulation"
-              className="press glow-primary flex size-14 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,color-mix(in_oklch,var(--primary),white_14%),var(--primary))] text-primary-foreground disabled:opacity-60">
+              className="press glow-primary flex size-14 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 bg-[linear-gradient(180deg,color-mix(in_oklch,var(--primary),white_14%),var(--primary))] text-primary-foreground disabled:opacity-60">
               {busy ? <Loader2 className="size-6 animate-spin" /> : <Play className="size-6 fill-current" />}
             </button>
             <span className="flex flex-col text-xs">

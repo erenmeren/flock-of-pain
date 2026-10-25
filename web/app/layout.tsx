@@ -22,7 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Suspense><Sidebar /></Suspense>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <Suspense><Topbar /></Suspense>
-            <main className="min-h-0 flex-1 overflow-auto rounded-2xl">{children}</main>
+            <main className="min-h-0 flex-1 overflow-auto rounded-2xl p-1">{children}</main>
           </div>
         </TwinProvider>
       </body>

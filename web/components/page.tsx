@@ -30,7 +30,7 @@ export function Bars({ values, color = "var(--chart-1)", baseline = true, classN
   return (
     <div className={cn("flex h-9 items-end gap-1", className)} aria-hidden>
       {values.map((v, i) => (
-        <span key={i} className="w-2 rounded-[3px] transition-[height] duration-300"
+        <span key={i} className="w-2 rounded-[3px] motion-safe:transition-[height] motion-safe:duration-300"
           style={{ height: `${Math.max(10, (Math.abs(v) / max) * 100)}%`, background: baseline && i === 0 ? "oklch(1 0 0 / 0.22)" : color, boxShadow: baseline && i === 0 ? undefined : `0 0 8px ${color}` }} />
       ))}
     </div>
