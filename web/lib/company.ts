@@ -102,3 +102,28 @@ export function durationMean(d: Dist): number | null {
   if (d.kind === "const") return d.a ?? null;
   return null;
 }
+
+// Scenario JSON contract (src/flock_of_pain/io.py: OVERLAY_TYPES).
+export type Overlay =
+  | { type: "arrival_multiplier"; factor: number; workflow_id: string | null }
+  | { type: "system_outage"; system_id: string; start: number; end: number }
+  | { type: "add_employee"; department_id: string; employee: Resource }
+  | { type: "remove_resource"; resource_id: string }
+  | { type: "set_pool_headcount"; pool_id: string; headcount: number }
+  | { type: "absence"; resource_id: string; start: number; end: number };
+export type Scenario = { id: string; name: string; overlays: Overlay[] };
+
+export const OVERLAY_TYPES = ["arrival_multiplier", "system_outage", "add_employee", "remove_resource", "set_pool_headcount", "absence"] as const;
+
+/** Light shape check for the scenarios JSON; the API validates fully. */
+export function parseScenarios(text: string): Scenario[] {
+  const s = JSON.parse(text);
+  if (!Array.isArray(s) || !s.every((x) => isObj(x) && typeof x.id === "string" && Array.isArray(x.overlays) && x.overlays.every((o) => isObj(o) && typeof o.type === "string")))
+    throw new Error("scenarios must be a list of {id, name, overlays}");
+  return s as Scenario[];
+}
+
+/** Everyone the company employs: pool headcount counts the carved members already. */
+export function headcount(c: Company): number {
+  return c.departments.flatMap((d) => d.resources).reduce((n, r) => n + (r.headcount !== undefined ? r.headcount : r.pool_id ? 0 : 1), 0);
+}
