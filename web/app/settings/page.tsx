@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Loader2, Sparkles } from "lucide-react";
+import { Braces, Database, Download, KeyRound, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { cn } from "cn";
 import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,8 +22,9 @@ function JsonBox({ label, value, apply }: { label: string; value: unknown; apply
   }
   return (
     <div className="flex flex-col gap-2">
-      <Textarea aria-label={label} className="h-72 font-mono text-xs" value={text} onChange={(e) => setText(e.target.value)} />
-      <div><Button variant="outline" size="sm" onClick={() => apply(text)}>Apply {label}</Button></div>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <Textarea aria-label={label} className="h-72 rounded-xl border-0 font-mono text-xs glass-inset [scrollbar-color:oklch(1_0_0/0.15)_transparent] dark:bg-transparent" value={text} onChange={(e) => setText(e.target.value)} />
+      <div><Button variant="outline" size="sm" className="rounded-full" onClick={() => apply(text)}>Apply {label}</Button></div>
     </div>
   );
 }
@@ -55,20 +57,20 @@ export default function Settings() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="API Key">
+        <Panel title="API Key" subtitle="Tenant key for the simulation API" icon={KeyRound}>
           <div className="flex flex-col gap-2">
             {/* keyed so the stored key, read after mount, becomes the default */}
-            <Input key={t.apiKey} type="password" aria-label="api key" placeholder="tenant API key" defaultValue={t.apiKey}
+            <Input key={t.apiKey} type="password" className="h-9 rounded-xl border-0 font-mono glass-inset dark:bg-transparent" aria-label="api key" placeholder="tenant API key" defaultValue={t.apiKey}
               onBlur={(e) => { if (e.target.value !== t.apiKey) t.changeKey(e.target.value); }} />
             <p className="text-xs text-muted-foreground">Create one with <code className="font-mono">flock_of_pain tenant create</code>. Saved when the field loses focus; stored in this browser only.</p>
           </div>
         </Panel>
 
-        <Panel title="Generate with Claude">
+        <Panel title="Generate with AI" subtitle="Describe a company; Claude drafts the twin" icon={Sparkles}>
           <div className="flex flex-col gap-2">
-            <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the twin" className="h-24" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+            <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the twin" className="h-24 rounded-xl border-0 glass-inset dark:bg-transparent" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
             <div className="flex items-center gap-3">
-              <Button onClick={() => t.generate(prompt)} disabled={t.busy || !prompt.trim()}>
+              <Button className="rounded-full px-4" onClick={() => t.generate(prompt)} disabled={t.busy || !prompt.trim()}>
                 {t.busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Generate
               </Button>
               <span className="text-xs text-muted-foreground">Replaces the current draft (company and scenarios).</span>
@@ -77,31 +79,30 @@ export default function Settings() {
         </Panel>
       </div>
 
-      <Panel title="Saved Companies">
+      <Panel title="Saved Companies" subtitle={`${t.saved.length} stored for this tenant`} icon={Database}
+        action={<Button variant="outline" size="sm" className="rounded-full" onClick={t.loadExample} disabled={t.busy}>Load Reynolds example</Button>}>
         <div className="flex flex-col gap-2">
-          {t.saved.length === 0 && <p className="text-sm text-muted-foreground">No saved companies{t.apiKey ? "" : " (set an API key first)"}.</p>}
+          {t.saved.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No saved companies{t.apiKey ? "" : " (set an API key first)"}.</p>}
           {t.saved.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+            <div key={c.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm", t.selected === c.id && "ring-1 ring-primary/40")}>
+              <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">{c.name.slice(0, 2).toUpperCase()}</span>
               <span className="font-medium">{c.name}</span>
               <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
               {t.selected === c.id && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">loaded</span>}
-              <span className="ml-auto text-xs text-muted-foreground">{c.updated_at.replace("T", " ").replace("+00:00", "")}</span>
-              <Button variant="outline" size="sm" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
-              <Button variant="destructive" size="sm" onClick={() => t.remove(c.id)} disabled={t.busy}>Delete</Button>
+              <span className="ml-auto text-xs tabular-nums text-muted-foreground">{c.updated_at.replace("T", " ").replace("+00:00", "")}</span>
+              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
+              <Button variant="ghost" size="sm" className="rounded-full text-rose-400 hover:bg-rose-400/10 hover:text-rose-300" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>
             </div>
           ))}
-          <div><Button variant="outline" size="sm" onClick={t.loadExample} disabled={t.busy}>Load Reynolds example</Button></div>
         </div>
       </Panel>
 
-      <Panel title="Advanced JSON">
+      <Panel title="Raw JSON" subtitle="Edit the draft directly; Apply validates" icon={Braces}
+        action={t.company ? <Button variant="outline" size="sm" className="rounded-full" onClick={download}><Download className="size-3.5" /> Download (.json)</Button> : undefined}>
         {t.company ? (
-          <div className="flex flex-col gap-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <JsonBox label="company" value={t.company} apply={(x) => tryApply(() => t.setCompany(parseCompany(x)))} />
-              <JsonBox label="scenarios" value={t.scenarios} apply={(x) => tryApply(() => t.setScenarios(parseScenarios(x)))} />
-            </div>
-            <div><Button variant="outline" size="sm" onClick={download}><Download className="size-3.5" /> Download (.json)</Button></div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <JsonBox label="company" value={t.company} apply={(x) => tryApply(() => t.setCompany(parseCompany(x)))} />
+            <JsonBox label="scenarios" value={t.scenarios} apply={(x) => tryApply(() => t.setScenarios(parseScenarios(x)))} />
           </div>
         ) : <p className="text-sm text-muted-foreground">Loading…</p>}
       </Panel>
