@@ -126,6 +126,8 @@ def test_company_store_endpoints():
     assert [c["id"] for c in client.get("/companies").json()] == ["reynolds"]
     assert client.get("/companies/reynolds").json() == ex  # stored in canonical form
     assert client.put("/companies/other", json=ex).status_code == 422
+    odd = {**ex, "company": {**ex["company"], "id": "a/b"}}
+    assert client.put("/companies/a%2Fb", json=odd).status_code in (404, 405, 422)  # never a stored company with a slash
     assert client.put("/companies/other", json=ex).json()["path"] == "company.id"
     bad = {**ex, "scenarios": [{"id": "x", "name": "x", "overlays": [{"type": "nope"}]}]}
     assert client.put("/companies/reynolds", json=bad).status_code == 422
@@ -144,7 +146,9 @@ def test_simulate_save_and_run_endpoints():
     assert [x["id"] for x in runs] == [1] and runs[0]["name"] == "Reynolds"
     assert client.get("/runs", params={"company_id": "other"}).json() == []
     run = client.get("/runs/1").json()
-    assert run["request"]["config"] == {"seed": 1, "days": 1} and run["request"]["company"] == ex["company"]
+    assert run["request"]["config"] == {"seed": 1, "days": 1.0, "replications": 1, "policy": "priority"}
+    assert run["request"]["company"] == ex["company"]
+    assert client.get("/runs", params={"limit": 0}).json() == runs and client.get("/runs", params={"limit": 10000}).status_code == 200
     assert run["result"]["kpi_keys"] == r.json()["kpi_keys"] and "events" not in run["result"]["scenarios"][0]["runs"][0]
     assert client.get("/runs/2").status_code == 404
     r2 = client.post("/simulate", json={**body, "save": False})

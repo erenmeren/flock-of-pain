@@ -1,5 +1,6 @@
 """Stateless HTTP API. The only module that imports fastapi/pydantic (extra `api`)."""
 import json
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -115,7 +116,8 @@ def simulate(req: SimulateRequest):
         stored = {**out, "scenarios": [{**s, "runs": [{"seed": r["seed"], "metrics": r["metrics"]} for r in s["runs"]]}
                                        for s in out["scenarios"]]}
         request = {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios],
-                   "config": req.config}
+                   "config": {"seed": config.seed, "days": config.horizon_minutes / 1440,
+                              "replications": config.replications, "policy": config.policy}}  # resolved, not as sent
         out["run_id"] = store.save_run(req.company_id, req.name or company.name, request, stored)
     return out
 
@@ -130,6 +132,8 @@ def put_company(cid: str, body: Bundle):
     company, scenarios = _load(body.company, body.scenarios)
     if company.id != cid:
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
+    if not re.fullmatch(r"[\w.-]+", cid):
+        raise SchemaError("company.id", "use letters, digits, '_', '.' or '-' (it is the URL id)")
     return store.save_company({"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
 
 

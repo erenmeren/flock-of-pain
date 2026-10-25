@@ -46,12 +46,13 @@ export default function Home() {
         setScenarios(JSON.stringify(x.scenarios, null, 2));
       })
       .catch(setError);
-    refreshLists();
+    refreshLists(false);
   }, []);
 
-  function refreshLists() {
-    listCompanies().then(setSaved).catch(() => {}); // the example load already reports an unreachable API
-    listRuns().then(setRuns).catch(() => {});
+  function refreshLists(report = true) {
+    const onErr = report ? setError : () => {}; // the first load already reports an unreachable API
+    listCompanies().then(setSaved).catch(onErr);
+    listRuns().then(setRuns).catch(onErr);
   }
 
   function bundle() {
@@ -72,7 +73,9 @@ export default function Home() {
 
   const save = () => act(async () => {
     const b = bundle();
-    await saveCompany((b.company as Company).id, b);
+    const id = (b.company as Company).id;
+    if (saved.some((c) => c.id === id) && !confirm(`Replace the saved company "${id}"?`)) return;
+    await saveCompany(id, b);
     setSelected((b.company as Company).id);
     refreshLists();
   });
@@ -83,6 +86,7 @@ export default function Home() {
     setResult(null);
   });
   const remove = () => act(async () => {
+    if (!confirm(`Delete the saved company "${selected}"? This cannot be undone.`)) return;
     await deleteCompany(selected);
     setSelected("");
     refreshLists();
