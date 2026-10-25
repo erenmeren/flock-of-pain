@@ -35,6 +35,8 @@ uv run --extra api uvicorn flock_of_pain.api:app
 - `GET /example`: Reynolds company and its four scenarios as JSON.
 - `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`, with `path` prefixed by the request section (`company.`, `scenarios[i].`, `config.`).
   One request may run at most 2000 run-days (days x replications x scenarios), or 30 with `include_events`.
+- Saved companies (SQLite file from `FLOCK_DB`, default `./flock.db`; single user, no tenants): `GET /companies`, `PUT /companies/{id}` with `{"company", "scenarios"}` (validated, stored in canonical form, `company.id` must equal the URL id), `GET /companies/{id}`, `DELETE /companies/{id}`.
+- Run history: `POST /simulate` with `"save": true` (plus optional `company_id`, `name`) stores the request and the result without events and returns `run_id`; `GET /runs?company_id=&limit=` lists, `GET /runs/{id}` returns request and result.
 - `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`.
 
 ## Docs

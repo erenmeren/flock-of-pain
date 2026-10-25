@@ -7,6 +7,11 @@ from flock_of_pain.experiment import KPI_KEYS
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def db(tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOCK_DB", str(tmp_path / "t.db"))
+
+
 def test_example():
     r = client.get("/example"); assert r.status_code == 200
     body = r.json(); assert body["company"]["id"] == "reynolds" and len(body["scenarios"]) == 4
@@ -111,3 +116,36 @@ def test_generate_502(monkeypatch):
     monkeypatch.setattr(agent, "_ask", lambda messages: "not json")
     r = client.post("/generate", json={"prompt": "x"})
     assert r.status_code == 502 and r.json()["path"] is None and "not JSON" in r.json()["message"]
+
+
+def test_company_store_endpoints():
+    ex = client.get("/example").json()
+    assert client.get("/companies").json() == []
+    r = client.put("/companies/reynolds", json=ex)
+    assert r.status_code == 200 and r.json()["id"] == "reynolds"
+    assert [c["id"] for c in client.get("/companies").json()] == ["reynolds"]
+    assert client.get("/companies/reynolds").json() == ex  # stored in canonical form
+    assert client.put("/companies/other", json=ex).status_code == 422
+    assert client.put("/companies/other", json=ex).json()["path"] == "company.id"
+    bad = {**ex, "scenarios": [{"id": "x", "name": "x", "overlays": [{"type": "nope"}]}]}
+    assert client.put("/companies/reynolds", json=bad).status_code == 422
+    assert client.get("/companies/nope").status_code == 404
+    assert client.delete("/companies/reynolds").status_code == 200
+    assert client.delete("/companies/reynolds").status_code == 404
+
+
+def test_simulate_save_and_run_endpoints():
+    ex = client.get("/example").json()
+    body = {"company": ex["company"], "scenarios": ex["scenarios"][:1], "config": {"seed": 1, "days": 1},
+            "include_events": True, "save": True, "company_id": "reynolds"}
+    r = client.post("/simulate", json=body)
+    assert r.status_code == 200 and r.json()["run_id"] == 1 and "events" in r.json()["scenarios"][0]["runs"][0]
+    runs = client.get("/runs", params={"company_id": "reynolds"}).json()
+    assert [x["id"] for x in runs] == [1] and runs[0]["name"] == "Reynolds"
+    assert client.get("/runs", params={"company_id": "other"}).json() == []
+    run = client.get("/runs/1").json()
+    assert run["request"]["config"] == {"seed": 1, "days": 1} and run["request"]["company"] == ex["company"]
+    assert run["result"]["kpi_keys"] == r.json()["kpi_keys"] and "events" not in run["result"]["scenarios"][0]["runs"][0]
+    assert client.get("/runs/2").status_code == 404
+    r2 = client.post("/simulate", json={**body, "save": False})
+    assert "run_id" not in r2.json()

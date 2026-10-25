@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from flock_of_pain import agent
+from flock_of_pain import agent, store
 from flock_of_pain.examples import reynolds
 from flock_of_pain.experiment import ASSUMPTION, KPI_KEYS, off_shift_minutes, run_experiment, top_ledger
 from flock_of_pain.io import (SchemaError, company_from_dict, company_to_dict, metrics_to_dict, run_config_from_dict,
@@ -25,6 +25,14 @@ class SimulateRequest(BaseModel):
     scenarios: list[dict]
     config: dict
     include_events: bool = False
+    save: bool = False  # store the result (without events) as a run
+    company_id: str | None = None  # saved company this run belongs to, if any
+    name: str | None = None  # run label; default the company name
+
+
+class Bundle(BaseModel):
+    company: dict
+    scenarios: list[dict]
 
 
 class GenerateRequest(BaseModel):
@@ -55,10 +63,9 @@ def _section(prefix: str, fn, *args):
         raise SchemaError(f"{prefix}.{e.path}" if e.path else prefix, e.message) from e
 
 
-@app.post("/simulate")
-def simulate(req: SimulateRequest):
-    company = _section("company", company_from_dict, req.company)
-    scenarios = [_section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(req.scenarios)]
+def _load(company_d: dict, scenarios_d: list[dict]):
+    company = _section("company", company_from_dict, company_d)
+    scenarios = [_section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(scenarios_d)]
     if len({s.id for s in scenarios}) != len(scenarios):
         raise SchemaError("scenarios", "duplicate scenario id")
     for i, s in enumerate(scenarios):
@@ -66,6 +73,16 @@ def simulate(req: SimulateRequest):
             s.materialize()
         except ModelError as e:
             raise SchemaError(f"scenarios[{i}]", str(e)) from e
+    return company, scenarios
+
+
+def _not_found():
+    return JSONResponse({"path": None, "message": "not found"}, status_code=404)
+
+
+@app.post("/simulate")
+def simulate(req: SimulateRequest):
+    company, scenarios = _load(req.company, req.scenarios)
     config = _section("config", run_config_from_dict, req.config)
     budget = config.horizon_minutes / 1440 * config.replications * max(1, len(scenarios))  # run-days
     limit = MAX_EVENT_RUN_DAYS if req.include_events else MAX_RUN_DAYS
@@ -83,7 +100,7 @@ def simulate(req: SimulateRequest):
             out["events"] = [json.loads(e.to_json()) for e in run.events]
         return out
 
-    return {
+    out = {
         "disclaimer": ASSUMPTION, "kpi_keys": [*KPI_KEYS, *utils],
         "scenarios": [{
             "id": s.id, "name": s.name,
@@ -94,6 +111,46 @@ def simulate(req: SimulateRequest):
             "runs": [run_out(run) for run in r.runs],
         } for s, r in results],
     }
+    if req.save:
+        stored = {**out, "scenarios": [{**s, "runs": [{"seed": r["seed"], "metrics": r["metrics"]} for r in s["runs"]]}
+                                       for s in out["scenarios"]]}
+        request = {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios],
+                   "config": req.config}
+        out["run_id"] = store.save_run(req.company_id, req.name or company.name, request, stored)
+    return out
+
+
+@app.get("/companies")
+def companies():
+    return store.list_companies()
+
+
+@app.put("/companies/{cid}")
+def put_company(cid: str, body: Bundle):
+    company, scenarios = _load(body.company, body.scenarios)
+    if company.id != cid:
+        raise SchemaError("company.id", f"must equal the URL id {cid!r}")
+    return store.save_company({"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
+
+
+@app.get("/companies/{cid}")
+def get_company(cid: str):
+    return store.get_company(cid) or _not_found()
+
+
+@app.delete("/companies/{cid}")
+def delete_company(cid: str):
+    return {"deleted": cid} if store.delete_company(cid) else _not_found()
+
+
+@app.get("/runs")
+def runs(company_id: str | None = None, limit: int = 50):
+    return store.list_runs(company_id, max(1, min(limit, 500)))
+
+
+@app.get("/runs/{rid}")
+def get_run(rid: int):
+    return store.get_run(rid) or _not_found()
 
 
 @app.post("/generate")
