@@ -55,12 +55,12 @@ export function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow
         </div>
         <div className="flex w-full flex-wrap items-start gap-3">
           <label className="flex flex-col gap-1.5 rounded-xl p-3 glass-inset text-[11px] uppercase tracking-wide text-muted-foreground">Arrivals / hour
-            <NumInput min={0} aria-label={`arrival rate of ${wf.id}`} className="h-7 w-24 tabular-nums" value={wf.arrival.rate_per_hour}
-              onCommit={(v) => onChange({ ...wf, arrival: { ...wf.arrival, rate_per_hour: v } })} />
+            <NumInput min={0} aria-label={`arrival rate of ${wf.id}`} className="h-7 w-24 tabular-nums" value={wf.arrival!.rate_per_hour}
+              onCommit={(v) => onChange({ ...wf, arrival: { ...wf.arrival!, rate_per_hour: v } })} />
           </label>
           <div className="flex flex-col gap-1.5 rounded-xl p-3 glass-inset">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Arrival window</span>
-            <ScheduleEditor id={`arrivals of ${wf.id}`} schedule={wf.arrival.window} onChange={(window) => onChange({ ...wf, arrival: { ...wf.arrival, window } })} />
+            <ScheduleEditor id={`arrivals of ${wf.id}`} schedule={wf.arrival!.window} onChange={(window) => onChange({ ...wf, arrival: { ...wf.arrival!, window } })} />
           </div>
         </div>
       </CardHeader>

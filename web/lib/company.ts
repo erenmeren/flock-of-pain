@@ -28,7 +28,16 @@ export type Step = {
   rework_to?: string | null;
   max_retries?: number;
 };
-export type Workflow = { id: string; name: string; arrival: { rate_per_hour: number; window: Schedule }; steps: Step[] };
+export type Pos = [number, number];
+export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[] };
+export type Workflow = {
+  id: string;
+  name: string;
+  arrival?: { rate_per_hour: number; window: Schedule }; // an arrival or inflows, never both
+  inflows?: Inflow[];
+  layout?: Record<string, Pos>; // canvas positions by step/inflow id
+  steps: Step[];
+};
 export type Outage = [string, number, number];
 export type Company = {
   id: string;
@@ -70,8 +79,10 @@ export function checkCompany(c: unknown): Company {
   const stepOk = (st: unknown) => isObj(st) && typeof st.id === "string" && typeof st.required_skill === "string" && isObj(st.duration)
     && (st.depends_on === undefined || Array.isArray(st.depends_on));
   if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(stepOk)
-      && isObj(w.arrival) && typeof w.arrival.rate_per_hour === "number" && isObj(w.arrival.window) && hoursOk(w.arrival.window.weekday_hours)))
-    throw new Error("workflows must be a list of objects with steps, durations and an arrival window");
+      && (w.arrival === undefined || (isObj(w.arrival) && typeof w.arrival.rate_per_hour === "number" && isObj(w.arrival.window) && hoursOk(w.arrival.window.weekday_hours)))
+      && (w.inflows === undefined || (Array.isArray(w.inflows) && w.inflows.every((i) => isObj(i) && typeof i.id === "string" && Array.isArray(i.entry))))
+      && (w.layout === undefined || isObj(w.layout))))
+    throw new Error("workflows must be a list of objects with steps, durations and an arrival or inflows");
   if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
     throw new Error("outages must be a list of [system_id, start, end]");
   for (const d of out.departments) {

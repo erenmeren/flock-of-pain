@@ -8,7 +8,8 @@ import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader, fmt } from "@/components/page";
 import { WorkflowCard } from "@/components/workflow-editor";
 import { StepChain, cycleMean, windowSummary } from "@/components/process/step-chain";
-import { type Workflow, renameInScenarios } from "@/lib/company";
+import { type Workflow, renameInScenarios, weekdays9to5 } from "@/lib/company";
+import { inflowsOf, rateOf } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
@@ -46,7 +47,7 @@ export function WorkflowPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(wf.arrival.rate_per_hour, 2)}/h · ${windowSummary(wf.arrival.window)} · mean cycle ${fmt(cycleMean(wf))} min`}>{back}</PageHeader>
+      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(rateOf(wf), 2)}/h · ${windowSummary(inflowsOf(wf)[0]?.window ?? weekdays9to5())} · mean cycle ${fmt(cycleMean(wf))} min`}>{back}</PageHeader>
       <Panel title="Process flow" subtitle={`${wf.steps.length} step${wf.steps.length === 1 ? "" : "s"} in list order`} icon={WorkflowIcon}><StepChain wf={wf} company={company} /></Panel>
       <WorkflowCard wf={wf} company={company} onChange={onChange} onRemove={onRemove} />
     </div>

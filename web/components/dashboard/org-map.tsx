@@ -5,6 +5,7 @@ import { Server, Workflow } from "lucide-react";
 import { DeptMark, accent } from "@/components/org/parts";
 import { deptHeadcount } from "@/components/org/ops";
 import type { Company } from "@/lib/company";
+import { rateOf } from "@/components/process/graph";
 import { fmt } from "@/components/page";
 import { type Edge, mapEdges } from "@/components/dashboard/derive";
 
@@ -61,7 +62,7 @@ export function OrgMap({ company }: { company: Company }) {
             <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary"><Workflow className="size-3.5" /></span>
             <span className="min-w-0">
               <span className="block truncate text-xs font-medium" title={w.name}>{w.name}</span>
-              <span className="block text-[10px] tabular-nums text-muted-foreground">{fmt(w.arrival.rate_per_hour, 1)}/h</span>
+              <span className="block text-[10px] tabular-nums text-muted-foreground">{fmt(rateOf(w), 1)}/h</span>
             </span>
           </div>
         ))}

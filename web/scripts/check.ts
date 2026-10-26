@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
-import { type Company, type Scenario, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
+import { addStep, blockingIssue, connect, inflowsOf, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
+import { autoLayout, fillLayout } from "@/components/process/layout";
+import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
 
 const sched = { weekday_hours: { "0": [9, 17] as [number, number] } };
 const c: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
@@ -69,7 +71,6 @@ const wf = { id: "w", name: "w", arrival: { rate_per_hour: 1, window: sched }, s
 assert.equal(handoffs(wf), 2);
 const edges = mapEdges({ ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [wf] });
 assert.deepEqual(edges.map((e) => `${e.from}>${e.to}:${e.n}`), ["w:w>d:a:1", "d:a>d:b:1", "d:b>d:a:1", "d:a>s:erp:1"]);
-console.log("ok");
 
 // ids derive from names (idFor) and survive Turkish letters (slug)
 assert.equal(slug("Müşteri Hizmetleri / Işık"), "musteri_hizmetleri_isik");
@@ -77,3 +78,51 @@ assert.equal(idFor("Finance", ["cs"], "dept"), "finance");
 assert.equal(idFor("Finance", ["finance", "finance_2"], "dept"), "finance_3");
 assert.equal(idFor("Finance", ["finance"], "dept", "finance"), "finance"); // own id stays
 assert.equal(idFor("", ["emp"], "emp"), "emp_2"); // no letters: base
+
+// arrival form reads as one implicit inflow and converts without touching the original
+const imp = inflowsOf(wf);
+assert.equal(imp.length, 1); assert.equal(imp[0].id, "inflow"); assert.deepEqual(imp[0].entry, ["1", "2", "3", "4"]);
+assert.equal(rateOf(wf), 1);
+const conv = toInflows(wf);
+assert.equal(conv.arrival, undefined); assert.equal(conv.inflows!.length, 1); assert.equal(toInflows(conv), conv); assert.equal(wf.arrival.rate_per_hour, 1);
+
+// edges, cycles, duplicates
+const cw: Workflow = { id: "w", name: "W", steps: wf.steps, inflows: [{ id: "phone", name: "Phone", rate_per_hour: 3, window: sched, entry: ["1"] }], layout: { phone: [0, 0] } };
+const c1 = connect(cw, "1", "2")!;
+assert.deepEqual(c1.steps[1].depends_on, ["1"]);
+assert.equal(connect(c1, "1", "2"), c1);
+assert.equal(wouldCycle(c1, "2", "1"), true); assert.equal(connect(c1, "2", "1"), null);
+const c2 = connect(c1, "phone", "2")!;
+assert.deepEqual(c2.inflows![0].entry, ["1", "2"]); assert.equal(connect(c2, "phone", "2"), c2);
+
+// rename and remove follow every reference
+const ren = renameStep(c2, "1", "one");
+assert.equal(ren.steps[0].id, "one"); assert.deepEqual(ren.steps[1].depends_on, ["one"]); assert.deepEqual(ren.inflows![0].entry, ["one", "2"]);
+const gone = removeNode({ ...c2, layout: { ...c2.layout, "1": [5, 5] } }, "1");
+assert.equal(gone.steps.length, 3); assert.deepEqual(gone.steps[0].depends_on, []); assert.deepEqual(gone.inflows![0].entry, ["2"]); assert.equal(gone.layout!["1"], undefined);
+assert.equal(removeNode(c2, "phone").inflows!.length, 0);
+
+// new step from a department chip: one distinct skill is prefilled
+const { wf: withStep, id: newId } = addStep(c2, c.departments[0], [10, 20]);
+assert.equal(newId, "new_step"); assert.equal(withStep.steps[4].required_skill, "s"); assert.deepEqual(withStep.layout!.new_step, [10, 20]);
+assert.equal(addStep(c2, null, [0, 0]).wf.steps[4].department_id, "");
+
+// auto layout: inflow col 0, 1 col 1, 2 col 2, unreachable 3 and 4 after the last column
+const L = autoLayout(c1);
+assert.deepEqual([L.phone, L["1"], L["2"], L["3"], L["4"]], [[0, 0], [256, 0], [512, 0], [768, 0], [768, 112]]);
+assert.deepEqual(fillLayout(c1).phone, [0, 0]); assert.deepEqual(fillLayout(c1)["2"], [512, 0]);
+
+// issues and the pre-run check
+const bare = { ...step("x", ""), required_skill: "" };
+assert.deepEqual(stepIssues(c, c1, bare, new Set()).map((i) => `${i.blocking ? "!" : ""}${i.text}`), ["!Who does this?", "!What skill is needed?", "Not connected to an inflow"]);
+assert.deepEqual(stepIssues(c, c1, step("3", "b")).map((i) => i.text), ["Nobody in B has `s`", "Not connected to an inflow"]);
+assert.equal(blockingIssue({ ...c, workflows: [c1] }), null);
+assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, steps: [bare, ...c1.steps] }] })!.message, "Fix `x` on the W canvas: who does this?");
+assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, inflows: [] }] })!.message, "W has no inflow");
+assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, inflows: [{ ...c1.inflows![0], entry: [] }] }] })!.workflowId, "w");
+
+// checkCompany keeps every half-finished draft the canvas can produce
+checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [bare], inflows: [{ id: "i", name: "i", rate_per_hour: 1, window: sched, entry: [] }], layout: { ghost: [1, 2] } }] });
+checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [] }] });
+assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [], inflows: [{ id: 3 }] }] }));
+console.log("ok");
