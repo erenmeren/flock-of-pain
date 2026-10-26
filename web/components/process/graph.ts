@@ -107,6 +107,11 @@ export function addStep(wf: Workflow, dept: Department | null, pos: Pos): { wf: 
   return { wf: { ...wf, steps: [...wf.steps, st], layout: { ...wf.layout, [id]: pos } }, id };
 }
 
+/** Blank workflow with one inflow node so the canvas never opens empty. */
+export function newWorkflow(name: string, takenIds: Iterable<string>): Workflow {
+  return { id: idFor(name, takenIds, "workflow"), name, inflows: [{ id: "new_inflow", name: "New inflow", rate_per_hour: 1, window: weekdays9to5(), entry: [] }], layout: { new_inflow: [0, 0] }, steps: [] };
+}
+
 /** New inflow at `pos`, entering no step yet. */
 export function addInflow(wf: Workflow, pos: Pos): { wf: Workflow; id: string } {
   const id = idFor("New inflow", takenIds(wf), "inflow");

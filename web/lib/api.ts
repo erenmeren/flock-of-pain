@@ -37,7 +37,7 @@ export type SimulateResponse = {
 export type Bundle = { company: unknown; scenarios: unknown[] };
 export type CompanyMeta = { id: string; name: string; updated_at: string };
 export type RunMeta = { id: number; company_id: string | null; name: string; created_at: string };
-export type ApiError = { path: string | null; message: string };
+export type ApiError = { path: string | null; message: string; href?: string };
 
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 

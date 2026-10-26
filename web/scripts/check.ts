@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
-import { addStep, blockingIssue, connect, inflowsOf, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
+import { addStep, blockingIssue, connect, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
 import { autoLayout, fillLayout } from "@/components/process/layout";
 import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
 
@@ -125,4 +125,6 @@ assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, inflows: [{ ...c1.inflow
 checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [bare], inflows: [{ id: "i", name: "i", rate_per_hour: 1, window: sched, entry: [] }], layout: { ghost: [1, 2] } }] });
 checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [] }] });
 assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [], inflows: [{ id: 3 }] }] }));
+const nw = newWorkflow("Customer order", ["order"]);
+assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); assert.equal(nw.inflows!.length, 1); assert.deepEqual(nw.inflows![0].entry, []); assert.equal(nw.steps.length, 0);
 console.log("ok");

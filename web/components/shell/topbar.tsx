@@ -36,7 +36,7 @@ export function Topbar() {
       {t.error && path !== "/settings" && (
         <Alert variant="destructive" className="rise">
           <AlertTitle>{t.error.path ?? "Error"}</AlertTitle>
-          <AlertDescription>{t.error.message}</AlertDescription>
+          <AlertDescription>{t.error.message}{t.error.href && <Link href={t.error.href} className="ml-2 underline">Open canvas</Link>}</AlertDescription>
         </Alert>
       )}
     </header>

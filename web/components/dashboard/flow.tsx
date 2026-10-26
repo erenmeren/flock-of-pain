@@ -12,7 +12,7 @@ import { handoffs, minutes } from "@/components/dashboard/derive";
 /** Numbered step tiles on a coloured track, with cycle time, bottlenecks and hand-offs underneath. */
 export function FlowStrip({ wf, company, base }: { wf: Workflow; company: Company; base?: ScenarioResult }) {
   const di = new Map(company.departments.map((d, i) => [d.id, i]));
-  const color = (id: string) => accent(di.get(id) ?? 0);
+  const color = (id: string) => (di.has(id) ? accent(di.get(id)!) : "oklch(0.5 0 0)");
   const name = (id: string) => company.departments.find((d) => d.id === id)?.name ?? id;
   const busy = base ? company.departments.filter((d) => (base.summary[`util_${d.id}`]?.mean ?? 0) > 0.85).length : null;
   const unstaffed = wf.steps.filter((st) => unskilled(company, st)).length;

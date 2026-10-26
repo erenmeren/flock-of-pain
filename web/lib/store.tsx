@@ -6,6 +6,7 @@ import {
   deleteCompany, generate as apiGenerate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
 } from "@/lib/api";
 import { type Company, type Scenario, checkCompany, checkScenarios, slug } from "@/lib/company";
+import { blockingIssue } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
 
 export type Config = { seed: number; days: number; replications: number; policy: string; include_events: boolean; save: boolean };
@@ -152,6 +153,8 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     }); },
     run: () => act(async () => {
       if (!company) return;
+      const issue = blockingIssue(company);
+      if (issue) { setError({ path: "company", message: issue.message, href: `/processes/${encodeURIComponent(issue.workflowId)}` }); return; }
       const { include_events, save, ...cfg } = config;
       const res = await simulate({
         company, scenarios, config: cfg, include_events, save,
