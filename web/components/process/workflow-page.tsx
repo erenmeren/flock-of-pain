@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Workflow as WorkflowIcon } from "lucide-react";
+import { ArrowLeft, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/dashboard/kpi";
-import { PageHeader, fmt } from "@/components/page";
-import { WorkflowCard } from "@/components/workflow-editor";
-import { StepChain, cycleMean, windowSummary } from "@/components/process/step-chain";
-import { type Workflow, renameInScenarios, weekdays9to5 } from "@/lib/company";
+import { Input } from "@/components/ui/input";
+import { IconTile, PageHeader, fmt } from "@/components/page";
+import { IdTag } from "@/components/editor-fields";
+import { INLINE_INPUT } from "@/components/org/parts";
+import { ProcessCanvas } from "@/components/process/canvas";
+import { cycleMean } from "@/components/process/step-chain";
+import { type Workflow, idFor, renameInScenarios } from "@/lib/company";
 import { inflowsOf, rateOf } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
@@ -45,11 +47,19 @@ export function WorkflowPage() {
     router.push("/processes");
   };
 
+  const n = inflowsOf(wf).length;
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(rateOf(wf), 2)}/h · ${windowSummary(inflowsOf(wf)[0]?.window ?? weekdays9to5())} · mean cycle ${fmt(cycleMean(wf))} min`}>{back}</PageHeader>
-      <Panel title="Process flow" subtitle={`${wf.steps.length} step${wf.steps.length === 1 ? "" : "s"} in list order`} icon={WorkflowIcon}><StepChain wf={wf} company={company} /></Panel>
-      <WorkflowCard wf={wf} company={company} onChange={onChange} onRemove={onRemove} />
+      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(rateOf(wf), 2)}/h · ${n} inflow${n === 1 ? "" : "s"} · mean cycle ${fmt(cycleMean(wf))} min`}>{back}</PageHeader>
+      <div className="flex flex-wrap items-center gap-3">
+        <IconTile icon={WorkflowIcon} />
+        <div className="flex min-w-60 flex-1 flex-col gap-0.5">
+          <Input aria-label={`workflow name ${wf.id}`} className={`h-7 text-base! font-medium ${INLINE_INPUT}`} value={wf.name} onChange={(e) => onChange({ ...wf, name: e.target.value, id: idFor(e.target.value, company.workflows.filter((x) => x !== wf).map((x) => x.id), "workflow", wf.id) })} />
+          <IdTag id={wf.id} />
+        </div>
+        <Button variant="ghost" size="sm" className="rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>
+      </div>
+      <ProcessCanvas wf={wf} company={company} onChange={onChange} />
     </div>
   );
 }
