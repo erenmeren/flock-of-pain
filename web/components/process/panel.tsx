@@ -80,7 +80,7 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
   );
 }
 
-function InflowPanel({ wf, inflow, onChange, onRemove }: Omit<Props, "company"> & { inflow: Inflow }) {
+function InflowPanel({ wf, inflow, onChange, onRemove, onRenamed }: Omit<Props, "company"> & { inflow: Inflow; onRenamed: (id: string) => void }) {
   const set = (patch: Partial<Inflow>) => onChange({ ...wf, inflows: wf.inflows!.map((i) => (i.id === inflow.id ? { ...i, ...patch } : i)) });
   const otherIds = [...wf.steps.map((s) => s.id), ...wf.inflows!.filter((i) => i.id !== inflow.id).map((i) => i.id)];
   const enters = inflow.entry.map((e) => wf.steps.find((s) => s.id === e)?.name ?? e).join(", ");
@@ -90,7 +90,11 @@ function InflowPanel({ wf, inflow, onChange, onRemove }: Omit<Props, "company"> 
         <Input key={inflow.name} aria-label={`name of inflow ${inflow.id}`} defaultValue={inflow.name} onBlur={(e) => {
           const name = e.target.value.trim();
           if (!name) e.target.value = inflow.name;
-          else if (name !== inflow.name) onChange(renameInflow({ ...wf, inflows: wf.inflows!.map((i) => (i.id === inflow.id ? { ...i, name } : i)) }, inflow.id, idFor(name, otherIds, "inflow", inflow.id)));
+          else if (name !== inflow.name) {
+            const to = idFor(name, otherIds, "inflow", inflow.id);
+            onChange(renameInflow({ ...wf, inflows: wf.inflows!.map((i) => (i.id === inflow.id ? { ...i, name } : i)) }, inflow.id, to));
+            onRenamed(to); // the canvas selection follows the id
+          }
         }} />
       </Field>
       <Field label="Rate per hour"><NumInput min={0} aria-label={`rate per hour of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.rate_per_hour} onCommit={(v) => set({ rate_per_hour: v })} /></Field>
@@ -102,7 +106,7 @@ function InflowPanel({ wf, inflow, onChange, onRemove }: Omit<Props, "company"> 
 }
 
 /** Side panel for the selected canvas node; `wf` is in inflows form. */
-export function DetailPanel({ wf, company, selected, onChange, onClose, onRemove }: Props & { selected: string; onClose: () => void }) {
+export function DetailPanel({ wf, company, selected, onChange, onClose, onRemove, onRenamed }: Props & { selected: string; onClose: () => void; onRenamed: (id: string) => void }) {
   const st = wf.steps.find((s) => s.id === selected);
   const inflow = wf.inflows?.find((i) => i.id === selected);
   if (!st && !inflow) return null;
@@ -110,7 +114,7 @@ export function DetailPanel({ wf, company, selected, onChange, onClose, onRemove
     <aside aria-label="detail panel" className="glass rise relative flex flex-col gap-3 self-start overflow-y-auto rounded-2xl p-4">
       <Button variant="ghost" size="icon-sm" aria-label="close panel" className="absolute top-2 right-2" onClick={onClose}><X className="size-4" /></Button>
       <h3 className="pr-6 text-sm font-medium">{st?.name ?? inflow!.name}</h3>
-      {st ? <StepPanel wf={wf} company={company} st={st} onChange={onChange} onRemove={onRemove} /> : <InflowPanel wf={wf} inflow={inflow!} onChange={onChange} onRemove={onRemove} />}
+      {st ? <StepPanel wf={wf} company={company} st={st} onChange={onChange} onRemove={onRemove} /> : <InflowPanel wf={wf} inflow={inflow!} onChange={onChange} onRemove={onRemove} onRenamed={onRenamed} />}
     </aside>
   );
 }

@@ -222,7 +222,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         </div>
         {toast && <p className="text-xs text-amber-400">{toast}</p>}
       </div>
-      {selected && <DetailPanel wf={toInflows(wf)} company={company} selected={selected} onChange={onChange} onClose={() => setSelected(null)} onRemove={removeSelected} />}
+      {selected && <DetailPanel wf={toInflows(wf)} company={company} selected={selected} onChange={onChange} onClose={() => setSelected(null)} onRenamed={setSelected} onRemove={removeSelected} />}
     </div>
   );
 }
