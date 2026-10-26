@@ -80,8 +80,9 @@ export function checkCompany(c: unknown): Company {
     && (st.depends_on === undefined || Array.isArray(st.depends_on));
   if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(stepOk)
       && (w.arrival === undefined || (isObj(w.arrival) && typeof w.arrival.rate_per_hour === "number" && isObj(w.arrival.window) && hoursOk(w.arrival.window.weekday_hours)))
-      && (w.inflows === undefined || (Array.isArray(w.inflows) && w.inflows.every((i) => isObj(i) && typeof i.id === "string" && Array.isArray(i.entry))))
-      && (w.layout === undefined || isObj(w.layout))))
+      && (w.inflows === undefined || (Array.isArray(w.inflows) && w.inflows.every((i) => isObj(i) && typeof i.id === "string" && Array.isArray(i.entry)
+        && typeof i.rate_per_hour === "number" && isObj(i.window) && hoursOk(i.window.weekday_hours))))
+      && (w.layout === undefined || (isObj(w.layout) && Object.values(w.layout).every((v) => Array.isArray(v) && v.length === 2)))))
     throw new Error("workflows must be a list of objects with steps, durations and an arrival or inflows");
   if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
     throw new Error("outages must be a list of [system_id, start, end]");

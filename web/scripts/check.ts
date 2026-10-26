@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
-import { addStep, blockingIssue, connect, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
+import { addStep, blockingIssue, connect, disconnect, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
 import { autoLayout, fillLayout } from "@/components/process/layout";
 import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
 
@@ -100,6 +100,10 @@ const ren = renameStep(c2, "1", "one");
 assert.equal(ren.steps[0].id, "one"); assert.deepEqual(ren.steps[1].depends_on, ["one"]); assert.deepEqual(ren.inflows![0].entry, ["one", "2"]);
 const gone = removeNode({ ...c2, layout: { ...c2.layout, "1": [5, 5] } }, "1");
 assert.equal(gone.steps.length, 3); assert.deepEqual(gone.steps[0].depends_on, []); assert.deepEqual(gone.inflows![0].entry, ["2"]); assert.equal(gone.layout!["1"], undefined);
+const rw = renameStep({ ...cw, steps: [wf.steps[0], { ...wf.steps[1], rework_to: "1" }], layout: { ...cw.layout, "1": [5, 5] } }, "1", "one");
+assert.deepEqual(rw.layout!.one, [5, 5]); assert.equal(rw.layout!["1"], undefined); assert.equal(rw.steps[1].rework_to, "one");
+const dc = disconnect({ ...cw, steps: [wf.steps[0], { ...wf.steps[1], depends_on: ["1"], rework_to: "1" }] }, "1", "2");
+assert.deepEqual(dc.steps[1].depends_on, []); assert.equal(dc.steps[1].rework_to, null);
 assert.equal(removeNode(c2, "phone").inflows!.length, 0);
 
 // new step from a department chip: one distinct skill is prefilled
@@ -120,11 +124,14 @@ assert.equal(blockingIssue({ ...c, workflows: [c1] }), null);
 assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, steps: [bare, ...c1.steps] }] })!.message, "Fix `x` on the W canvas: who does this?");
 assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, inflows: [] }] })!.message, "W has no inflow");
 assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, inflows: [{ ...c1.inflows![0], entry: [] }] }] })!.workflowId, "w");
+assert.equal(blockingIssue({ ...c, workflows: [{ id: "e", name: "E", arrival: wf.arrival, steps: [] }] }), null);
 
 // checkCompany keeps every half-finished draft the canvas can produce
 checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [bare], inflows: [{ id: "i", name: "i", rate_per_hour: 1, window: sched, entry: [] }], layout: { ghost: [1, 2] } }] });
 checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [] }] });
 assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [], inflows: [{ id: 3 }] }] }));
+assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [], inflows: [{ id: "i", name: "i", entry: [] }] }] }));
+assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps: [], layout: { a: 1 } }] }));
 const nw = newWorkflow("Customer order", ["order"]);
 assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); assert.equal(nw.inflows!.length, 1); assert.deepEqual(nw.inflows![0].entry, []); assert.equal(nw.steps.length, 0);
 console.log("ok");

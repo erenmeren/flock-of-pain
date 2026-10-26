@@ -60,7 +60,7 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
       <Field label="System"><Pick label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
       <Field label="SLA minutes">
         <Input key={st.sla_minutes ?? "none"} type="number" min={0} aria-label={`sla minutes of step ${id}`} className="w-full tabular-nums" defaultValue={st.sla_minutes ?? ""} placeholder="none"
-          onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity); set({ sla_minutes: v > 0 ? v : null }); }} />
+          onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity) || null; if (v !== (st.sla_minutes ?? null)) set({ sla_minutes: v }); }} />
       </Field>
       <p className="text-xs text-muted-foreground">Waits for: {waits || "nothing (entry step)"}</p>
       <details className="flex flex-col gap-3 text-sm [&>summary]:cursor-pointer [&[open]>summary]:mb-3">

@@ -64,7 +64,7 @@ The engine keeps one arrival per `Workflow`. `Scenario.materialize()` applies ov
 
 Overlays run before expansion, on the canvas form. `ArrivalMultiplier` with a `workflow_id` naming a workflow that has inflows scales every inflow's rate; with `workflow_id: null` it scales all arrivals and all inflows. This is the only overlay that touches arrivals.
 
-Event logs, KPIs and ledgers therefore report per engine workflow, i.e. per channel. The web Analysis page shows `order.phone`, `order.web` as separate rows; grouping them is not part of this project.
+Event logs, KPIs and ledgers therefore report per engine workflow, i.e. per channel. The web app shows no per-workflow results today; the per-channel ids appear in the `/simulate` response (`runs[].metrics.workflows`) and a per-channel table is a possible follow-up, not part of this project.
 
 ### 5.3 Saving a half-finished company (decided by the user on 2026-10-26)
 

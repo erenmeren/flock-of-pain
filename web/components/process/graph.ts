@@ -147,7 +147,7 @@ export function blockingIssue(c: Company): { workflowId: string; message: string
     const fix = (name: string, why: string) => ({ workflowId: wf.id, message: `Fix \`${name}\` on the ${wf.name} canvas: ${why}` });
     const inflows = inflowsOf(wf);
     if (!inflows.length) return { workflowId: wf.id, message: `${wf.name} has no inflow` };
-    const empty = inflows.find((i) => !i.entry.length);
+    const empty = wf.arrival ? undefined : inflows.find((i) => !i.entry.length);
     if (empty) return fix(empty.name, "it enters no step");
     const reach = reachable(wf);
     for (const st of wf.steps) {

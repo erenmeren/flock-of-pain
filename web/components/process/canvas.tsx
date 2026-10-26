@@ -107,7 +107,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
   const [selected, setSelected] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const edit = (f: (w: Workflow) => Workflow) => onChange(f(toInflows(wf)));
+  const edit = (f: (w: Workflow) => Workflow) => onChange(f(wf.inflows ? wf : { ...toInflows(wf), layout: fillLayout(wf) }));
   const stepName = (id: string) => wf.steps.find((s) => s.id === id)?.name ?? id;
 
   useEffect(() => {
