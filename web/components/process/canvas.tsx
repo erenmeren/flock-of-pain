@@ -2,7 +2,7 @@
 import "@xyflow/react/dist/style.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BaseEdge, Controls, EdgeLabelRenderer, type Edge, type EdgeProps, Handle, type Node, type NodeProps, type OnSelectionChangeFunc, Position, ReactFlow, ReactFlowProvider, getBezierPath, useEdgesState, useNodesInitialized, useNodesState, useReactFlow } from "@xyflow/react";
+import { BaseEdge, Controls, EdgeLabelRenderer, type Edge, type EdgeProps, Handle, MarkerType, type Node, type NodeProps, type OnSelectionChangeFunc, Position, ReactFlow, ReactFlowProvider, getBezierPath, useEdgesState, useNodesInitialized, useNodesState, useReactFlow } from "@xyflow/react";
 import { ArrowDownToLine, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { INLINE_INPUT, accent } from "@/components/org/parts";
@@ -86,7 +86,7 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPo
       <g onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}><BaseEdge path={path} markerEnd={markerEnd} /></g>
       <EdgeLabelRenderer>
         <button type="button" aria-label="remove arrow" onClick={data?.onRemove}
-          className={`nodrag nopan pointer-events-auto absolute flex size-4 items-center justify-center rounded-full bg-muted text-muted-foreground transition-opacity hover:text-foreground hover:opacity-100 ${selected || hover ? "opacity-100" : "opacity-0"}`}
+          className={`nodrag nopan pointer-events-auto absolute flex size-4 items-center justify-center rounded-full bg-muted text-muted-foreground transition-opacity hover:text-foreground hover:opacity-100 focus-visible:opacity-100 ${selected || hover ? "opacity-100" : "opacity-0"}`}
           style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }}><X className="size-3" /></button>
       </EdgeLabelRenderer>
     </>
@@ -136,9 +136,10 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
           ...named(st.id, (w, to, name) => renameStep({ ...w, steps: w.steps.map((s) => (s.id === st.id ? { ...s, name } : s)) }, st.id, to), "step") } };
       }),
     ].map((n) => ({ ...n, measured: prev.find((p) => p.id === n.id)?.measured }))); // kept sizes spare every node a hidden re-measure
-    const edge = (from: string, to: string) => ({ id: `${from}->${to}`, source: from, target: to, type: "flow", deletable: true,
+    const edge = (from: string, to: string) => ({ id: `${from}->${to}`, source: from, target: to, type: "flow", deletable: true, markerEnd: { type: MarkerType.ArrowClosed },
       data: { onRemove: () => onChange(disconnect(toInflows(wf), from, to)) } });
-    setEdges([...inflows.flatMap((i) => i.entry.map((e) => edge(i.id, e))), ...wf.steps.flatMap((s) => (s.depends_on ?? []).map((d) => edge(d, s.id)))]);
+    setEdges((prev) => [...inflows.flatMap((i) => i.entry.map((e) => edge(i.id, e))), ...wf.steps.flatMap((s) => (s.depends_on ?? []).map((d) => edge(d, s.id)))]
+      .map((e) => ({ ...e, selected: prev.find((p) => p.id === e.id)?.selected }))); // a selected edge stays deletable across re-syncs
   }, [wf, company, selected, focusId, onChange, setNodes, setEdges]);
 
   useEffect(() => {
@@ -193,7 +194,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
               if (next === null) setToast(`That would loop back to ${stepName(target)}`);
               else if (next !== w) onChange(next);
             }}
-            deleteKeyCode={["Delete", "Backspace"]}
+            deleteKeyCode={["Delete", "Backspace"]} multiSelectionKeyCode={null} selectionKeyCode={null}
             onBeforeDelete={async ({ nodes }) => nodes.length === 0 || confirm("Its arrows are removed with it.", { title: nodes[0].type === "inflow" ? "Remove this inflow?" : "Remove this step?", action: "Remove", destructive: true })}
             onDelete={({ nodes, edges }) => edit((w) => {
               let n = w;
