@@ -180,3 +180,28 @@ def test_auth_required_except_example():
     assert client.get("/runs/1", headers={"X-API-Key": other}).status_code == 404
     assert client.get("/companies/reynolds", headers={"X-API-Key": other}).status_code == 404
     assert client.get("/runs/1").status_code == 200
+
+
+def test_put_draft_company_then_simulate_422():
+    ex = client.get("/example").json()
+    ex["company"]["workflows"][0]["steps"][0]["department_id"] = ""
+    r = client.put("/companies/reynolds", json=ex)
+    assert r.status_code == 200, r.text
+    assert client.get("/companies/reynolds").json()["company"]["workflows"][0]["steps"][0]["department_id"] == ""
+    r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"], "config": {"seed": 1, "days": 1}})
+    assert r.status_code == 422 and "department_id" in r.json()["message"]
+
+
+def test_simulate_with_inflows():
+    ex = client.get("/example").json()
+    w = ex["company"]["workflows"][0]
+    first = w["steps"][0]["id"]
+    del w["arrival"]
+    w["inflows"] = [{"id": "phone", "name": "Phone", "rate_per_hour": 2, "window": {"weekday_hours": {"0": [9, 17]}}, "entry": [first]},
+                    {"id": "web", "name": "Web", "rate_per_hour": 2, "window": {"weekday_hours": {"0": [9, 17]}}, "entry": [first]}]
+    w["layout"] = {"phone": [0, 0]}
+    r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"][:1], "config": {"seed": 1, "days": 1}})
+    assert r.status_code == 200, r.text
+    r = client.put("/companies/reynolds", json=ex)
+    assert r.status_code == 200, r.text
+    assert client.get("/companies/reynolds").json()["company"]["workflows"][0]["layout"] == {"phone": [0, 0]}

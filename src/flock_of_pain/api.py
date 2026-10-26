@@ -87,14 +87,14 @@ def _section(prefix: str, fn, *args):
         raise SchemaError(f"{prefix}.{e.path}" if e.path else prefix, e.message) from e
 
 
-def _load(company_d: dict, scenarios_d: list[dict]):
-    company = _section("company", company_from_dict, company_d)
+def _load(company_d: dict, scenarios_d: list[dict], draft: bool = False):
+    company = _section("company", company_from_dict, company_d, draft)
     scenarios = [_section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(scenarios_d)]
     if len({s.id for s in scenarios}) != len(scenarios):
         raise SchemaError("scenarios", "duplicate scenario id")
     for i, s in enumerate(scenarios):
         try:
-            s.materialize()
+            s.materialize(draft=draft)
         except ModelError as e:
             raise SchemaError(f"scenarios[{i}]", str(e)) from e
     return company, scenarios
@@ -152,7 +152,7 @@ def companies(tenant: str = Tenant):
 
 @app.put("/companies/{cid}")
 def put_company(cid: str, body: Bundle, tenant: str = Tenant):
-    company, scenarios = _load(body.company, body.scenarios)
+    company, scenarios = _load(body.company, body.scenarios, draft=True)
     if company.id != cid:
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
     if not re.fullmatch(r"[\w.-]+", cid):
