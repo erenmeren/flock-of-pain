@@ -72,3 +72,80 @@ def test_add_employee_and_absence_isolated_from_pool():
     assert c.resource("e2").capacity == 1
     assert c.resource("e1").schedule.absences == [(540, 600)]
     assert c.resource("cs_pool").schedule.absences == []
+
+
+from flock_of_pain.dist import const
+from flock_of_pain.engine import Engine, RunConfig
+from flock_of_pain.model import Inflow, Step
+from flock_of_pain.scenario import expand_inflows
+
+
+def _canvas_company():
+    # a -> b -> c (c reworks to b), a -> d; phone enters at a, web enters at c
+    c = tiny_company(steps=[
+        Step("a", "A", "cs", "support", const(10)),
+        Step("b", "B", "cs", "support", const(5), depends_on=["a"]),
+        Step("c", "C", "cs", "support", const(5), depends_on=["b"], failure_prob=0.1, rework_to="b"),
+        Step("d", "D", "cs", "support", const(5), depends_on=["a"]),
+    ])
+    w = c.workflow("w")
+    w.arrival = None
+    w.inflows = [Inflow("phone", "Phone", 3, business_hours(9, 17), ["a"]),
+                 Inflow("web", "Web", 10, business_hours(0, 24), ["c"])]
+    w.layout = {"phone": (0, 0), "a": (256, 0)}
+    c.resolve()
+    return c
+
+
+def test_expand_inflows_splits_per_channel():
+    c = _canvas_company()
+    expand_inflows(c)
+    assert [w.id for w in c.workflows] == ["w.phone", "w.web"]
+    phone, web = c.workflows
+    assert phone.name == "W · Phone" and phone.arrival.rate_per_hour == 3
+    assert [s.id for s in phone.steps] == ["a", "b", "c", "d"]
+    assert c.step("w.phone", "c").rework_to == "b"
+    assert [s.id for s in web.steps] == ["c"]
+    assert web.steps[0].depends_on == [] and web.steps[0].rework_to is None
+    assert web.arrival.rate_per_hour == 10 and web.inflows == [] and web.layout == {}
+    c.resolve()
+    Engine(c, RunConfig(seed=1, horizon_minutes=1440)).run()  # the expanded form is engine-ready
+
+
+def test_expand_single_inflow_keeps_workflow_id():
+    c = _canvas_company()
+    c.workflow("w").inflows.pop()
+    expand_inflows(c)
+    assert [w.id for w in c.workflows] == ["w"] and c.workflows[0].name == "W"
+
+
+def test_expand_entry_step_keeps_in_subgraph_dependency():
+    c = _canvas_company()
+    c.workflow("w").inflows[1].entry = ["a", "b"]
+    expand_inflows(c)
+    assert c.step("w.web", "b").depends_on == ["a"]
+
+
+def test_expand_leaves_arrival_form_alone():
+    c = tiny_company(rate_per_hour=2)
+    before = copy.deepcopy(c)
+    expand_inflows(c)
+    assert c == before
+
+
+def test_arrival_multiplier_scales_inflows():
+    base = _canvas_company()
+    c = Scenario("s", "S", base, [ArrivalMultiplier(2, "w")]).materialize()
+    assert [w.arrival.rate_per_hour for w in c.workflows] == [6, 20]
+    c = Scenario("s", "S", base, [ArrivalMultiplier(2)]).materialize()
+    assert [w.arrival.rate_per_hour for w in c.workflows] == [6, 20]
+    assert base.workflow("w").inflows[0].rate_per_hour == 3  # base untouched
+
+
+def test_materialize_draft_tolerates_incomplete_company():
+    base = _canvas_company()
+    base.workflow("w").inflows[1].entry = []
+    base.workflow("w").steps[0].department_id = ""
+    with pytest.raises(ModelError):
+        Scenario("s", "S", base, []).materialize()
+    Scenario("s", "S", base, []).materialize(draft=True)
