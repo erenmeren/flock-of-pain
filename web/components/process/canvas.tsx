@@ -12,6 +12,7 @@ import { deptHeadcount } from "@/components/org/ops";
 import { autoLayout, fillLayout } from "@/components/process/layout";
 import { type Issue, addInflow, addStep, connect, disconnect, inflowsOf, nextFreePos, reachable, removeNode, renameInflow, renameStep, stepIssues, toInflows } from "@/components/process/graph";
 import { type Company, type Inflow, type Pos, type Step, type Workflow, durationMean, idFor } from "@/lib/company";
+import { DetailPanel } from "@/components/process/panel";
 import { useConfirm } from "@/lib/confirm";
 
 type Named = { focus: boolean; onRename: (name: string) => void; onFocusDone: () => void };
@@ -148,7 +149,21 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
     return () => clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) setSelected(null); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, []);
+
   const onSelectionChange = useCallback<OnSelectionChangeFunc>(({ nodes }) => setSelected(nodes[0]?.id ?? null), []);
+
+  const removeSelected = async () => {
+    if (!selected) return;
+    const inflow = inflowsOf(wf).some((i) => i.id === selected);
+    if (!(await confirm("Its arrows are removed with it.", { title: inflow ? "Remove this inflow?" : "Remove this step?", action: "Remove", destructive: true }))) return;
+    edit((w) => removeNode(w, selected));
+    setSelected(null);
+  };
 
   const add = (kind: "step" | "inflow", deptId: string, pos: Pos) => {
     const w = toInflows(wf);
@@ -207,7 +222,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         </div>
         {toast && <p className="text-xs text-amber-400">{toast}</p>}
       </div>
-      {/* Task 6: the detail panel for `selected` slots in here */}
+      {selected && <DetailPanel wf={toInflows(wf)} company={company} selected={selected} onChange={onChange} onClose={() => setSelected(null)} onRemove={removeSelected} />}
     </div>
   );
 }
