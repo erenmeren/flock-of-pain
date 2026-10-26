@@ -8,10 +8,9 @@ import { type Schedule, DAYS } from "@/lib/company";
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 
-/** Uncontrolled id field committed on blur, so intermediate ids never rename references. */
-export function IdInput({ value, onCommit, ...props }: { value: string; onCommit: (id: string) => void } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur">) {
-  // a rejected id leaves `value` (and the key) unchanged, so the box is reset by hand
-  return <Input key={value} defaultValue={value} onBlur={(e) => { if (e.currentTarget.value !== value) onCommit(e.currentTarget.value); e.currentTarget.value = value; }} {...props} />;
+/** Read-only id under a name field; ids derive from names (lib/company.ts idFor). */
+export function IdTag({ id, className }: { id: string; className?: string }) {
+  return <span className={`truncate px-1.5 font-mono text-[11px] text-muted-foreground ${className ?? ""}`} title="id">{id}</span>;
 }
 
 /** Uncontrolled number committed on blur; the box keeps what was typed until then. An empty box is rejected. */
@@ -22,13 +21,6 @@ export function NumInput({ value, onCommit, lo = 0, hi = Infinity, ...props }: {
     if (v !== value) onCommit(v);
     e.currentTarget.value = String(v); // show what was stored: the clamped value, or the old one when rejected
   }} {...props} />;
-}
-
-export function uniqueId(base: string, items: { id: string }[]): string {
-  const ids = new Set(items.map((x) => x.id));
-  let n = 1;
-  while (ids.has(`${base}_${n}`)) n++;
-  return `${base}_${n}`;
 }
 
 // shortcut: one [start, end] for every working day; per-day hours and absences are edited in the JSON tab

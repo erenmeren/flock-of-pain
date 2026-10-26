@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
-import { type Company, type Scenario, checkScenarios, headcount, renameInScenarios } from "@/lib/company";
+import { type Company, type Scenario, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
 
 const sched = { weekday_hours: { "0": [9, 17] as [number, number] } };
 const c: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
@@ -70,3 +70,10 @@ assert.equal(handoffs(wf), 2);
 const edges = mapEdges({ ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [wf] });
 assert.deepEqual(edges.map((e) => `${e.from}>${e.to}:${e.n}`), ["w:w>d:a:1", "d:a>d:b:1", "d:b>d:a:1", "d:a>s:erp:1"]);
 console.log("ok");
+
+// ids derive from names (idFor) and survive Turkish letters (slug)
+assert.equal(slug("Müşteri Hizmetleri / Işık"), "musteri_hizmetleri_isik");
+assert.equal(idFor("Finance", ["cs"], "dept"), "finance");
+assert.equal(idFor("Finance", ["finance", "finance_2"], "dept"), "finance_3");
+assert.equal(idFor("Finance", ["finance"], "dept", "finance"), "finance"); // own id stays
+assert.equal(idFor("", ["emp"], "emp"), "emp_2"); // no letters: base

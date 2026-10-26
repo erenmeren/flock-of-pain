@@ -4,8 +4,8 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { IdInput, NumInput, ScheduleEditor } from "@/components/editor-fields";
-import { type Company, type Overlay, DAYS, OVERLAY_TYPES, weekdays9to5 } from "@/lib/company";
+import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
+import { type Company, type Overlay, DAYS, OVERLAY_TYPES, idFor, weekdays9to5 } from "@/lib/company";
 
 export const DAY = 1440;
 const ALL = "__all__";
@@ -58,7 +58,7 @@ export function newOverlay(type: (typeof OVERLAY_TYPES)[number], c: Company): Ov
     case "system_outage": return { type, system_id: c.systems[0]?.id ?? "", start: 2 * DAY + 600, end: 2 * DAY + 720 };
     case "add_employee": {
       const d = c.departments[0];
-      return { type, department_id: d?.id ?? "", employee: { id: "new_employee", name: "New employee", skills: d?.resources[0]?.skills ?? [], cost_per_hour: 30, speed_factor: 1, schedule: weekdays9to5() } };
+      return { type, department_id: d?.id ?? "", employee: { id: idFor("New employee", c.departments.flatMap((x) => x.resources).map((r) => r.id), "emp"), name: "New employee", skills: d?.resources[0]?.skills ?? [], cost_per_hour: 30, speed_factor: 1, schedule: weekdays9to5() } };
     }
     case "remove_resource": return { type, resource_id: all[0]?.r.id ?? "" };
     case "set_pool_headcount": {
@@ -93,8 +93,9 @@ export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overla
       const setE = (employee: typeof e) => onChange({ ...o, employee });
       body = <>
         <Field label="Department"><Pick label="new employee department" className="w-36" value={o.department_id} items={Object.fromEntries(c.departments.map((d) => [d.id, d.name || d.id]))} onChange={(department_id) => onChange({ ...o, department_id })} /></Field>
-        <Field label="Employee id"><IdInput aria-label="new employee id" className="w-32" value={e.id} onCommit={(id) => setE({ ...e, id })} /></Field>
-        <Field label="Name"><Input aria-label="new employee name" className="w-36" value={e.name ?? ""} onChange={(ev) => setE({ ...e, name: ev.target.value })} /></Field>
+        <Field label="Name"><Input aria-label="new employee name" className="w-36" value={e.name ?? ""}
+          onChange={(ev) => setE({ ...e, name: ev.target.value, id: idFor(ev.target.value, c.departments.flatMap((x) => x.resources).map((r) => r.id), "emp", e.id) })} /></Field>
+        <Field label="Id"><IdTag id={e.id} className="px-0 leading-9" /></Field>
         <Field label="Skills (comma)">
           <Input key={e.skills.join(",")} aria-label="new employee skills" className="w-44" defaultValue={e.skills.join(", ")}
             onBlur={(ev) => setE({ ...e, skills: [...new Set(ev.target.value.split(",").map((s) => s.trim()).filter(Boolean))] })} />

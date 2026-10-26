@@ -9,12 +9,14 @@ import { PageHeader, fmt } from "@/components/page";
 import { WorkflowCard } from "@/components/workflow-editor";
 import { StepChain, cycleMean, windowSummary } from "@/components/process/step-chain";
 import { type Workflow, renameInScenarios } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 export function WorkflowPage() {
   const { id: raw } = useParams<{ id: string }>();
   const id = decodeURIComponent(raw);
   const { company, setCompany, scenarios, setScenarios } = useTwin();
+  const confirm = useConfirm();
   const router = useRouter();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -36,8 +38,8 @@ export function WorkflowPage() {
       router.replace(`/processes/${encodeURIComponent(w.id)}`);
     }
   };
-  const onRemove = () => {
-    if (!confirm(`Remove workflow "${wf.name}"?`)) return;
+  const onRemove = async () => {
+    if (!(await confirm(`"${wf.name}" and its steps are removed.`, { title: "Remove this workflow?", action: "Remove", destructive: true }))) return;
     setCompany({ ...company, workflows: company.workflows.filter((_, j) => j !== i) });
     router.push("/processes");
   };

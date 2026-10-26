@@ -5,7 +5,8 @@ import {
   type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
   deleteCompany, generate as apiGenerate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
 } from "@/lib/api";
-import { type Company, type Scenario, checkCompany, checkScenarios } from "@/lib/company";
+import { type Company, type Scenario, checkCompany, checkScenarios, slug } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 
 export type Config = { seed: number; days: number; replications: number; policy: string; include_events: boolean; save: boolean };
 export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", include_events: false, save: false };
@@ -32,6 +33,7 @@ export type Twin = {
   setError: (e: ApiError | null) => void;
   changeKey: (k: string) => void;
   loadExample: () => Promise<void>;
+  create: (name: string) => Promise<boolean>; // empty company named after the input, baseline scenario only; false = kept the draft
   generate: (prompt: string) => Promise<void>;
   run: () => Promise<void>;
   save: () => Promise<void>;
@@ -43,9 +45,9 @@ export type Twin = {
 
 const DRAFT = "flock_draft"; // the working copy survives a reload; saved companies live in the API
 const Ctx = createContext<Twin | null>(null);
-const keepDraft = (c: Company | null) => !!c && !confirm("Replace the current draft? Unsaved changes are lost.");
 
 export function TwinProvider({ children }: { children: React.ReactNode }) {
+  const confirm = useConfirm();
   const [company, setCompanyState] = useState<Company | null>(null);
   const [scenarios, setScenariosState] = useState<Scenario[]>([]);
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
@@ -99,6 +101,9 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(DRAFT, JSON.stringify({ company, scenarios, config, selected })); } catch { /* quota or private window: draft lives in memory only */ }
   }, [company, scenarios, config, selected]);
 
+  const keepDraft = useCallback(async (c: Company | null) =>
+    !!c && !(await confirm("Unsaved changes are lost.", { title: "Replace the current draft?", action: "Replace" })), [confirm]);
+
   const act = useCallback(async (fn: () => Promise<void>) => {
     setError(null);
     setBusy(true);
@@ -126,8 +131,18 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setResultSource(null);
       if (k) refreshLists();
     },
-    loadExample: async () => { if (keepDraft(company)) return; await act(loadExample); },
-    generate: async (prompt) => { if (keepDraft(company)) return; await act(async () => {
+    loadExample: async () => { if (await keepDraft(company)) return; await act(loadExample); },
+    create: async (name) => {
+      if (await keepDraft(company)) return false;
+      setCompanyState({ id: slug(name) || "company", name: name.trim(), systems: [], departments: [], workflows: [] });
+      setScenariosState([{ id: "baseline", name: "Baseline", overlays: [] }]);
+      setSelected("");
+      setResult(null);
+      setResultSource(null);
+      setError(null);
+      return true;
+    },
+    generate: async (prompt) => { if (await keepDraft(company)) return; await act(async () => {
       const x = await apiGenerate(prompt);
       setCompanyState(x.company as Company);
       setScenariosState(x.scenarios as Scenario[]);
@@ -148,12 +163,13 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     }),
     save: () => act(async () => {
       if (!company) return;
-      if (saved.some((c) => c.id === company.id) && company.id !== selected && !confirm(`Replace the saved company "${company.id}"?`)) return;
+      if (saved.some((c) => c.id === company.id) && company.id !== selected
+        && !(await confirm(`A saved company with the id "${company.id}" already exists.`, { title: "Replace the saved company?", action: "Replace" }))) return;
       await saveCompany(company.id, { company, scenarios });
       setSelected(company.id);
       refreshLists();
     }),
-    load: async (id) => { if (keepDraft(company)) return; await act(async () => {
+    load: async (id) => { if (await keepDraft(company)) return; await act(async () => {
       const b = await loadCompany(id);
       setCompanyState(b.company as Company);
       setScenariosState(b.scenarios as Scenario[]);
@@ -162,7 +178,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setResultSource(null);
     }); },
     remove: (id) => act(async () => {
-      if (!confirm(`Delete the saved company "${id}"? This cannot be undone.`)) return;
+      if (!(await confirm(`"${id}" is removed from this tenant. This cannot be undone.`, { title: "Delete the saved company?", action: "Delete", destructive: true }))) return;
       await deleteCompany(id);
       if (selected === id) setSelected("");
       refreshLists();
@@ -173,7 +189,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setResultSource({ kind: "history", run_id: id, name: runs.find((x) => x.id === id)?.name ?? `run ${id}` });
     }),
     refreshLists: () => refreshLists(),
-  }), [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, busy, error, act, loadExample, refreshLists]);
+  }), [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, busy, error, act, confirm, keepDraft, loadExample, refreshLists]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

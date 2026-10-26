@@ -2,13 +2,13 @@
 
 import { Plus, Server } from "lucide-react";
 import { IconTile, PageHeader } from "@/components/page";
-import { IdInput, uniqueId } from "@/components/editor-fields";
+import { IdTag } from "@/components/editor-fields";
 import { INLINE_INPUT, Loading, OrgNav, Pill, StatusDot, TableCard } from "@/components/org/parts";
 import { stepsIn } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { renameInScenarios, renameSystem, scenarioRefs } from "@/lib/company";
+import { idFor, renameInScenarios, renameSystem, scenarioRefs } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 export default function SystemsPage() {
@@ -24,7 +24,7 @@ export default function SystemsPage() {
     setCompany({ ...next, systems: next.systems.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
     if (patch.id !== undefined && patch.id !== old.id) setScenarios(renameInScenarios(scenarios, "system_id", old.id, patch.id));
   };
-  const add = () => setCompany({ ...company, systems: [...company.systems, { id: uniqueId("system", company.systems), name: "New system" }] });
+  const add = () => setCompany({ ...company, systems: [...company.systems, { id: idFor("New system", company.systems.map((x) => x.id), "system"), name: "New system" }] });
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Systems" subtitle={`${company.systems.length} systems`} />
@@ -47,8 +47,8 @@ export default function SystemsPage() {
                     <div className="flex items-center gap-3">
                       <IconTile icon={Server} color="var(--chart-5)" />
                       <div className="flex flex-col gap-0.5">
-                        <Input aria-label={`system name ${s.id}`} className={`w-56 font-medium ${INLINE_INPUT}`} value={s.name} onChange={(e) => setSystem(i, { name: e.target.value })} />
-                        <IdInput aria-label={`system id ${s.id}`} className={`h-6! w-56 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={s.id} onCommit={(id) => setSystem(i, { id })} />
+                        <Input aria-label={`system name ${s.id}`} className={`w-56 font-medium ${INLINE_INPUT}`} value={s.name} onChange={(e) => setSystem(i, { name: e.target.value, id: idFor(e.target.value, company.systems.filter((_, j) => j !== i).map((x) => x.id), "system", s.id) })} />
+                        <IdTag id={s.id} />
                       </div>
                     </div>
                   </TableCell>

@@ -6,23 +6,24 @@ import { ArrowRight, Plus, Trash2, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader, fmt } from "@/components/page";
-import { uniqueId } from "@/components/editor-fields";
 import { StepChain, cycleMean, unskilled, windowSummary } from "@/components/process/step-chain";
-import { weekdays9to5 } from "@/lib/company";
+import { idFor, weekdays9to5 } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 export default function ProcessesPage() {
   const { company, setCompany } = useTwin();
+  const confirm = useConfirm();
   const router = useRouter();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const add = () => {
-    const id = uniqueId("workflow", company.workflows);
+    const id = idFor("New workflow", company.workflows.map((x) => x.id), "workflow");
     setCompany({ ...company, workflows: [...company.workflows, { id, name: "New workflow", arrival: { rate_per_hour: 1, window: weekdays9to5() }, steps: [] }] });
     router.push(`/processes/${encodeURIComponent(id)}`);
   };
-  const remove = (i: number) => {
-    if (confirm(`Remove workflow "${company.workflows[i].name}"?`)) setCompany({ ...company, workflows: company.workflows.filter((_, j) => j !== i) });
+  const remove = async (i: number) => {
+    if (await confirm(`"${company.workflows[i].name}" and its steps are removed.`, { title: "Remove this workflow?", action: "Remove", destructive: true })) setCompany({ ...company, workflows: company.workflows.filter((_, j) => j !== i) });
   };
 
   return (

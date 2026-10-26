@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
+import { ConfirmProvider } from "@/lib/confirm";
 import { TwinProvider } from "@/lib/store";
 import "./globals.css";
 
@@ -18,13 +19,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
       <body className="flex h-full min-h-screen gap-3 p-3">
-        <TwinProvider>
+        <ConfirmProvider><TwinProvider>
           <Suspense><Sidebar /></Suspense>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <Suspense><Topbar /></Suspense>
             <main className="min-h-0 flex-1 overflow-auto rounded-2xl p-1">{children}</main>
           </div>
-        </TwinProvider>
+        </TwinProvider></ConfirmProvider>
       </body>
     </html>
   );

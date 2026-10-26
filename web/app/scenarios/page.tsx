@@ -8,21 +8,24 @@ import { Panel } from "@/components/dashboard/kpi";
 import { Pill, accent } from "@/components/org/parts";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page";
-import { IdInput, uniqueId } from "@/components/editor-fields";
 import { DAY, MinuteRange, OverlayEditor, Pick, newOverlay, systemItems } from "@/components/scenario/overlay-editor";
-import { type Company, type Scenario, OVERLAY_TYPES } from "@/lib/company";
+import { type Company, type Scenario, OVERLAY_TYPES, idFor } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 export default function ScenariosPage() {
   const { company, setCompany, scenarios, setScenarios } = useTwin();
+  const confirm = useConfirm();
   const [sel, setSel] = useState(0);
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const i = Math.min(sel, scenarios.length - 1);
   const s = scenarios[i];
   const setS = (x: Scenario) => setScenarios(scenarios.map((y, j) => (j === i ? x : y)));
-  const add = (x: Omit<Scenario, "id">) => { setScenarios([...scenarios, { ...x, id: uniqueId("scenario", scenarios) }]); setSel(scenarios.length); };
-  const remove = (j: number) => { if (confirm(`Remove scenario "${scenarios[j].name}"?`)) setScenarios(scenarios.filter((_, k) => k !== j)); };
+  const add = (x: Omit<Scenario, "id">) => { setScenarios([...scenarios, { ...x, id: idFor(x.name, scenarios.map((y) => y.id), "scenario") }]); setSel(scenarios.length); };
+  const remove = async (j: number) => {
+    if (await confirm(`"${scenarios[j].name}" and its overlays are removed.`, { title: "Remove this scenario?", action: "Remove", destructive: true })) setScenarios(scenarios.filter((_, k) => k !== j));
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,13 +57,10 @@ export default function ScenariosPage() {
               action={<Pick label="add overlay" value="" placeholder="+ Add overlay" className="w-52 rounded-full data-placeholder:text-foreground" items={Object.fromEntries(OVERLAY_TYPES.map((t) => [t, `+ ${t}`]))}
                 onChange={(t) => setS({ ...s, overlays: [...s.overlays, newOverlay(t as (typeof OVERLAY_TYPES)[number], company)] })} />}
               contentClassName="flex flex-col gap-3">
-              <div className="grid gap-3 rounded-xl p-3 glass-inset sm:grid-cols-[12rem_1fr]">
-                <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">Id
-                  {/* scenario ids stay unique: a clashing rename is ignored */}
-                  <IdInput aria-label="scenario id" className="font-mono normal-case tracking-normal" value={s.id} onCommit={(id) => id && !scenarios.some((y) => y.id === id) && setS({ ...s, id })} />
-                </label>
+              <div className="rounded-xl p-3 glass-inset">
                 <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">Name
-                  <Input aria-label="scenario name" className="normal-case tracking-normal" value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} />
+                  <Input aria-label="scenario name" className="normal-case tracking-normal" value={s.name}
+                    onChange={(e) => setS({ ...s, name: e.target.value, id: idFor(e.target.value, scenarios.filter((_, j) => j !== i).map((y) => y.id), "scenario", s.id) })} />
                 </label>
               </div>
               {s.overlays.map((o, k) => (

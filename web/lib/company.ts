@@ -45,7 +45,19 @@ export const weekdays9to5 = (): Schedule => ({
   weekday_hours: Object.fromEntries([0, 1, 2, 3, 4].map((d) => [String(d), [9, 17]])),
 });
 
-export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+export const slug = (s: string) =>
+  s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/** Id derived from a name, unique among `taken`; `base` when the name has no letters or digits. `keep` is the item's current id, reused when it already fits. */
+export function idFor(name: string, taken: Iterable<string>, base: string, keep?: string): string {
+  const ids = new Set(taken);
+  const s = slug(name) || base;
+  if (s === keep) return keep;
+  if (!ids.has(s)) return s;
+  let n = 2;
+  while (ids.has(`${s}_${n}`) && `${s}_${n}` !== keep) n++;
+  return `${s}_${n}`;
+}
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 

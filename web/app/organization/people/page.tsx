@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Plus, Users } from "lucide-react";
 import { PageHeader } from "@/components/page";
-import { IdInput, NumInput, ScheduleEditor, uniqueId } from "@/components/editor-fields";
+import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
 import { Avatar, DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
 import { type Loc, addResource, allResources, isPool, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type Resource, renameInScenarios, scenarioRefs, weekdays9to5 } from "@/lib/company";
+import { type Resource, idFor, renameInScenarios, scenarioRefs, weekdays9to5 } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 const ALL = "__all__";
@@ -20,6 +21,7 @@ const NONE = "__none__";
 
 export default function PeoplePage() {
   const { company, setCompany, scenarios, setScenarios } = useTwin();
+  const confirm = useConfirm();
   const [filter, setFilter] = useState(ALL);
   if (!company) return <Loading />;
   const resources = allResources(company);
@@ -33,7 +35,7 @@ export default function PeoplePage() {
     const di = Math.max(0, company.departments.findIndex((d) => d.id === filter));
     const dept = company.departments[di];
     if (!dept) return;
-    const person: Resource = { id: uniqueId("emp", resources), skills: [], cost_per_hour: 0, schedule: weekdays9to5() };
+    const person: Resource = { id: idFor("", resources.map((x) => x.id), "emp"), skills: [], cost_per_hour: 0, schedule: weekdays9to5() };
     const withPerson = addResource(company, di, person);
     const pool = dept.resources.find(isPool);
     // joining the first pool goes through setResource so the pool grows by one and capacity stays unchanged
@@ -82,8 +84,8 @@ export default function PeoplePage() {
                     <div className="flex items-center gap-3">
                       <Avatar name={r.name || r.id} />
                       <div className="flex flex-col gap-0.5">
-                        <Input aria-label={`name of ${r.id}`} className={`w-36 font-medium ${INLINE_INPUT}`} value={r.name ?? ""} onChange={(e) => set({ ...r, name: e.target.value || undefined })} />
-                        <IdInput aria-label={`id of ${r.id}`} className={`h-6! w-36 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={r.id} onCommit={(id) => set({ ...r, id })} />
+                        <Input aria-label={`name of ${r.id}`} className={`w-36 font-medium ${INLINE_INPUT}`} value={r.name ?? ""} onChange={(e) => set({ ...r, name: e.target.value || undefined, id: idFor(e.target.value, resources.filter((x) => x !== r).map((x) => x.id), "emp", r.id) })} />
+                        <IdTag id={r.id} />
                       </div>
                     </div>
                   </TableCell>
@@ -120,7 +122,7 @@ export default function PeoplePage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)} title={inScenarios.has(r.id) ? "referenced by a scenario" : undefined}
-                      onClick={() => confirm(`Remove "${r.id}"?`) && setCompany(removeResource(company, loc))}>Remove</Button>
+                      onClick={async () => { if (await confirm(`"${r.id}" leaves the company.`, { title: "Remove this person?", action: "Remove", destructive: true })) setCompany(removeResource(company, loc)); }}>Remove</Button>
                   </TableCell>
                 </TableRow>
               );

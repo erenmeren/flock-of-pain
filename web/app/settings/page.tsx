@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Braces, Database, Download, KeyRound, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Braces, Database, Download, KeyRound, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { cn } from "cn";
 import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader } from "@/components/page";
@@ -32,6 +32,8 @@ function JsonBox({ label, value, apply }: { label: string; value: unknown; apply
 export default function Settings() {
   const t = useTwin();
   const [prompt, setPrompt] = useState("");
+  const [newName, setNewName] = useState("");
+  const create = async () => { if (newName.trim() && await t.create(newName)) setNewName(""); };
 
   const tryApply = (fn: () => void) => {
     try { fn(); t.setError(null); } catch (e) { t.setError({ path: null, message: `Invalid JSON: ${(e as Error).message}` }); }
@@ -82,6 +84,10 @@ export default function Settings() {
       <Panel title="Saved Companies" subtitle={`${t.saved.length} stored for this tenant`} icon={Database}
         action={<Button variant="outline" size="sm" className="rounded-full" onClick={t.loadExample} disabled={t.busy}>Load Reynolds example</Button>}>
         <div className="flex flex-col gap-2">
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); create(); }}>
+            <Input className="h-9 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="new company name" placeholder="New company name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={t.busy} />
+            <Button type="submit" variant="outline" size="sm" className="h-9 rounded-full px-3" disabled={t.busy || !newName.trim()}><Plus className="size-3.5" /> Create empty</Button>
+          </form>
           {t.saved.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No saved companies{t.apiKey ? "" : " (set an API key first)"}.</p>}
           {t.saved.map((c) => (
             <div key={c.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm", t.selected === c.id && "ring-1! ring-primary/40")}>

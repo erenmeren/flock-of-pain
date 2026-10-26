@@ -2,17 +2,19 @@
 
 import { Building2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/page";
-import { IdInput, uniqueId } from "@/components/editor-fields";
+import { IdTag } from "@/components/editor-fields";
 import { DeptMark, INLINE_INPUT, Loading, OrgNav, TableCard } from "@/components/org/parts";
 import { deptHeadcount, isPool, removeDepartment, stepsIn } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type Department, renameDepartment, renameInScenarios, scenarioRefs } from "@/lib/company";
+import { type Department, idFor, renameDepartment, renameInScenarios, scenarioRefs } from "@/lib/company";
+import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 export default function DepartmentsPage() {
   const { company, setCompany, scenarios, setScenarios } = useTwin();
+  const confirm = useConfirm();
   if (!company) return <Loading />;
   const steps = stepsIn(company);
   const inScenarios = scenarioRefs(scenarios).departments;
@@ -24,7 +26,7 @@ export default function DepartmentsPage() {
     setCompany({ ...next, departments: next.departments.map((x, j) => (j === i ? d : x)) });
     if (old.id !== d.id) setScenarios(renameInScenarios(scenarios, "department_id", old.id, d.id));
   };
-  const add = () => setCompany({ ...company, departments: [...company.departments, { id: uniqueId("dept", company.departments), name: "New department", resources: [] }] });
+  const add = () => setCompany({ ...company, departments: [...company.departments, { id: idFor("New department", company.departments.map((x) => x.id), "dept"), name: "New department", resources: [] }] });
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Departments" subtitle={`${company.departments.length} departments`} />
@@ -49,8 +51,8 @@ export default function DepartmentsPage() {
                     <div className="flex items-center gap-3">
                       <DeptMark index={i} size="size-8" />
                       <div className="flex flex-col gap-0.5">
-                        <Input aria-label={`department name ${d.id}`} className={`w-52 font-medium ${INLINE_INPUT}`} value={d.name} onChange={(e) => setDept(i, { ...d, name: e.target.value })} />
-                        <IdInput aria-label={`department id ${d.id}`} className={`h-6! w-52 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={d.id} onCommit={(id) => setDept(i, { ...d, id })} />
+                        <Input aria-label={`department name ${d.id}`} className={`w-52 font-medium ${INLINE_INPUT}`} value={d.name} onChange={(e) => setDept(i, { ...d, name: e.target.value, id: idFor(e.target.value, company.departments.filter((_, j) => j !== i).map((x) => x.id), "dept", d.id) })} />
+                        <IdTag id={d.id} />
                       </div>
                     </div>
                   </TableCell>
@@ -61,8 +63,8 @@ export default function DepartmentsPage() {
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" disabled={used > 0 || scen}
                       title={used ? `referenced by ${used} workflow step${used === 1 ? "" : "s"}` : scen ? "referenced by a scenario" : undefined}
-                      aria-label={`remove ${d.id}`} onClick={() => {
-                        if (d.resources.length && !confirm(`Remove department "${d.id}" and its ${d.resources.length} pools/people?`)) return;
+                      aria-label={`remove ${d.id}`} onClick={async () => {
+                        if (d.resources.length && !(await confirm(`Its ${d.resources.length} pools/people are removed with it.`, { title: `Remove department "${d.id}"?`, action: "Remove", destructive: true }))) return;
                         setCompany(removeDepartment(company, i));
                       }}>Remove</Button>
                   </TableCell>

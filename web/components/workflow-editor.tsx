@@ -9,8 +9,8 @@ import { StepNumber } from "@/components/process/step-chain";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { IdInput, NumInput, ScheduleEditor, clamp, uniqueId } from "@/components/editor-fields";
-import { type Company, type Dist, type Step, type Workflow, durationMean } from "@/lib/company";
+import { IdTag, NumInput, ScheduleEditor, clamp } from "@/components/editor-fields";
+import { type Company, type Dist, type Step, type Workflow, durationMean, idFor } from "@/lib/company";
 
 const NONE = "__none__";
 
@@ -38,7 +38,7 @@ export function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow
   };
   const addStep = () => {
     const dept = depts[0];
-    onChange({ ...wf, steps: [...wf.steps, { id: uniqueId("step", wf.steps), name: "New step", department_id: dept?.id ?? "", required_skill: skillsOf(dept?.id ?? "")[0] ?? "",
+    onChange({ ...wf, steps: [...wf.steps, { id: idFor("New step", wf.steps.map((x) => x.id), "step"), name: "New step", department_id: dept?.id ?? "", required_skill: skillsOf(dept?.id ?? "")[0] ?? "",
       duration: { kind: "lognormal_mean", mean: 10, sigma: 0.4 }, depends_on: wf.steps.length ? [wf.steps[wf.steps.length - 1].id] : [] }] });
   };
 
@@ -48,9 +48,8 @@ export function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow
         <div className="flex w-full flex-wrap items-center gap-3">
           <IconTile icon={WorkflowIcon} />
           <div className="flex min-w-60 flex-1 flex-col gap-0.5">
-            <Input aria-label={`workflow name ${wf.id}`} className={`h-7 text-base! font-medium ${INLINE_INPUT}`} value={wf.name} onChange={(e) => onChange({ ...wf, name: e.target.value })} />
-            {/* shortcut: a workflow rename does not follow into scenario overlays (arrival_multiplier.workflow_id), which live in the scenarios JSON */}
-            <IdInput aria-label={`workflow id ${wf.id}`} className={`h-6 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={wf.id} onCommit={(id) => onChange({ ...wf, id })} />
+            <Input aria-label={`workflow name ${wf.id}`} className={`h-7 text-base! font-medium ${INLINE_INPUT}`} value={wf.name} onChange={(e) => onChange({ ...wf, name: e.target.value, id: idFor(e.target.value, company.workflows.filter((x) => x !== wf).map((x) => x.id), "workflow", wf.id) })} />
+            <IdTag id={wf.id} />
           </div>
           <Button variant="ghost" size="sm" className="rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>
         </div>
@@ -89,8 +88,8 @@ export function WorkflowCard({ wf, company, onChange, onRemove }: { wf: Workflow
                     <div className="flex items-center gap-3">
                       <StepNumber n={i + 1} color={di < 0 ? "oklch(0.5 0 0)" : accent(di)} />
                       <div className="flex flex-col gap-0.5">
-                        <Input aria-label={`name of step ${st.id}`} className={`w-36 font-medium ${INLINE_INPUT}`} value={st.name} onChange={(e) => setStep(i, { ...st, name: e.target.value })} />
-                        <IdInput aria-label={`id of step ${st.id}`} className={`h-6! w-36 font-mono text-xs! text-muted-foreground ${INLINE_INPUT}`} value={st.id} onCommit={(id) => setStep(i, { ...st, id })} />
+                        <Input aria-label={`name of step ${st.id}`} className={`w-36 font-medium ${INLINE_INPUT}`} value={st.name} onChange={(e) => setStep(i, { ...st, name: e.target.value, id: idFor(e.target.value, wf.steps.filter((_, j) => j !== i).map((x) => x.id), "step", st.id) })} />
+                        <IdTag id={st.id} />
                       </div>
                     </div>
                   </TableCell>
