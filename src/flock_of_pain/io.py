@@ -6,7 +6,7 @@ import types
 
 from flock_of_pain.analytics import Metrics
 from flock_of_pain.dist import Dist, lognormal_mean
-from flock_of_pain.model import (ArrivalSpec, BusinessSystem, Company, Department, ModelError, Resource, Step,
+from flock_of_pain.model import (ArrivalSpec, BusinessSystem, Company, Department, Inflow, ModelError, Resource, Step,
                                  Workflow)
 from flock_of_pain.engine import RunConfig
 from flock_of_pain.scenario import (Absence, AddEmployee, ArrivalMultiplier, RemoveResource, Scenario, SetPoolHeadcount,
@@ -65,9 +65,9 @@ def _done(d: dict, path: str) -> None:
         raise SchemaError(_join(path, k), "unknown key")
 
 
-def _items(d: dict, key: str, path: str, build) -> list:
+def _items(d: dict, key: str, path: str, build, default=_REQUIRED) -> list:
     return [build(_obj(x, f"{_join(path, key)}[{i}]"), f"{_join(path, key)}[{i}]")
-            for i, x in enumerate(_get(d, key, path, list))]
+            for i, x in enumerate(_get(d, key, path, list, default))]
 
 
 def _strs(d: dict, key: str, path: str, default=_REQUIRED) -> list[str]:
@@ -189,13 +189,33 @@ def _step_to_dict(s: Step) -> dict:
     return out
 
 
+def _inflow_from_dict(d: dict, path: str) -> Inflow:
+    f = Inflow(_get(d, "id", path, str), _get(d, "name", path, str), _get(d, "rate_per_hour", path, float),
+               schedule_from_dict(_get(d, "window", path, dict), _join(path, "window")), _strs(d, "entry", path))
+    _check(path, ("rate_per_hour", f.rate_per_hour >= 0, "must be >= 0"))
+    _done(d, path)
+    return f
+
+
 def _workflow_from_dict(d: dict, path: str) -> Workflow:
     ap = _join(path, "arrival")
-    a = _obj(_get(d, "arrival", path, dict), ap)
-    arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")))
-    _done(a, ap)
-    _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"))
-    w = Workflow(_get(d, "id", path, str), _get(d, "name", path, str), _items(d, "steps", path, _step_from_dict), arrival)
+    a = _get(d, "arrival", path, dict, None)
+    arrival = None
+    if a is not None:
+        a = _obj(a, ap)
+        arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")))
+        _done(a, ap)
+        _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"))
+    inflows = _items(d, "inflows", path, _inflow_from_dict, [])
+    lp = _join(path, "layout")
+    raw = _get(d, "layout", path, dict, {})
+    for k in raw:
+        if not isinstance(k, str):
+            raise SchemaError(lp, "expected str keys")
+    steps = _items(d, "steps", path, _step_from_dict)
+    known = {s.id for s in steps} | {f.id for f in inflows}
+    layout = {k: _pair(v, _join(lp, k)) for k, v in raw.items() if k in known}
+    w = Workflow(_get(d, "id", path, str), _get(d, "name", path, str), steps, arrival, inflows, layout)
     _done(d, path)
     return w
 
@@ -214,7 +234,7 @@ def _system_from_dict(d: dict, path: str) -> BusinessSystem:
     return s
 
 
-def company_from_dict(d: dict) -> Company:
+def company_from_dict(d: dict, draft: bool = False) -> Company:
     d = _obj(d, "")
     op = "outages"
     outages = []
@@ -226,8 +246,21 @@ def company_from_dict(d: dict) -> Company:
     c = Company(_get(d, "id", "", str), _get(d, "name", "", str), _items(d, "departments", "", _department_from_dict),
                 _items(d, "systems", "", _system_from_dict), _items(d, "workflows", "", _workflow_from_dict), outages)
     _done(d, "")
-    c.resolve()
+    c.resolve(draft)
     return c
+
+
+def _workflow_to_dict(w: Workflow) -> dict:
+    out = {"id": w.id, "name": w.name}
+    if w.arrival is not None:
+        out["arrival"] = {"rate_per_hour": w.arrival.rate_per_hour, "window": schedule_to_dict(w.arrival.window)}
+    else:
+        out["inflows"] = [{"id": f.id, "name": f.name, "rate_per_hour": f.rate_per_hour,
+                           "window": schedule_to_dict(f.window), "entry": list(f.entry)} for f in w.inflows]
+    if w.layout:
+        out["layout"] = {k: list(v) for k, v in w.layout.items()}
+    out["steps"] = [_step_to_dict(s) for s in w.steps]
+    return out
 
 
 def company_to_dict(c: Company) -> dict:
@@ -238,9 +271,7 @@ def company_to_dict(c: Company) -> dict:
         "departments": [{"id": d.id, "name": d.name,
                          "resources": [resource_to_dict(r, pools.get(r.pool_id)) for r in d.resources]}
                         for d in c.departments],
-        "workflows": [{"id": w.id, "name": w.name,
-                       "arrival": {"rate_per_hour": w.arrival.rate_per_hour, "window": schedule_to_dict(w.arrival.window)},
-                       "steps": [_step_to_dict(s) for s in w.steps]} for w in c.workflows],
+        "workflows": [_workflow_to_dict(w) for w in c.workflows],
         "outages": [list(o) for o in c.outages],
     }
 

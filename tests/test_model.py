@@ -1,6 +1,7 @@
 import pytest
 import copy
 
+from conftest import tiny_company
 from flock_of_pain.dist import const
 from flock_of_pain.model import (
     ArrivalSpec,
@@ -196,4 +197,20 @@ def test_duplicate_ids(collection):
     if collection == "departments":
         items[-1] = Department(items[0].id, "D2", [])
     with pytest.raises(ModelError, match="duplicate"):
+        c.resolve()
+
+
+def test_workflow_defaults_and_inflow_checks():
+    from flock_of_pain.model import Inflow
+    from flock_of_pain.schedule import business_hours
+    c = tiny_company()
+    w = c.workflow("w")
+    assert w.inflows == [] and w.layout == {}
+    w.inflows = [Inflow("phone", "Phone", 1, business_hours(9, 17), ["a"])]
+    with pytest.raises(ModelError, match="not both"):
+        c.resolve()
+    w.arrival = None
+    c.resolve()
+    w.inflows.append(Inflow("phone", "Again", 1, business_hours(9, 17), ["a"]))
+    with pytest.raises(ModelError, match="duplicate inflow"):
         c.resolve()

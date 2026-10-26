@@ -62,11 +62,22 @@ class Step:
 
 
 @dataclass
+class Inflow:
+    id: str
+    name: str
+    rate_per_hour: float
+    window: Schedule
+    entry: list[str]
+
+
+@dataclass
 class Workflow:
     id: str
     name: str
     steps: list[Step]
-    arrival: ArrivalSpec
+    arrival: ArrivalSpec | None = None
+    inflows: list[Inflow] = field(default_factory=list)
+    layout: dict[str, tuple[float, float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,7 +117,7 @@ class Company:
             raise ModelError(f"unknown step {step_id} in workflow {workflow_id}")
         return s
 
-    def resolve(self) -> None:
+    def resolve(self, draft: bool = False) -> None:
         resources = self.resources()
         by_id: dict[str, Resource] = {}
         for r in resources:
@@ -115,7 +126,8 @@ class Company:
             by_id[r.id] = r
         self._index = by_id
         for kind, items in (("department", self.departments), ("system", self.systems), ("workflow", self.workflows),
-                            *((f"step in workflow {w.id}", w.steps) for w in self.workflows)):
+                            *((f"step in workflow {w.id}", w.steps) for w in self.workflows),
+                            *((f"inflow in workflow {w.id}", w.inflows) for w in self.workflows)):
             seen: set[str] = set()
             for x in items:
                 if x.id in seen:
@@ -147,9 +159,23 @@ class Company:
         system_ids = {s.id for s in self.systems}
         for w in self.workflows:
             ids = {s.id for s in w.steps}
+            if w.arrival is not None and w.inflows:
+                raise ModelError(f"workflow {w.id}: give arrival or inflows, not both")
+            if not draft and w.arrival is None and not w.inflows:
+                raise ModelError(f"workflow {w.id}: needs arrival or inflows")
+            for i in w.inflows:
+                if i.id in ids:
+                    raise ModelError(f"workflow {w.id}: inflow id {i.id} clashes with a step id")
+                if not draft and not i.entry:
+                    raise ModelError(f"inflow {i.id}: entry is empty")
+                for e in i.entry:
+                    if e not in ids:
+                        raise ModelError(f"inflow {i.id}: unknown entry step {e}")
             for s in w.steps:
-                if s.department_id not in dept_ids:
+                if not (draft and s.department_id == "") and s.department_id not in dept_ids:
                     raise ModelError(f"step {s.id}: unknown department_id {s.department_id}")
+                if not draft and not s.required_skill:
+                    raise ModelError(f"step {s.id}: empty required_skill")
                 if s.system_id is not None and s.system_id not in system_ids:
                     raise ModelError(f"step {s.id}: unknown system_id {s.system_id}")
                 if not 0 <= s.failure_prob <= 1:

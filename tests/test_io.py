@@ -196,3 +196,83 @@ def test_dist_ranges_ok():
     for d in ({"kind": "uniform", "a": 1, "b": 1}, {"kind": "triangular", "a": 1, "b": 2, "c": 3},
               {"kind": "lognormal", "a": 2, "b": 0}, {"kind": "exponential", "a": 0.5}):
         dist_from_dict(d, "d")
+
+
+def _inflow_company():
+    d = company_to_dict(reynolds.build())
+    w = d["workflows"][0]
+    first = w["steps"][0]["id"]
+    del w["arrival"]
+    w["inflows"] = [
+        {"id": "phone", "name": "Phone", "rate_per_hour": 3, "window": {"weekday_hours": {"0": [9, 17]}}, "entry": [first]},
+        {"id": "web", "name": "Website", "rate_per_hour": 10, "window": {"weekday_hours": {"0": [0, 24]}}, "entry": [first]},
+    ]
+    w["layout"] = {"phone": [40, 60], first: [260, 60]}
+    return d
+
+def test_inflows_and_layout_round_trip():
+    d = _inflow_company()
+    assert company_to_dict(company_from_dict(d)) == d
+
+def test_unknown_layout_key_dropped():
+    d = _inflow_company()
+    d["workflows"][0]["layout"]["ghost"] = [1, 2]
+    assert "ghost" not in company_to_dict(company_from_dict(d))["workflows"][0]["layout"]
+
+def test_inflow_rate_range_and_unknown_key():
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][0]["rate_per_hour"] = -1
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].inflows[0].rate_per_hour"
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][1]["bogus"] = 1
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].inflows[1].bogus"
+
+def test_arrival_and_inflows_both_is_error():
+    d = _inflow_company()
+    d["workflows"][0]["arrival"] = {"rate_per_hour": 1, "window": {"weekday_hours": {"0": [9, 17]}}}
+    with pytest.raises(ModelError, match="not both"):
+        company_from_dict(d)
+
+def test_inflow_unknown_entry_rejected_in_both_modes():
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][0]["entry"] = ["nope"]
+    for draft in (False, True):
+        with pytest.raises(ModelError, match="nope"):
+            company_from_dict(d, draft=draft)
+
+def test_inflow_id_must_not_clash_with_step_id():
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][0]["id"] = d["workflows"][0]["steps"][0]["id"]
+    with pytest.raises(ModelError, match="clashes"):
+        company_from_dict(d)
+
+@pytest.mark.parametrize("patch", [
+    lambda w: w["steps"][0].__setitem__("department_id", ""),
+    lambda w: w["steps"][0].__setitem__("required_skill", ""),
+    lambda w: w["inflows"][0].__setitem__("entry", []),
+])
+def test_draft_accepts_what_strict_rejects(patch):
+    d = _inflow_company()
+    patch(d["workflows"][0])
+    with pytest.raises(ModelError):
+        company_from_dict(d)
+    assert company_to_dict(company_from_dict(d, draft=True)) == d
+
+def test_draft_accepts_workflow_without_entries():
+    d = _inflow_company()
+    d["workflows"][0]["inflows"] = []
+    del d["workflows"][0]["layout"]
+    with pytest.raises(ModelError, match="arrival or inflows"):
+        company_from_dict(d)
+    assert company_to_dict(company_from_dict(d, draft=True)) == d
+
+def test_empty_required_skill_rejected_in_arrival_form():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["steps"][0]["required_skill"] = ""
+    with pytest.raises(ModelError, match="required_skill"):
+        company_from_dict(d)
+    company_from_dict(d, draft=True)
