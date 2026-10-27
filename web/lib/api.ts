@@ -68,7 +68,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (res.ok) return res.json();
   const j = await res.json().catch(() => null);
   // FastAPI validation errors carry `detail` instead of {path, message}
-  if (res.status === 401) throw { path: "api key", message: `${j?.message ?? "unauthorized"}: paste a tenant key (flock_of_pain tenant create)` } as ApiError;
+  if (res.status === 401 && path !== "/signup") throw { path: "api key", message: `${j?.message ?? "unauthorized"}: paste a tenant key (flock_of_pain tenant create)` } as ApiError;
   if (j && typeof j.message === "string") throw j as ApiError;
   throw {
     path: null,
@@ -79,6 +79,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const getExample = () => request<Bundle>("GET", "/example");
 export const simulate = (body: unknown) => request<SimulateResponse>("POST", "/simulate", body);
 export const generate = (prompt: string) => request<Bundle>("POST", "/generate", { prompt });
+/** Creates a tenant when the API has FLOCK_SIGNUP_CODE set; the key comes back once. */
+export const signup = (id: string, invite: string) => request<{ id: string; key: string }>("POST", "/signup", { id, invite });
 
 const enc = encodeURIComponent;
 export const listCompanies = () => request<CompanyMeta[]>("GET", "/companies");

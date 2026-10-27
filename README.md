@@ -32,7 +32,7 @@ All demo parameters are assumed values, not measurements.
 uv run --extra api uvicorn flock_of_pain.api:app
 ```
 
-Every endpoint except `GET /example` needs a tenant API key in the `X-API-Key` header (401 otherwise). Create one with `uv run --extra api python -m flock_of_pain tenant create <id> [--name NAME]` (the key is printed once; only its SHA-256 is stored), rotate with `tenant rotate <id>`, list with `tenant list`. Each tenant sees only its own saved companies and runs. No signup endpoint: tenants are created from the CLI.
+Every endpoint except `GET /example` needs a tenant API key in the `X-API-Key` header (401 otherwise). Create one with `uv run --extra api python -m flock_of_pain tenant create <id> [--name NAME]` (the key is printed once; only its SHA-256 is stored), rotate with `tenant rotate <id>`, list with `tenant list`. Each tenant sees only its own saved companies and runs. `POST /signup` with `{"id", "name"?, "invite"}` creates a tenant and returns `{"id", "key"}` once when `FLOCK_SIGNUP_CODE` is set (404 when it is not, 401 on a wrong code, 409 when the id exists); the Settings page has the same form.
 
 - `GET /example`: Reynolds company and its four scenarios as JSON.
 - `POST /simulate`: body `{"company", "scenarios", "config", "include_events"}`; returns per-scenario KPI summaries, wait ledger and runs. Schema and model errors return 422 `{"path", "message"}`, with `path` prefixed by the request section (`company.`, `scenarios[i].`, `config.`).
@@ -40,7 +40,23 @@ Every endpoint except `GET /example` needs a tenant API key in the `X-API-Key` h
   A workflow carries either `arrival` or `inflows` (`[{id, name, rate_per_hour, window, entry: [step ids]}]`); each inflow runs as its own engine workflow (`order.phone`, `order.web`; the workflow id itself when there is one inflow) and KPIs are reported per channel. `layout` (`{id: [x, y]}`) is stored and ignored by the engine.
 - Saved companies (SQLite file from `FLOCK_DB`, default `./flock.db`, scoped to the tenant; a pre-tenant database is migrated to the tenant `default`, rotate its key first): `GET /companies`, `PUT /companies/{id}` with `{"company", "scenarios"}` (validated, stored in canonical form, `company.id` must equal the URL id; a draft is accepted: steps without department or skill, inflows without entries and workflows with neither `arrival` nor `inflows` are stored, and `/simulate` rejects them with 422), `GET /companies/{id}`, `DELETE /companies/{id}`.
 - Run history: `POST /simulate` with `"save": true` (plus optional `company_id`, `name`) stores the request and the result without events and returns `run_id`; `GET /runs?company_id=&limit=` lists, `GET /runs/{id}` returns request and result.
-- `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`.
+- `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`. Each tenant gets `FLOCK_GENERATE_DAILY_LIMIT` calls per UTC day (default 20; a failed call counts), then 429.
+
+## Hosting
+
+The API is a single uvicorn process over one SQLite file; put TLS in front of it (Caddy, nginx) and keep the file on persistent storage.
+
+```
+FLOCK_DB=/data/flock.db FLOCK_CORS_ORIGINS=https://twin.example.com FLOCK_SIGNUP_CODE=<invite> ANTHROPIC_API_KEY=... \
+  uv run --extra api uvicorn flock_of_pain.api:app --host 0.0.0.0 --port 8000
+cd web && NEXT_PUBLIC_API_URL=https://api.twin.example.com npm run build && npm start
+```
+
+- `FLOCK_CORS_ORIGINS`: comma-separated browser origins allowed to call the API (default the local dev server).
+- `FLOCK_SIGNUP_CODE`: enables `POST /signup`; unset keeps tenant creation on the CLI.
+- `FLOCK_GENERATE_DAILY_LIMIT`: per-tenant cap on `POST /generate` (the one endpoint that spends Claude tokens).
+- `NEXT_PUBLIC_API_URL` is baked in at `npm run build`.
+- The tenant key lives in the browser's localStorage, so serve the web app over HTTPS only and treat the key like a password: rotate it with `tenant rotate <id>` if the browser is shared.
 
 ## Docs
 

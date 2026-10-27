@@ -9,7 +9,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { parseCompany, parseScenarios } from "@/lib/company";
+import { type ApiError, signup } from "@/lib/api";
+import { parseCompany, parseScenarios, slug } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 /** Textarea over a store value: local text while typing, reset whenever the store value changes. */
@@ -33,7 +34,19 @@ export default function Settings() {
   const t = useTwin();
   const [prompt, setPrompt] = useState("");
   const [newName, setNewName] = useState("");
+  const [tenant, setTenant] = useState("");
+  const [invite, setInvite] = useState("");
+  const [signingUp, setSigningUp] = useState(false);
   const create = async () => { if (newName.trim() && await t.create(newName)) setNewName(""); };
+  const doSignup = async () => {
+    setSigningUp(true);
+    try {
+      const r = await signup(slug(tenant), invite);
+      t.changeKey(r.key); // the key is shown once by the API; the field below keeps it
+      t.setError(null);
+      setTenant(""); setInvite("");
+    } catch (e) { t.setError(e as ApiError); } finally { setSigningUp(false); }
+  };
 
   const tryApply = (fn: () => void) => {
     try { fn(); t.setError(null); } catch (e) { t.setError({ path: null, message: `Invalid JSON: ${(e as Error).message}` }); }
@@ -64,7 +77,12 @@ export default function Settings() {
             {/* keyed so the stored key, read after mount, becomes the default */}
             <Input key={t.apiKey} type="password" className="h-9 rounded-xl border-0 font-mono glass-inset dark:bg-transparent" aria-label="api key" placeholder="tenant API key" defaultValue={t.apiKey}
               onBlur={(e) => { if (e.target.value !== t.apiKey) t.changeKey(e.target.value); }} />
-            <p className="text-xs text-muted-foreground">Create one with <code className="font-mono">flock_of_pain tenant create</code>. Saved when the field loses focus; stored in this browser only.</p>
+            <p className="text-xs text-muted-foreground">Create one with <code className="font-mono">flock_of_pain tenant create</code>, or sign up below when the API hands out invite codes. Saved when the field loses focus; stored in this browser only.</p>
+            <form className="mt-1 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); doSignup(); }}>
+              <Input className="h-9 min-w-32 flex-1 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="tenant id" placeholder="Tenant id" value={tenant} onChange={(e) => setTenant(e.target.value)} disabled={signingUp} />
+              <Input className="h-9 min-w-32 flex-1 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="invite code" placeholder="Invite code" value={invite} onChange={(e) => setInvite(e.target.value)} disabled={signingUp} />
+              <Button type="submit" variant="outline" size="sm" className="h-9 rounded-full px-3" disabled={signingUp || !slug(tenant) || !invite}>{signingUp ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Sign up</Button>
+            </form>
           </div>
         </Panel>
 

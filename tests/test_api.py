@@ -205,3 +205,33 @@ def test_simulate_with_inflows():
     r = client.put("/companies/reynolds", json=ex)
     assert r.status_code == 200, r.text
     assert client.get("/companies/reynolds").json()["company"]["workflows"][0]["layout"] == {"phone": [0, 0]}
+
+
+def test_generate_daily_quota_429(monkeypatch):
+    import json
+    from flock_of_pain import agent
+    ex = client.get("/example").json()
+    monkeypatch.setattr(agent, "_ask", lambda messages: json.dumps(ex))
+    monkeypatch.setenv("FLOCK_GENERATE_DAILY_LIMIT", "2")
+    assert [client.post("/generate", json={"prompt": "x"}).status_code for _ in range(3)] == [200, 200, 429]
+    r = client.post("/generate", json={"prompt": "x"})
+    assert r.json()["path"] is None and "limit of 2" in r.json()["message"]
+    # another tenant has its own counter
+    from flock_of_pain import store
+    r = client.post("/generate", json={"prompt": "x"}, headers={"X-API-Key": store.create_tenant("t2", "t2")})
+    assert r.status_code == 200
+
+
+def test_signup(monkeypatch):
+    del client.headers["X-API-Key"]
+    try:
+        assert client.post("/signup", json={"id": "new", "invite": "x"}).status_code == 404  # disabled without a code
+        monkeypatch.setenv("FLOCK_SIGNUP_CODE", "open-sesame")
+        assert client.post("/signup", json={"id": "new", "invite": "nope"}).status_code == 401
+        assert client.post("/signup", json={"id": "bad id", "invite": "open-sesame"}).status_code == 422
+        r = client.post("/signup", json={"id": "new", "invite": "open-sesame"})
+        assert r.status_code == 200 and r.json()["id"] == "new" and r.json()["key"].startswith("fop_")
+        assert client.get("/companies", headers={"X-API-Key": r.json()["key"]}).status_code == 200
+        assert client.post("/signup", json={"id": "new", "invite": "open-sesame"}).status_code == 409
+    finally:
+        client.headers["X-API-Key"] = "x"  # the fixture deletes it on teardown

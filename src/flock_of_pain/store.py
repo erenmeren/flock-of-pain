@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, company_id TEXT, name TEXT NOT NULL,
     request TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS runs_tenant ON runs (tenant_id, id);
+CREATE TABLE IF NOT EXISTS usage (
+    tenant_id TEXT NOT NULL, day TEXT NOT NULL, generates INTEGER NOT NULL, PRIMARY KEY (tenant_id, day));
 """
 
 
@@ -94,6 +96,15 @@ def tenant_for_key(key: str) -> str | None:
     with closing(_connect()) as con:
         row = con.execute("SELECT id FROM tenants WHERE key_hash = ?", (_hash(key),)).fetchone()
     return None if row is None else row["id"]
+
+
+def take_generate(tenant: str, limit: int) -> bool:
+    """Count one /generate call against today's (UTC) quota; False when the tenant already used `limit` today."""
+    day = _now()[:10]
+    with closing(_connect()) as con, con:
+        n = con.execute("INSERT INTO usage VALUES (?, ?, 1) ON CONFLICT(tenant_id, day) DO UPDATE SET generates = generates + 1 "
+                        "WHERE generates < ?", (tenant, day, limit)).rowcount
+    return n > 0
 
 
 def list_tenants() -> list[dict]:

@@ -1,6 +1,9 @@
 """Stateless HTTP API. The only module that imports fastapi/pydantic (extra `api`)."""
 import json
+import os
 import re
+import secrets
+import sqlite3
 
 from fastapi import Depends, FastAPI, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,15 +19,20 @@ from flock_of_pain.io import (SchemaError, company_from_dict, company_to_dict, m
 from flock_of_pain.model import ModelError
 
 MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS, MAX_RUNS = 2000, 30, 400  # ~330 s and ~38 GB at 365 x 50 x 4 without a cap
+TENANT_ID = r"[\w.-]+"
 
 app = FastAPI(title="Flock of Pain")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-                   allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_methods=["*"], allow_headers=["*"],
+                   allow_origins=os.environ.get("FLOCK_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
 
 _api_key = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 class AuthError(Exception):
+    pass
+
+
+class QuotaError(Exception):
     pass
 
 
@@ -58,6 +66,12 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20000)
 
 
+class SignupRequest(BaseModel):
+    id: str = Field(pattern=rf"^{TENANT_ID}$", max_length=64)
+    name: str | None = Field(default=None, max_length=200)
+    invite: str = Field(max_length=200)
+
+
 @app.exception_handler(ModelError)
 async def _model_error(_: Request, e: ModelError):
     path, message = (e.path, e.message) if isinstance(e, SchemaError) else (None, str(e))
@@ -67,6 +81,11 @@ async def _model_error(_: Request, e: ModelError):
 @app.exception_handler(AuthError)
 async def _auth_error(_: Request, e: AuthError):
     return JSONResponse({"path": None, "message": str(e)}, status_code=401, headers={"WWW-Authenticate": "ApiKey"})
+
+
+@app.exception_handler(QuotaError)
+async def _quota_error(_: Request, e: QuotaError):
+    return JSONResponse({"path": None, "message": str(e)}, status_code=429)
 
 
 @app.exception_handler(agent.AgentError)
@@ -155,7 +174,7 @@ def put_company(cid: str, body: Bundle, tenant: str = Tenant):
     company, scenarios = _load(body.company, body.scenarios, draft=True)
     if company.id != cid:
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
-    if not re.fullmatch(r"[\w.-]+", cid):
+    if not re.fullmatch(TENANT_ID, cid):
         raise SchemaError("company.id", "use letters, digits, '_', '.' or '-' (it is the URL id)")
     return store.save_company(tenant, {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
 
@@ -181,5 +200,23 @@ def get_run(rid: int, tenant: str = Tenant):
 
 
 @app.post("/generate")
-def generate(req: GenerateRequest, tenant: str = Tenant):  # noqa: ARG001 - authenticated, not tenant-specific
+def generate(req: GenerateRequest, tenant: str = Tenant):
+    limit = int(os.environ.get("FLOCK_GENERATE_DAILY_LIMIT", "20"))
+    if not store.take_generate(tenant, limit):  # counted before the call: a failed call still spends one
+        raise QuotaError(f"daily /generate limit of {limit} reached; try again tomorrow (UTC)")
     return agent.generate(req.prompt)
+
+
+@app.post("/signup")
+def signup(req: SignupRequest):
+    """Self-serve tenant creation behind the FLOCK_SIGNUP_CODE invite; the key is returned once."""
+    code = os.environ.get("FLOCK_SIGNUP_CODE")
+    if not code:
+        return _not_found()
+    if not secrets.compare_digest(req.invite, code):
+        raise AuthError("wrong invite code")
+    try:
+        key = store.create_tenant(req.id, req.name or req.id)
+    except sqlite3.IntegrityError:
+        return JSONResponse({"path": "id", "message": f"tenant {req.id!r} exists"}, status_code=409)
+    return {"id": req.id, "key": key}
