@@ -81,7 +81,7 @@ assert.equal(idFor("", ["emp"], "emp"), "emp_2"); // no letters: base
 
 // arrival form reads as one implicit inflow and converts without touching the original
 const imp = inflowsOf(wf);
-assert.equal(imp.length, 1); assert.equal(imp[0].id, "inflow"); assert.deepEqual(imp[0].entry, ["1", "2", "3", "4"]);
+assert.equal(imp.length, 1); assert.equal(imp[0].id, "inflow"); assert.equal(imp[0].name, "Arrival"); assert.deepEqual(imp[0].entry, ["1", "2", "3", "4"]);
 assert.equal(rateOf(wf), 1);
 const conv = toInflows(wf);
 assert.equal(conv.arrival, undefined); assert.equal(conv.inflows!.length, 1); assert.equal(toInflows(conv), conv); assert.equal(wf.arrival.rate_per_hour, 1);

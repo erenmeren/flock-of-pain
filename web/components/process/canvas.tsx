@@ -143,6 +143,12 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
       .map((e) => ({ ...e, selected: prev.find((p) => p.id === e.id)?.selected }))); // a selected edge stays deletable across re-syncs
   }, [wf, company, selected, focusId, onChange, setNodes, setEdges]);
 
+  const panelOpen = selected !== null;
+  useEffect(() => { // the panel takes a grid column: refit so nodes on the right do not end up under it
+    const t = setTimeout(() => fitView({ duration: 200 }));
+    return () => clearTimeout(t);
+  }, [panelOpen, fitView]);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3000);

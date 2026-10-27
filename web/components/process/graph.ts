@@ -11,7 +11,8 @@ export function inflowsOf(wf: Workflow): Inflow[] {
   if (wf.inflows) return wf.inflows;
   if (!wf.arrival) return [];
   const ids = wf.steps.map((s) => s.id);
-  return [{ id: idFor("inflow", ids, "inflow"), name: wf.name, ...wf.arrival, entry: wf.steps.filter((s) => !deps(s).length).map((s) => s.id) }];
+  // "Arrival", not the workflow name: a second inflow would otherwise read "Order · Order" in results
+  return [{ id: idFor("inflow", ids, "inflow"), name: "Arrival", ...wf.arrival, entry: wf.steps.filter((s) => !deps(s).length).map((s) => s.id) }];
 }
 
 /** The inflows form of a workflow (same object when it already is one), with `arrival` dropped. */
