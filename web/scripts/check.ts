@@ -1,8 +1,8 @@
 // Assert-based checks for the pure Company/Scenario edits: `npm test`.
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
-import { handoffs, healthScores, mapEdges, minutes } from "@/components/dashboard/derive";
-import { addStep, blockingIssue, connect, disconnect, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
+import { handoffs, healthScores, mapEdges, minutes, workflowMeans } from "@/components/dashboard/derive";
+import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
 import { autoLayout, fillLayout } from "@/components/process/layout";
 import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
 
@@ -135,3 +135,24 @@ assert.throws(() => checkCompany({ ...c, workflows: [{ id: "d", name: "d", steps
 const nw = newWorkflow("Customer order", ["order"]);
 assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); assert.equal(nw.inflows!.length, 1); assert.deepEqual(nw.inflows![0].entry, []); assert.equal(nw.steps.length, 0);
 console.log("ok");
+
+// palette drops get distinct names; channelLabels mirrors expand_inflows ids
+{
+  assert.equal(freshName("New inflow", ["New inflow", "New inflow 2"]), "New inflow 3");
+  const w0 = newWorkflow("W", []);
+  const w1 = addInflow(w0, [0, 0]).wf;
+  const w2 = addInflow(w1, [0, 0]).wf;
+  assert.deepEqual(w2.inflows!.map((i) => [i.id, i.name]), [["new_inflow", "New inflow"], ["new_inflow_2", "New inflow 2"], ["new_inflow_3", "New inflow 3"]]);
+  const s2 = addStep(addStep(w0, null, [0, 0]).wf, null, [0, 0]).wf;
+  assert.deepEqual(s2.steps.map((s) => s.name), ["New step", "New step 2"]);
+  const single: Workflow = { id: "a", name: "A", arrival: { rate_per_hour: 1, window: sched }, steps: [] };
+  assert.deepEqual(channelLabels({ ...c, workflows: [single, w2] }), { a: "A", "w.new_inflow": "W · New inflow", "w.new_inflow_2": "W · New inflow 2", "w.new_inflow_3": "W · New inflow 3" });
+}
+
+// workflowMeans averages per-workflow metrics over replications
+{
+  const m = (completed: number) => ({ started: 4, completed, cancelled: 0, throughput_per_day: completed, cycle_p50: 10, cycle_p90: 20, wait_p50: 0, wait_p90: 0, sla_breached: 0, sla_breach_rate: 0, steps_completed: 0, failures: 0, rework_rate: 0, cost_per_completed: 0 });
+  const s = { id: "s", name: "s", summary: {}, ledger: [], off_shift_minutes: 0, runs: [{ seed: 1, metrics: { workflows: { a: m(2) } } }, { seed: 2, metrics: { workflows: { a: m(4) } } }] };
+  assert.equal(workflowMeans(s).a.completed, 3);
+  assert.equal(workflowMeans(s).a.cycle_p50, 10);
+}

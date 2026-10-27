@@ -19,7 +19,14 @@ export type SimEvent = {
   reason: string | null;
   payload: Record<string, unknown>;
 };
-export type RunResult = { seed: number; metrics: Record<string, unknown>; events?: SimEvent[] };
+/** Per engine workflow (one per inflow when a workflow has 2+), as analytics.WorkflowMetrics. */
+export type WorkflowMetrics = {
+  started: number; completed: number; cancelled: number; throughput_per_day: number;
+  cycle_p50: number; cycle_p90: number; wait_p50: number; wait_p90: number;
+  sla_breached: number; sla_breach_rate: number; steps_completed: number; failures: number;
+  rework_rate: number; cost_per_completed: number;
+};
+export type RunResult = { seed: number; metrics: { workflows: Record<string, WorkflowMetrics>; [k: string]: unknown }; events?: SimEvent[] };
 export type ScenarioResult = {
   id: string;
   name: string;

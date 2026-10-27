@@ -22,6 +22,17 @@ export function toInflows(wf: Workflow): Workflow {
   return out;
 }
 
+/** Engine workflow id -> label, mirroring expand_inflows: `wf.inflow` / "wf · inflow" when a workflow has 2+ inflows. */
+export function channelLabels(c: Company): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const wf of c.workflows) {
+    const ins = inflowsOf(wf);
+    if (ins.length < 2) out[wf.id] = wf.name;
+    else for (const i of ins) out[`${wf.id}.${i.id}`] = `${wf.name} · ${i.name}`;
+  }
+  return out;
+}
+
 /** Total arrivals per hour over all inflows. */
 export const rateOf = (wf: Workflow): number => inflowsOf(wf).reduce((n, i) => n + i.rate_per_hour, 0);
 
@@ -98,12 +109,20 @@ export function renameInflow(wf: Workflow, from: string, to: string): Workflow {
 }
 
 const takenIds = (wf: Workflow) => [...wf.steps.map((s) => s.id), ...inflowsOf(wf).map((i) => i.id)];
+/** "New step", then "New step 2", ... so two palette drops never share a name. */
+export function freshName(base: string, taken: Iterable<string>): string {
+  const names = new Set(taken);
+  let name = base;
+  for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
+  return name;
+}
 
 /** New step at `pos`; a department with exactly one distinct skill prefills it. */
 export function addStep(wf: Workflow, dept: Department | null, pos: Pos): { wf: Workflow; id: string } {
-  const id = idFor("New step", takenIds(wf), "step");
+  const name = freshName("New step", wf.steps.map((s) => s.name));
+  const id = idFor(name, takenIds(wf), "step");
   const skills = new Set(dept?.resources.flatMap((r) => r.skills));
-  const st: Step = { id, name: "New step", department_id: dept?.id ?? "", required_skill: skills.size === 1 ? [...skills][0] : "", duration: { kind: "lognormal_mean", mean: 10, sigma: 0.4 }, depends_on: [] };
+  const st: Step = { id, name, department_id: dept?.id ?? "", required_skill: skills.size === 1 ? [...skills][0] : "", duration: { kind: "lognormal_mean", mean: 10, sigma: 0.4 }, depends_on: [] };
   return { wf: { ...wf, steps: [...wf.steps, st], layout: { ...wf.layout, [id]: pos } }, id };
 }
 
@@ -114,8 +133,9 @@ export function newWorkflow(name: string, takenIds: Iterable<string>): Workflow 
 
 /** New inflow at `pos`, entering no step yet. */
 export function addInflow(wf: Workflow, pos: Pos): { wf: Workflow; id: string } {
-  const id = idFor("New inflow", takenIds(wf), "inflow");
-  const inflow: Inflow = { id, name: "New inflow", rate_per_hour: 1, window: weekdays9to5(), entry: [] };
+  const name = freshName("New inflow", inflowsOf(wf).map((i) => i.name));
+  const id = idFor(name, takenIds(wf), "inflow");
+  const inflow: Inflow = { id, name, rate_per_hour: 1, window: weekdays9to5(), entry: [] };
   return { wf: { ...wf, inflows: [...(wf.inflows ?? []), inflow], layout: { ...wf.layout, [id]: pos } }, id };
 }
 

@@ -26,13 +26,14 @@ export const KPI_LABEL: Record<string, string> = {
   rework_rate: "Rework rate",
   mean_dept_utilization: "Mean utilization",
   labor_cost: "Labor cost",
+  cost_per_completed: "Cost per completed",
 };
 
 /** +1 when a bigger number is better, -1 otherwise. */
 export const direction = (k: string) => (k === "throughput_per_day" || k === "completion_rate" ? 1 : -1);
 
 /** Fractions shown as percentages: rates and utilizations. */
-export const isPct = (k: string) => k.endsWith("_rate") || k.includes("utilization") || !BASE_KPIS.includes(k);
+export const isPct = (k: string) => k.endsWith("_rate") || k.includes("utilization") || k.startsWith("util_");
 
 export const fmtKpi = (k: string, v: number | undefined) =>
   v === undefined ? "–" : isPct(k) ? `${fmt(v * 100)}%` : k === "labor_cost" ? Math.round(v).toLocaleString() : fmt(v);

@@ -1,5 +1,5 @@
 // Pure numbers behind the overview; `npm test` checks them.
-import type { Stat } from "@/lib/api";
+import type { ScenarioResult, Stat, WorkflowMetrics } from "@/lib/api";
 import { type Company, type Workflow } from "@/lib/company";
 
 export type Health = { total: number; label: string; parts: { label: string; score: number; hint: string }[] };
@@ -50,3 +50,16 @@ export const minutes = (m: number | null) => (m === null ? "–" : m >= 120 ? `$
 /** Steps whose department changes from the previous step. */
 export const handoffs = (wf: Workflow) => wf.steps.filter((st, i) => i > 0 && st.department_id !== wf.steps[i - 1].department_id).length;
 
+
+/** Per-workflow metrics averaged over a scenario's replications (ids as the engine ran them). */
+export function workflowMeans(s: ScenarioResult): Record<string, WorkflowMetrics> {
+  const acc: Record<string, WorkflowMetrics> = {};
+  const n = s.runs.length || 1;
+  for (const run of s.runs) {
+    for (const [id, m] of Object.entries(run.metrics.workflows)) {
+      const a = acc[id] ?? (acc[id] = Object.fromEntries(Object.keys(m).map((k) => [k, 0])) as WorkflowMetrics);
+      for (const k of Object.keys(m) as (keyof WorkflowMetrics)[]) a[k] += m[k] / n;
+    }
+  }
+  return acc;
+}

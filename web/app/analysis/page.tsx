@@ -1,19 +1,77 @@
 "use client";
 
-import { BarChart3, Gauge, History, ListTree, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { BarChart3, Gauge, History, ListTree, RefreshCw, Workflow } from "lucide-react";
 import { cn } from "cn";
+import { workflowMeans } from "@/components/dashboard/derive";
 import { BASE_KPIS, Delta, KPI_LABEL, LedgerTable, NoResult, Panel, fmtKpi, resultKey, sourceLabel } from "@/components/dashboard/kpi";
 import { DeptMark } from "@/components/org/parts";
 import { PageHeader } from "@/components/page";
+import { channelLabels } from "@/components/process/graph";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useTwin } from "@/lib/store";
+import type { SimulateResponse, WorkflowMetrics } from "@/lib/api";
+import { type ResultSource, useTwin } from "@/lib/store";
 
 const HEAD = "[&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-muted-foreground";
 const ROW = "hover:bg-white/[0.03]";
 /** Bar colour per scenario index; the baseline stays muted. */
 const barColor = (i: number) => (i === 0 ? "oklch(1 0 0 / 0.28)" : `var(--chart-${(i % 5) + 1})`);
+
+/** Per-workflow metric keys the breakdown can show; completion_rate is derived from completed / started. */
+const WF_KPIS = ["throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90", "sla_breach_rate", "rework_rate", "cost_per_completed"];
+const wfValue = (m: WorkflowMetrics | undefined, k: string) =>
+  m === undefined ? undefined : k === "completion_rate" ? (m.started ? m.completed / m.started : 0) : m[k as keyof WorkflowMetrics];
+
+/** One row per engine workflow (one per inflow when a workflow has 2+), columns per scenario, delta vs baseline. */
+function WorkflowBreakdown({ result, labels }: { result: SimulateResponse; labels: Record<string, string> }) {
+  const [k, setK] = useState(WF_KPIS[0]);
+  const means = result.scenarios.map(workflowMeans);
+  const ids = [...new Set(means.flatMap(Object.keys))];
+  const base = means[0];
+  return (
+    <Panel title="Workflow Breakdown" subtitle="Mean per engine workflow; a workflow with several inflows shows one row per inflow" icon={Workflow}
+      action={
+        <Select value={k} items={Object.fromEntries(WF_KPIS.map((x) => [x, KPI_LABEL[x] ?? x]))} onValueChange={(v) => v && setK(v)}>
+          <SelectTrigger aria-label="workflow metric" className="w-52 rounded-full"><SelectValue /></SelectTrigger>
+          <SelectContent>{WF_KPIS.map((x) => <SelectItem key={x} value={x}>{KPI_LABEL[x] ?? x}</SelectItem>)}</SelectContent>
+        </Select>
+      }>
+      {ids.length === 0 ? <p className="text-sm text-muted-foreground">No workflow ran.</p> : (
+        <Table>
+          <TableHeader className={HEAD}>
+            <TableRow>
+              <TableHead>Workflow</TableHead>
+              {result.scenarios.map((s) => <TableHead key={s.id} className="text-right">{s.name}</TableHead>)}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ids.map((id) => (
+              <TableRow key={id} className={ROW}>
+                <TableCell>{labels[id] ?? <span className="font-mono text-xs">{id}</span>}</TableCell>
+                {result.scenarios.map((s, i) => {
+                  const v = wfValue(means[i][id], k);
+                  return (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtKpi(k, v)}
+                      {i > 0 && <span className="ml-2 text-xs"><Delta k={k} value={v} base={wfValue(base[id], k)} /></span>}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Panel>
+  );
+}
+
+/** Names from the draft only when the result came from it; a history run may belong to another company. */
+const labelsFor = (src: ResultSource | null, company: { id: string } | null) =>
+  src?.kind === "run" && company && src.company_id === company.id ? channelLabels(company as Parameters<typeof channelLabels>[0]) : {};
 
 export default function Analysis() {
   const { runs, showRun, refreshLists, result, resultSource, run, busy, company } = useTwin();
@@ -113,6 +171,8 @@ export default function Analysis() {
               </Table>
             </Panel>
           )}
+
+          <WorkflowBreakdown key={resultKey(result)} result={result} labels={labelsFor(resultSource, company)} />
 
           <Panel title="Blocked-time Ledger" subtitle="Where tasks waited, per scenario" icon={ListTree}>
             <Tabs key={resultKey(result)} defaultValue={base.id}>
