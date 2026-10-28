@@ -189,8 +189,8 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
   const chip = (type: string, value: string) => ({ draggable: true, onDragStart: (e: React.DragEvent) => e.dataTransfer.setData(type, value) });
 
   return (
-    <div className={`grid gap-4 ${selected ? "grid-cols-[11rem_1fr_18rem]" : "grid-cols-[11rem_1fr]"}`}>
-      <div className="flex w-44 flex-col gap-2">
+    <div className={`grid gap-4 ${selected ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
+      <div className="flex flex-wrap gap-2 lg:w-44 lg:flex-col">
         {company.departments.map((d, i) => (
           <button key={d.id} type="button" className={CHIP} {...chip(DEPT, d.id)} onClick={() => clickAdd("step", d.id)}>
             <span className="size-2 shrink-0 rounded-full" style={{ background: accent(i) }} />
@@ -202,7 +202,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         <button type="button" className={CHIP} {...chip(INFLOW, "")} onClick={() => clickAdd("inflow")}><ArrowDownToLine className="size-3.5" /> Inflow</button>
         <button type="button" className="press rounded-full border border-border px-3 py-1.5 text-sm hover:bg-muted"
           onClick={() => { edit((w) => ({ ...w, layout: autoLayout(w) })); setTimeout(() => fitView({ duration: 300 })); }}>Auto layout</button>
-        <p className="text-xs text-muted-foreground">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run. An either/or split is modelled as two inflows.</p>
+        <p className="hidden text-xs text-muted-foreground lg:block">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run. An either/or split is modelled as two inflows.</p>
       </div>
       <div className="flex flex-col gap-2">
         <div className="glass min-h-[32rem] h-[calc(100vh-14rem)] overflow-hidden rounded-2xl" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>

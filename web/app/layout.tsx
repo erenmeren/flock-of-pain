@@ -20,7 +20,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
       <body className="flex h-full min-h-screen gap-3 p-3">
         <ConfirmProvider><TwinProvider>
-          <Suspense><Sidebar /></Suspense>
+          <Suspense><Sidebar className="hidden lg:flex" /></Suspense>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <Suspense><Topbar /></Suspense>
             <main className="min-h-0 flex-1 overflow-auto rounded-2xl p-1">{children}</main>

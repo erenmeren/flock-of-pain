@@ -44,7 +44,7 @@ export function OrgMap({ company }: { company: Company }) {
   };
 
   return (
-    <div ref={root} className="relative grid grid-cols-[8.5rem_1fr_7.5rem] gap-x-6">
+    <div className="overflow-x-auto"><div ref={root} className="relative grid min-w-[34rem] grid-cols-[8.5rem_1fr_7.5rem] gap-x-6">
       <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" aria-hidden>
         {edges.map((e) => {
           const p = path(e);
@@ -92,7 +92,7 @@ export function OrgMap({ company }: { company: Company }) {
         ))}
         {!company.systems.length && <Empty>No systems</Empty>}
       </Column>
-    </div>
+    </div></div>
   );
 }
 

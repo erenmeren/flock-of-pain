@@ -126,7 +126,7 @@ export default function Analysis() {
                   <div key={k} className="flex flex-col gap-2 rounded-xl glass-inset p-3">
                     <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{KPI_LABEL[k] ?? k}</span>
                     {result.scenarios.map((s, i) => (
-                      <div key={s.id} className="grid grid-cols-[8rem_1fr_6rem_5.5rem] items-center gap-3 text-sm">
+                      <div key={s.id} className="grid grid-cols-[5rem_1fr_4.5rem_4rem] sm:grid-cols-[8rem_1fr_6rem_5.5rem] items-center gap-3 text-sm">
                         <span className="truncate text-xs text-muted-foreground" title={s.name}>{s.name}</span>
                         <div className="h-2 rounded-full bg-white/[0.06]">
                           <div className="h-full rounded-full motion-safe:transition-[width] duration-300"
