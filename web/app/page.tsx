@@ -8,6 +8,7 @@ import { FlowStrip } from "@/components/dashboard/flow";
 import { Gauge } from "@/components/dashboard/health";
 import { healthScores } from "@/components/dashboard/derive";
 import { OrgMap } from "@/components/dashboard/org-map";
+import { Hint } from "@/components/hint";
 import { StatCard } from "@/components/page";
 import { buttonVariants } from "@/components/ui/button";
 import { accent } from "@/components/org/parts";
@@ -39,7 +40,7 @@ export default function Overview() {
 
       <div className="flex flex-col gap-4 lg:col-span-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Panel icon={HeartPulse} title="Organization Health" subtitle={base ? `Baseline · ${base.name}` : "Run to score"} contentClassName="flex flex-col gap-3">
+          <Panel icon={HeartPulse} title={<span className="flex items-center gap-1.5">Organization Health<Hint id="health" /></span>} subtitle={base ? `Baseline · ${base.name}` : "Run to score"} contentClassName="flex flex-col gap-3">
             <Gauge score={health?.total ?? null} label={health?.label ?? "no result"} />
             <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
               {(health?.parts ?? [{ label: "Delivery" }, { label: "SLA" }, { label: "Quality" }, { label: "Balance" }]).map((p) => (
@@ -74,7 +75,7 @@ export default function Overview() {
           {TILES.map(([k, icon]) => {
             const vals = own ? result.scenarios.map((s) => s.summary[k]?.mean ?? 0) : undefined;
             const best = vals && vals.length > 1 ? (direction(k) > 0 ? Math.max : Math.min)(...vals.slice(1)) : undefined;
-            return <StatCard key={k} icon={icon} label={KPI_LABEL[k]} value={fmtKpi(k, base?.summary[k]?.mean)} bars={vals}
+            return <StatCard key={k} icon={icon} label={<>{KPI_LABEL[k]}<Hint id={k} /></>} value={fmtKpi(k, base?.summary[k]?.mean)} bars={vals}
               hint={best !== undefined ? <span className="tabular-nums">→ {fmtKpi(k, best)} best scenario</span> : base ? "baseline" : "no result yet"} />;
           })}
         </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Users } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
 import { Avatar, DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
@@ -61,8 +62,8 @@ export default function PeoplePage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Person</TableHead><TableHead>Department · pool</TableHead><TableHead>Skills (comma)</TableHead>
-              <TableHead className="text-right">Cost/h</TableHead><TableHead className="text-right">Speed</TableHead><TableHead>Schedule</TableHead><TableHead />
+              <TableHead>Person</TableHead><TableHead>Department · pool</TableHead><TableHead>Skills (comma) <Hint id="skills" /></TableHead>
+              <TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Speed <Hint id="speed" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>

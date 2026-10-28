@@ -1,16 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Braces, Database, Download, KeyRound, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Braces, CircleHelp, Database, Download, KeyRound, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { cn } from "cn";
 import { Panel } from "@/components/dashboard/kpi";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { type ApiError, signup } from "@/lib/api";
 import { parseCompany, parseScenarios, slug } from "@/lib/company";
+import { setHintsOn, useHintsOn } from "@/lib/hints";
 import { useTwin } from "@/lib/store";
 
 /** Textarea over a store value: local text while typing, reset whenever the store value changes. */
@@ -32,6 +36,7 @@ function JsonBox({ label, value, apply }: { label: string; value: unknown; apply
 
 export default function Settings() {
   const t = useTwin();
+  const hintsOn = useHintsOn();
   const [prompt, setPrompt] = useState("");
   const [newName, setNewName] = useState("");
   const [tenant, setTenant] = useState("");
@@ -72,7 +77,7 @@ export default function Settings() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="API Key" subtitle="Tenant key for the simulation API" icon={KeyRound}>
+        <Panel title={<span className="flex items-center gap-1.5">API Key<Hint id="api_key" /></span>} subtitle="Tenant key for the simulation API" icon={KeyRound}>
           <div className="flex flex-col gap-2">
             {/* keyed so the stored key, read after mount, becomes the default */}
             <Input key={t.apiKey} type="password" className="h-9 rounded-xl border-0 font-mono glass-inset dark:bg-transparent" aria-label="api key" placeholder="tenant API key" defaultValue={t.apiKey}
@@ -86,7 +91,7 @@ export default function Settings() {
           </div>
         </Panel>
 
-        <Panel title="Generate with AI" subtitle="Describe a company; Claude drafts the twin" icon={Sparkles}>
+        <Panel title={<span className="flex items-center gap-1.5">Generate with AI<Hint id="generate" /></span>} subtitle="Describe a company; Claude drafts the twin" icon={Sparkles}>
           <div className="flex flex-col gap-2">
             <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the twin" className="h-24 rounded-xl border-0 glass-inset dark:bg-transparent" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
             <div className="flex items-center gap-3">
@@ -98,6 +103,13 @@ export default function Settings() {
           </div>
         </Panel>
       </div>
+
+      <Panel title="Help hints" subtitle="Question marks next to labels explain what a field does" icon={CircleHelp}>
+        <Label className="flex cursor-pointer items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm font-normal hover:bg-white/[0.05]">
+          <Checkbox aria-label="show help hints" checked={hintsOn} onCheckedChange={(c) => setHintsOn(!!c)} />
+          <span className="flex flex-1 flex-col">Show help hints<span className="text-xs text-muted-foreground">Hover a question mark for an explanation. Stored in this browser.</span></span>
+        </Label>
+      </Panel>
 
       <Panel title="Saved Companies" subtitle={`${t.saved.length} stored for this tenant`} icon={Database}
         action={<Button variant="outline" size="sm" className="rounded-full" onClick={t.loadExample} disabled={t.busy}>Load Reynolds example</Button>}>

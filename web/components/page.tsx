@@ -38,7 +38,7 @@ export function Bars({ values, color = "var(--chart-1)", baseline = true, classN
 }
 
 /** One number with a label. `delta` is a signed percentage vs the baseline; `bars` draws a sparkline beside the value. */
-export function StatCard({ icon, label, value, hint, delta, bars, className }: { icon?: LucideIcon; label: string; value: React.ReactNode; hint?: React.ReactNode; delta?: number | null; bars?: number[]; className?: string }) {
+export function StatCard({ icon, label, value, hint, delta, bars, className }: { icon?: LucideIcon; label: React.ReactNode; value: React.ReactNode; hint?: React.ReactNode; delta?: number | null; bars?: number[]; className?: string }) {
   const good = delta !== undefined && delta !== null && delta > 0;
   return (
     <Card size="sm" className={cn("rise", className)}>

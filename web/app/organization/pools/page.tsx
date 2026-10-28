@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Boxes, Plus } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
 import { DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
@@ -44,8 +45,8 @@ export default function PoolsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Pool</TableHead><TableHead className="text-right">Headcount</TableHead><TableHead className="text-right">Members</TableHead>
-              <TableHead>Skills (comma)</TableHead><TableHead className="text-right">Cost/h</TableHead><TableHead>Schedule</TableHead><TableHead />
+              <TableHead>Pool <Hint id="pool" /></TableHead><TableHead className="text-right">Headcount <Hint id="headcount" /></TableHead><TableHead className="text-right">Members <Hint id="members" /></TableHead>
+              <TableHead>Skills (comma) <Hint id="skills" /></TableHead><TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>

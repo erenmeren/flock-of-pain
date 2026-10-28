@@ -1,6 +1,7 @@
 "use client";
 
 import { Building2, Plus } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { IdTag } from "@/components/editor-fields";
 import { DeptMark, INLINE_INPUT, Loading, OrgNav, TableCard } from "@/components/org/parts";
@@ -36,7 +37,7 @@ export default function DepartmentsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Department</TableHead><TableHead className="text-right">Headcount</TableHead>
+              <TableHead>Department <Hint id="department" /></TableHead><TableHead className="text-right">Headcount</TableHead>
               <TableHead className="text-right">Pools</TableHead><TableHead className="text-right">People</TableHead>
               <TableHead className="text-right">Workflow steps</TableHead><TableHead />
             </TableRow>

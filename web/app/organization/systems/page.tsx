@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Server } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { IconTile, PageHeader } from "@/components/page";
 import { IdTag } from "@/components/editor-fields";
 import { INLINE_INPUT, Loading, OrgNav, Pill, StatusDot, TableCard } from "@/components/org/parts";
@@ -33,7 +34,7 @@ export default function SystemsPage() {
         action={<Button variant="outline" size="sm" className="rounded-full" onClick={add}><Plus /> Add system</Button>}>
         <Table>
           <TableHeader>
-            <TableRow><TableHead>System</TableHead><TableHead className="text-right">Used by</TableHead><TableHead /></TableRow>
+            <TableRow><TableHead>System <Hint id="system" /></TableHead><TableHead className="text-right">Used by</TableHead><TableHead /></TableRow>
           </TableHeader>
           <TableBody>
             {company.systems.map((s, i) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Trash2, X } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ export function withMean(d: Dist, mean: number): Dist {
 
 type Props = { wf: Workflow; company: Company; onChange: (w: Workflow) => void; onRemove: () => void };
 
-const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <div className="flex flex-col gap-1"><Label className="text-xs text-muted-foreground">{label}</Label>{children}</div>;
+const Field = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => <div className="flex flex-col gap-1"><Label className="gap-1 text-xs text-muted-foreground">{label}{hint && <Hint id={hint} />}</Label>{children}</div>;
 const Pick = ({ label, items, value, onChange }: { label: string; items: Record<string, string>; value: string; onChange: (v: string) => void }) => (
   <Select items={items} value={value} onValueChange={(v) => v && onChange(v)}>
     <SelectTrigger aria-label={label} className="w-full"><SelectValue /></SelectTrigger>
@@ -42,23 +43,23 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
   return (
     <>
       {stepIssues(company, wf, st).map((i) => <p key={i.text} className="text-xs text-amber-400">{i.text.startsWith("Nobody in") ? `${i.text}. Typing a skill here does not give it to anyone; add it on the People page.` : i.text}</p>)}
-      <Field label="Department">
+      <Field label="Department" hint="step_department">
         <Pick label={`department of step ${id}`} items={deptItems} value={st.department_id || NONE} onChange={(v) => {
           if (v === NONE) return set({ department_id: "" });
           const ks = skillsOf(v);
           set({ department_id: v, required_skill: ks.includes(st.required_skill) ? st.required_skill : ks.length === 1 ? ks[0] : "" });
         }} />
       </Field>
-      <Field label="Skill">
+      <Field label="Skill" hint="step_skill">
         <Input key={`${st.department_id}:${st.required_skill}`} aria-label={`skill of step ${id}`} list={`skills-${id}`} defaultValue={st.required_skill} onBlur={commitSkill} />
         <datalist id={`skills-${id}`}>{skills.map((s) => <option key={s} value={s} />)}</datalist>
       </Field>
-      <Field label="Mean duration (min)">
+      <Field label="Mean duration (min)" hint="duration">
         {mean === null ? <span className="text-xs text-muted-foreground">duration kind `{st.duration.kind}`: edit in the JSON tab</span>
           : <NumInput min={0.01} lo={0.01} aria-label={`mean minutes of step ${id}`} className="w-full tabular-nums" value={Number(mean.toFixed(2))} onCommit={(v) => set({ duration: withMean(st.duration, v) })} />}
       </Field>
-      <Field label="System"><Pick label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
-      <Field label="SLA minutes">
+      <Field label="System" hint="step_system"><Pick label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
+      <Field label="SLA minutes" hint="sla">
         <Input key={st.sla_minutes ?? "none"} type="number" min={0} aria-label={`sla minutes of step ${id}`} className="w-full tabular-nums" defaultValue={st.sla_minutes ?? ""} placeholder="none"
           onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity) || null; if (v !== (st.sla_minutes ?? null)) set({ sla_minutes: v }); }} />
       </Field>
@@ -66,12 +67,12 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
       <details className="flex flex-col gap-3 text-sm [&>summary]:cursor-pointer [&[open]>summary]:mb-3">
         <summary>Advanced</summary>
         <div className="flex flex-col gap-3">
-          <Field label="Priority"><NumInput lo={-1e9} hi={1e9} aria-label={`priority of step ${id}`} className="w-full tabular-nums" value={st.priority ?? 0} onCommit={(v) => set({ priority: Math.floor(v) })} /></Field>
-          <Field label="Fail %"><NumInput hi={100} aria-label={`failure percent of step ${id}`} className="w-full tabular-nums" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))} onCommit={(v) => set({ failure_prob: v / 100 })} /></Field>
-          <Field label="Rework to"><Pick label={`rework target of step ${id}`} items={reworkItems} value={st.rework_to ?? NONE} onChange={(v) => set({ rework_to: v === NONE ? null : v })} /></Field>
-          <Field label="Retries"><NumInput aria-label={`retries of step ${id}`} className="w-full tabular-nums" value={st.max_retries ?? 0} onCommit={(v) => set({ max_retries: Math.floor(v) })} /></Field>
+          <Field label="Priority" hint="priority"><NumInput lo={-1e9} hi={1e9} aria-label={`priority of step ${id}`} className="w-full tabular-nums" value={st.priority ?? 0} onCommit={(v) => set({ priority: Math.floor(v) })} /></Field>
+          <Field label="Fail %" hint="fail"><NumInput hi={100} aria-label={`failure percent of step ${id}`} className="w-full tabular-nums" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))} onCommit={(v) => set({ failure_prob: v / 100 })} /></Field>
+          <Field label="Rework to" hint="rework_to"><Pick label={`rework target of step ${id}`} items={reworkItems} value={st.rework_to ?? NONE} onChange={(v) => set({ rework_to: v === NONE ? null : v })} /></Field>
+          <Field label="Retries" hint="retries"><NumInput aria-label={`retries of step ${id}`} className="w-full tabular-nums" value={st.max_retries ?? 0} onCommit={(v) => set({ max_retries: Math.floor(v) })} /></Field>
           {st.duration.kind === "lognormal_mean" && mean !== null && (
-            <Field label="Sigma"><NumInput lo={0.05} hi={3} aria-label={`sigma of step ${id}`} className="w-full tabular-nums" value={st.duration.sigma ?? 0.4} onCommit={(v) => set({ duration: { kind: "lognormal_mean", mean, sigma: v } })} /></Field>
+            <Field label="Sigma" hint="sigma"><NumInput lo={0.05} hi={3} aria-label={`sigma of step ${id}`} className="w-full tabular-nums" value={st.duration.sigma ?? 0.4} onCommit={(v) => set({ duration: { kind: "lognormal_mean", mean, sigma: v } })} /></Field>
           )}
         </div>
       </details>
@@ -97,9 +98,9 @@ function InflowPanel({ wf, inflow, onChange, onRemove, onRenamed }: Omit<Props, 
           }
         }} />
       </Field>
-      <Field label="Rate per hour"><NumInput min={0} aria-label={`rate per hour of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.rate_per_hour} onCommit={(v) => set({ rate_per_hour: v })} /></Field>
-      <Field label="Window"><ScheduleEditor id={`inflow ${inflow.id}`} schedule={inflow.window} onChange={(window) => set({ window })} /></Field>
-      <p className="text-xs text-muted-foreground">Enters at: {enters || "no step yet"}</p>
+      <Field label="Rate per hour" hint="rate"><NumInput min={0} aria-label={`rate per hour of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.rate_per_hour} onCommit={(v) => set({ rate_per_hour: v })} /></Field>
+      <Field label="Window" hint="window"><ScheduleEditor id={`inflow ${inflow.id}`} schedule={inflow.window} onChange={(window) => set({ window })} /></Field>
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">Enters at: {enters || "no step yet"}<Hint id="entry" /></p>
       <RemoveBtn onRemove={onRemove} />
     </>
   );

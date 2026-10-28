@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/dashboard/kpi";
 import { Pill, accent } from "@/components/org/parts";
 import { Input } from "@/components/ui/input";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { DAY, MinuteRange, OverlayEditor, Pick, newOverlay, systemItems } from "@/components/scenario/overlay-editor";
 import { type Company, type Scenario, OVERLAY_TYPES, idFor } from "@/lib/company";
@@ -33,7 +34,7 @@ export default function ScenariosPage() {
         <Button onClick={() => add({ name: "New scenario", overlays: [] })} className="shadow-[0_0_18px_-4px_var(--primary)]"><Plus className="size-4" /> Add scenario</Button>
       </PageHeader>
       <div className="grid items-start gap-4 lg:grid-cols-[22rem_1fr]">
-        <Panel title="Scenarios" subtitle={`${scenarios.length} what-if variant${scenarios.length === 1 ? "" : "s"}`} icon={Layers} contentClassName="flex flex-col gap-2">
+        <Panel title={<span className="flex items-center gap-1.5">Scenarios<Hint id="scenarios" /></span>} subtitle={`${scenarios.length} what-if variant${scenarios.length === 1 ? "" : "s"}`} icon={Layers} contentClassName="flex flex-col gap-2">
           {scenarios.map((x, j) => (
             <div key={j} className={cn("flex items-center gap-2 rounded-xl p-2.5 glass-inset transition-shadow duration-200 hover:shadow-[inset_0_0_0_1px_oklch(1_0_0/0.14)]",
               j === i && "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_60%,transparent),0_0_20px_-8px_var(--primary)]! bg-primary/10!")}>
@@ -83,7 +84,7 @@ function OutagesCard({ company, onChange }: { company: Company; onChange: (c: Co
   const outages = company.outages ?? [];
   const set = (outs: typeof outages) => onChange({ ...company, outages: outs });
   return (
-    <Panel title="Planned outages" subtitle="Base company downtime every scenario sees" icon={Clock} contentClassName="flex flex-col gap-2"
+    <Panel title={<span className="flex items-center gap-1.5">Planned outages<Hint id="outages" /></span>} subtitle="Base company downtime every scenario sees" icon={Clock} contentClassName="flex flex-col gap-2"
       action={<Button variant="outline" size="sm" className="rounded-full" disabled={!company.systems.length}
         onClick={() => set([...outages, [company.systems[0].id, 2 * DAY + 600, 2 * DAY + 720]])}><Plus className="size-4" /> Add outage</Button>}>
         {outages.map(([sys, start, end], k) => (

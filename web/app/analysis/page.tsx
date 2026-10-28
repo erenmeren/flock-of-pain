@@ -6,6 +6,7 @@ import { cn } from "cn";
 import { workflowMeans } from "@/components/dashboard/derive";
 import { BASE_KPIS, Delta, KPI_LABEL, LedgerTable, NoResult, Panel, fmtKpi, resultKey, sourceLabel } from "@/components/dashboard/kpi";
 import { DeptMark } from "@/components/org/parts";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { channelLabels } from "@/components/process/graph";
 import { Button } from "@/components/ui/button";
@@ -124,7 +125,7 @@ export default function Analysis() {
                 const max = Math.max(...vals.map(Math.abs), 1e-9);
                 return (
                   <div key={k} className="flex flex-col gap-2 rounded-xl glass-inset p-3">
-                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{KPI_LABEL[k] ?? k}</span>
+                    <span className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">{KPI_LABEL[k] ?? k}<Hint id={k} /></span>
                     {result.scenarios.map((s, i) => (
                       <div key={s.id} className="grid grid-cols-[5rem_1fr_4.5rem_4rem] sm:grid-cols-[8rem_1fr_6rem_5.5rem] items-center gap-3 text-sm">
                         <span className="truncate text-xs text-muted-foreground" title={s.name}>{s.name}</span>

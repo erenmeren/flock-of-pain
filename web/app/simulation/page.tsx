@@ -4,6 +4,7 @@ import { BarChart3, Loader2, Play, ShieldAlert } from "lucide-react";
 import { cn } from "cn";
 import { KPI_LABEL, LedgerTable, NoResult, Panel, fmtKpi, resultKey, sourceLabel } from "@/components/dashboard/kpi";
 import { NumInput } from "@/components/editor-fields";
+import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
 import { Playback } from "@/components/playback";
 import { Button } from "@/components/ui/button";
@@ -35,13 +36,13 @@ export default function Simulation() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {NUMBERS.map(([k, label]) => (
               <Label key={k} className={FIELD}>
-                {label}
+                <span className="flex items-center gap-1">{label}<Hint id={k} /></span>
                 <NumInput lo={k === "seed" ? 0 : 1} value={config[k] as number} className="h-8 text-sm tabular-nums normal-case tracking-normal"
                   onCommit={(v) => setConfig({ ...config, [k]: k === "days" ? v : Math.floor(v) })} />
               </Label>
             ))}
             <Label className={FIELD}>
-              Policy
+              <span className="flex items-center gap-1">Policy<Hint id="policy" /></span>
               <Select value={config.policy} items={Object.fromEntries(POLICIES.map((p) => [p, p]))} onValueChange={(v) => v && setConfig({ ...config, policy: v })}>
                 <SelectTrigger aria-label="policy" className="w-full normal-case tracking-normal"><SelectValue /></SelectTrigger>
                 <SelectContent>{POLICIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
@@ -52,7 +53,7 @@ export default function Simulation() {
             <Label className={TOGGLE}>
               <Checkbox aria-label="include events" checked={config.include_events} onCheckedChange={(c) => setConfig({ ...config, include_events: !!c })} />
               <span className="flex flex-1 flex-col">
-                Include events for playback
+                <span className="flex items-center gap-1">Include events for playback<Hint id="include_events" /></span>
                 <span className="text-xs text-muted-foreground">At most 30 run-days: days × reps × scenarios</span>
               </span>
               <span className={cn("rounded-full px-2 py-0.5 text-xs tabular-nums", over ? "bg-rose-400/15 text-rose-400" : "bg-white/5 text-muted-foreground")}>
@@ -62,7 +63,7 @@ export default function Simulation() {
             <Label className={TOGGLE}>
               <Checkbox aria-label="save run" checked={config.save} onCheckedChange={(c) => setConfig({ ...config, save: !!c })} />
               <span className="flex flex-1 flex-col">
-                Save to run history
+                <span className="flex items-center gap-1">Save to run history<Hint id="save_run" /></span>
                 <span className="text-xs text-muted-foreground">Shows up on the Analysis page</span>
               </span>
             </Label>
