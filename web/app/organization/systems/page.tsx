@@ -59,7 +59,7 @@ export default function SystemsPage() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" disabled={used || scen}
+                    <Button variant="destructive" size="sm" disabled={used || scen}
                       title={used ? "referenced by a workflow step or outage" : scen ? "referenced by a scenario" : undefined}
                       aria-label={`remove ${s.id}`} onClick={() => setCompany({ ...company, systems: company.systems.filter((_, j) => j !== i) })}>Remove</Button>
                   </TableCell>

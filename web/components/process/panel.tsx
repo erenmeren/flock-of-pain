@@ -26,7 +26,7 @@ const Pick = ({ label, items, value, onChange }: { label: string; items: Record<
     <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
   </Select>
 );
-const RemoveBtn = ({ onRemove }: { onRemove: () => void }) => <Button variant="ghost" size="sm" className="self-start rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>;
+const RemoveBtn = ({ onRemove }: { onRemove: () => void }) => <Button variant="destructive" size="sm" className="self-start rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>;
 
 function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }) {
   const id = st.id;
@@ -112,7 +112,7 @@ export function DetailPanel({ wf, company, selected, onChange, onClose, onRemove
   if (!st && !inflow) return null;
   return (
     <aside aria-label="detail panel" className="glass rise relative flex flex-col gap-3 self-start overflow-y-auto rounded-2xl p-4">
-      <Button variant="ghost" size="icon-sm" aria-label="close panel" className="absolute top-2 right-2" onClick={onClose}><X className="size-4" /></Button>
+      <Button variant="outline" size="icon-sm" aria-label="close panel" className="absolute top-2 right-2" onClick={onClose}><X className="size-4" /></Button>
       <h3 className="pr-6 text-sm font-medium">{st?.name ?? inflow!.name}</h3>
       {st ? <StepPanel wf={wf} company={company} st={st} onChange={onChange} onRemove={onRemove} /> : <InflowPanel wf={wf} inflow={inflow!} onChange={onChange} onRemove={onRemove} onRenamed={onRenamed} />}
     </aside>

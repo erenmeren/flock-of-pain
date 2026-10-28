@@ -130,7 +130,7 @@ export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overla
     <div className="rise flex flex-col gap-3 rounded-xl p-3 glass-inset">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-xs text-primary">{o.type}</span>
-        <Button variant="ghost" size="icon" className="ml-auto size-7" aria-label={`remove ${o.type} overlay`} onClick={onRemove}><Trash2 className="size-3.5" /></Button>
+        <Button variant="destructive" size="icon" className="ml-auto size-7" aria-label={`remove ${o.type} overlay`} onClick={onRemove}><Trash2 className="size-3.5" /></Button>
       </div>
       <div className="flex flex-wrap items-end gap-3">{body}</div>
     </div>

@@ -61,7 +61,7 @@ export default function DepartmentsPage() {
                   <TableCell className="text-right tabular-nums">{d.resources.filter((r) => !isPool(r)).length}</TableCell>
                   <TableCell className="text-right tabular-nums">{used}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" disabled={used > 0 || scen}
+                    <Button variant="destructive" size="sm" disabled={used > 0 || scen}
                       title={used ? `referenced by ${used} workflow step${used === 1 ? "" : "s"}` : scen ? "referenced by a scenario" : undefined}
                       aria-label={`remove ${d.id}`} onClick={async () => {
                         if (d.resources.length && !(await confirm(`Its ${d.resources.length} pools/people are removed with it.`, { title: `Remove department "${d.id}"?`, action: "Remove", destructive: true }))) return;

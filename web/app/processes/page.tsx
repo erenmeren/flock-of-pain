@@ -46,7 +46,7 @@ export default function ProcessesPage() {
                   </span>
                 )}
                 <Button variant="outline" size="sm" className="rounded-full" render={<Link href={href} />} nativeButton={false}>Edit <ArrowRight className="size-3.5" /></Button>
-                <Button variant="ghost" size="sm" aria-label={`remove workflow ${wf.id}`} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
+                <Button variant="destructive" size="sm" aria-label={`remove workflow ${wf.id}`} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
               </div>
             }>
             <StepChain wf={wf} company={company} />

@@ -83,7 +83,7 @@ export default function PoolsPage() {
                       : <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)}
+                    <Button variant="destructive" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)}
                       title={inScenarios.has(r.id) ? "referenced by a scenario" : members ? "members become standalone with this pool's schedule" : undefined}
                       onClick={async () => {
                         if (members && !(await confirm(`Its ${members} members become standalone with this pool's schedule.`, { title: `Remove pool "${r.id}"?`, action: "Remove", destructive: true }))) return;

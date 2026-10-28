@@ -114,8 +114,8 @@ export default function Settings() {
               <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
               {t.selected === c.id && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">loaded</span>}
               <span className="ml-auto text-xs tabular-nums text-muted-foreground">{c.updated_at.replace("T", " ").replace("+00:00", "")}</span>
-              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
-              <Button variant="ghost" size="sm" className="rounded-full text-rose-400 hover:bg-rose-400/10 hover:text-rose-300" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
+              <Button variant="destructive" size="sm" className="rounded-full" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>
             </div>
           ))}
         </div>

@@ -43,9 +43,9 @@ export default function ScenariosPage() {
                 <span className="block truncate font-mono text-[11px] text-muted-foreground">{x.id}</span>
               </button>
               {x.overlays.length ? <Pill>{x.overlays.length} change{x.overlays.length === 1 ? "" : "s"}</Pill> : <Pill tone="green">baseline</Pill>}
-              <Button variant="ghost" size="icon" className="size-7" aria-label={`duplicate scenario ${x.id}`}
+              <Button variant="outline" size="icon" className="size-7" aria-label={`duplicate scenario ${x.id}`}
                 onClick={() => { add({ name: `${x.name} copy`, overlays: structuredClone(x.overlays) }); }}><Copy className="size-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="size-7" aria-label={`remove scenario ${x.id}`}
+              <Button variant="destructive" size="icon" className="size-7" aria-label={`remove scenario ${x.id}`}
                 onClick={() => remove(j)}><Trash2 className="size-3.5" /></Button>
             </div>
           ))}
@@ -92,7 +92,7 @@ function OutagesCard({ company, onChange }: { company: Company; onChange: (c: Co
               <Pick label={`system of outage ${k + 1}`} value={sys} items={systemItems(company)} onChange={(v) => set(outages.map((o, m) => (m === k ? [v, start, end] : o)))} />
             </label>
             <MinuteRange label={`outage ${k + 1}`} start={start} end={end} onChange={(a, b) => set(outages.map((o, m) => (m === k ? [sys, a, b] : o)))} />
-            <Button variant="ghost" size="icon" className="ml-auto size-7" aria-label={`remove outage ${k + 1}`} onClick={() => set(outages.filter((_, m) => m !== k))}><Trash2 className="size-3.5" /></Button>
+            <Button variant="destructive" size="icon" className="ml-auto size-7" aria-label={`remove outage ${k + 1}`} onClick={() => set(outages.filter((_, m) => m !== k))}><Trash2 className="size-3.5" /></Button>
           </div>
         ))}
         {!outages.length && <p className="rounded-xl border border-dashed border-border py-6 text-center text-xs text-muted-foreground">No planned outages.</p>}

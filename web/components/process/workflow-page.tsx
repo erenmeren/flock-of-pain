@@ -57,7 +57,7 @@ export function WorkflowPage() {
           <Input aria-label={`workflow name ${wf.id}`} className={`h-7 text-base! font-medium ${INLINE_INPUT}`} value={wf.name} onChange={(e) => onChange({ ...wf, name: e.target.value, id: idFor(e.target.value, company.workflows.filter((x) => x !== wf).map((x) => x.id), "workflow", wf.id) })} />
           <IdTag id={wf.id} />
         </div>
-        <Button variant="ghost" size="sm" className="rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>
+        <Button variant="destructive" size="sm" className="rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>
       </div>
       <ProcessCanvas wf={wf} company={company} onChange={onChange} />
     </div>

@@ -121,7 +121,7 @@ export default function PeoplePage() {
                       : r.pool_id === undefined && <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)} title={inScenarios.has(r.id) ? "referenced by a scenario" : undefined}
+                    <Button variant="destructive" size="sm" aria-label={`remove ${r.id}`} disabled={inScenarios.has(r.id)} title={inScenarios.has(r.id) ? "referenced by a scenario" : undefined}
                       onClick={async () => { if (await confirm(`"${r.id}" leaves the company.`, { title: "Remove this person?", action: "Remove", destructive: true })) setCompany(removeResource(company, loc)); }}>Remove</Button>
                   </TableCell>
                 </TableRow>

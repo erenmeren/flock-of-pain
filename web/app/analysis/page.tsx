@@ -105,7 +105,7 @@ export default function Analysis() {
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{r.company_id ?? ""}</TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">{r.created_at.replace("T", " ").replace("+00:00", "")}</TableCell>
-                    <TableCell className="text-right"><Button variant="ghost" size="sm" className="rounded-full" aria-label={`show run ${r.id}`} onClick={() => showRun(r.id)} disabled={busy}>Show</Button></TableCell>
+                    <TableCell className="text-right"><Button variant="outline" size="sm" className="rounded-full" aria-label={`show run ${r.id}`} onClick={() => showRun(r.id)} disabled={busy}>Show</Button></TableCell>
                   </TableRow>
                 );
               })}
