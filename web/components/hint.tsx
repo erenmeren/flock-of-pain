@@ -17,7 +17,7 @@ export function Hint({ id }: { id: string }) {
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Positioner side="top" sideOffset={6} className="z-50">
-          <Tooltip.Popup className="glass max-w-64 rounded-xl px-3 py-2 text-xs font-normal normal-case tracking-normal text-foreground">{text}</Tooltip.Popup>
+          <Tooltip.Popup className="glass max-w-64 rounded-xl px-3 py-2 text-xs font-normal normal-case tracking-normal text-foreground shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_55%,transparent),0_0_14px_-2px_var(--primary),0_12px_28px_-12px_rgb(0_0_0/0.8)]!">{text}</Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>
