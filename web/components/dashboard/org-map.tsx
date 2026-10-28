@@ -39,14 +39,19 @@ export function OrgMap({ company }: { company: Company }) {
   const path = (e: Edge) => {
     const a = boxes[e.from], b = boxes[e.to];
     if (!a || !b) return null;
-    const vertical = Math.abs(a.x - b.x) < 8; // same column: curve out to the side
-    const x1 = vertical ? a.x + a.w / 2 : a.x + a.w, y1 = a.y + a.h / 2, x2 = vertical ? b.x + b.w / 2 : b.x, y2 = b.y + b.h / 2;
-    const d = vertical ? `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 + 40} ${y2}, ${x2} ${y2}` : `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
-    return { d, mid: vertical ? { x: x1 + 30, y: (y1 + y2) / 2 } : { x: (x1 + x2) / 2, y: (y1 + y2) / 2 } };
+    const mid = (p: number, q: number) => (p + q) / 2;
+    if (a.x < b.x + b.w && b.x < a.x + a.w) { // boxes share a column: connect bottom to top (or top to bottom for a back edge)
+      const down = b.y >= a.y;
+      const x1 = a.x + a.w / 2, y1 = down ? a.y + a.h : a.y, x2 = b.x + b.w / 2, y2 = down ? b.y : b.y + b.h;
+      return { d: `M ${x1} ${y1} C ${x1} ${mid(y1, y2)}, ${x2} ${mid(y1, y2)}, ${x2} ${y2}`, mid: { x: mid(x1, x2), y: mid(y1, y2) } };
+    }
+    const right = b.x > a.x; // side by side: right edge of a to left edge of b (mirrored for a back edge)
+    const x1 = right ? a.x + a.w : a.x, y1 = a.y + a.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2;
+    return { d: `M ${x1} ${y1} C ${mid(x1, x2)} ${y1}, ${mid(x1, x2)} ${y2}, ${x2} ${y2}`, mid: { x: mid(x1, x2), y: mid(y1, y2) } };
   };
 
   return (
-    <div className="overflow-x-auto"><div ref={root} className="relative grid grid-cols-[8.5rem_1fr_7.5rem] gap-x-6" style={{ minWidth: `${19 + Math.max(2, cols.length) * 7.5}rem` }}>
+    <div className="overflow-x-auto"><div ref={root} className="relative grid min-w-[30rem] grid-cols-[8.5rem_1fr_7.5rem] gap-x-6">
       <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" aria-hidden>
         {edges.map((e) => {
           const p = path(e);
@@ -70,11 +75,11 @@ export function OrgMap({ company }: { company: Company }) {
         ))}
         {!company.workflows.length && <Empty>No workflows</Empty>}
       </Column>
-      <div className="flex items-center justify-around gap-x-3 py-1">
-        {cols.map((col, k) => (
-          <div key={k} className="flex min-w-28 flex-1 flex-col gap-y-3">
+      <div className="flex min-w-0 flex-col justify-center gap-y-4 py-1">
+        {cols.map((col, k) => ( // one row per hand-off stage: work enters at the top row and moves down
+          <div key={k} className="flex flex-wrap justify-center gap-3">
             {col.map((id) => { const { d, i } = dept.get(id)!; return (
-              <div key={d.id} data-node={`d:${d.id}`} className="glass-inset relative flex items-center gap-2.5 rounded-2xl p-2 pr-3"
+              <div key={d.id} data-node={`d:${d.id}`} className="glass-inset relative flex min-w-0 max-w-44 flex-1 items-center gap-2.5 rounded-2xl p-2 pr-3"
                 style={{ boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${accent(i)} 35%, transparent), 0 12px 30px -20px ${accent(i)}` }}>
                 <DeptMark index={i} size="size-8" />
                 <span className="min-w-0">

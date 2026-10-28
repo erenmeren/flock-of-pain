@@ -147,6 +147,9 @@
 }
 
 /* glass panel: translucent card, hairline ring, light catching the top edge, deep soft shadow */
+/* Thin translucent scrollbars everywhere, matching the glass panels. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 22%, transparent) transparent; }
+
 /* Focus mode (workflow canvas): the shell chrome disappears, the page keeps the whole viewport. */
 html[data-focus] [data-shell] { display: none; }
 
