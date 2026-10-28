@@ -44,6 +44,24 @@ export function mapEdges(c: Company): Edge[] {
   return [...edges.values()];
 }
 
+/** Departments in flow order, one column per hand-off depth: where work enters first comes first.
+ *  Only hand-offs that point forward in first-appearance order count, so cycles cannot push a column right forever.
+ *  Departments no workflow touches form the last column. */
+export function deptColumns(c: Company): string[][] {
+  const seen: string[] = [];
+  for (const w of c.workflows) for (const s of w.steps) if (s.department_id && !seen.includes(s.department_id)) seen.push(s.department_id);
+  const pos = new Map(seen.map((d, i) => [d, i]));
+  const rank = new Map(seen.map((d) => [d, 0]));
+  const forward = mapEdges(c).filter((e) => e.from.startsWith("d:") && e.to.startsWith("d:"))
+    .map((e) => [e.from.slice(2), e.to.slice(2)] as const).filter(([a, b]) => (pos.get(a) ?? 0) < (pos.get(b) ?? 0));
+  for (let i = 0; i < seen.length; i++) for (const [a, b] of forward) rank.set(b, Math.max(rank.get(b)!, rank.get(a)! + 1));
+  const cols: string[][] = [];
+  for (const d of seen) (cols[rank.get(d)!] ??= []).push(d);
+  const idle = c.departments.map((d) => d.id).filter((d) => !pos.has(d));
+  if (idle.length) cols.push(idle);
+  return cols.filter(Boolean);
+}
+
 /** Minutes as "2.3 h" past two hours, else "95 min". */
 export const minutes = (m: number | null) => (m === null ? "–" : m >= 120 ? `${(m / 60).toFixed(1)} h` : `${m.toFixed(0)} min`);
 

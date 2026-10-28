@@ -1,7 +1,7 @@
 // Assert-based checks for the pure Company/Scenario edits: `npm test`.
 import assert from "node:assert/strict";
 import { membersOf, movePerson, removeResource, setResource } from "@/components/org/ops";
-import { handoffs, healthScores, mapEdges, minutes, workflowMeans } from "@/components/dashboard/derive";
+import { deptColumns, handoffs, healthScores, mapEdges, minutes, workflowMeans } from "@/components/dashboard/derive";
 import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
 import { autoLayout, fillLayout } from "@/components/process/layout";
 import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameInScenarios, slug } from "@/lib/company";
@@ -156,3 +156,15 @@ console.log("ok");
   assert.equal(workflowMeans(s).a.completed, 3);
   assert.equal(workflowMeans(s).a.cycle_p50, 10);
 }
+
+// departments fall into hand-off columns in flow order; a back edge does not push a column; untouched departments come last
+{
+  const step = (id: string, department_id: string): Workflow["steps"][number] => ({ id, name: id, department_id, required_skill: "s", duration: { kind: "lognormal_mean", mean: 5, sigma: 0.3 } });
+  const dep = (id: string) => ({ id, name: id.toUpperCase(), resources: [] });
+  const flow = (id: string, ds: string[]) => ({ id, name: id, arrival: { rate_per_hour: 1, window: sched }, steps: ds.map((d, i) => step(`${id}${i}`, d)) });
+  const co: Company = { id: "f", name: "f", systems: [], departments: ["e", "d", "c", "b", "a"].map(dep),
+    workflows: [flow("w1", ["a", "b", "c"]), flow("w2", ["b", "d", "b"])] };
+  assert.deepEqual(deptColumns(co), [["a"], ["b"], ["c", "d"], ["e"]]);
+  assert.deepEqual(deptColumns({ ...co, workflows: [] }), [["e", "d", "c", "b", "a"]]);
+}
+

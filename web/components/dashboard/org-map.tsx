@@ -7,7 +7,7 @@ import { deptHeadcount } from "@/components/org/ops";
 import type { Company } from "@/lib/company";
 import { rateOf } from "@/components/process/graph";
 import { fmt } from "@/components/page";
-import { type Edge, mapEdges } from "@/components/dashboard/derive";
+import { type Edge, deptColumns, mapEdges } from "@/components/dashboard/derive";
 
 type Box = { x: number; y: number; w: number; h: number };
 
@@ -33,6 +33,8 @@ export function OrgMap({ company }: { company: Company }) {
   }, [company]);
 
   const edges = mapEdges(company);
+  const cols = deptColumns(company);
+  const dept = new Map(company.departments.map((d, i) => [d.id, { d, i }]));
   const color = (e: Edge) => (e.dept === null ? "var(--primary)" : accent(e.dept));
   const path = (e: Edge) => {
     const a = boxes[e.from], b = boxes[e.to];
@@ -44,7 +46,7 @@ export function OrgMap({ company }: { company: Company }) {
   };
 
   return (
-    <div className="overflow-x-auto"><div ref={root} className="relative grid min-w-[34rem] grid-cols-[8.5rem_1fr_7.5rem] gap-x-6">
+    <div className="overflow-x-auto"><div ref={root} className="relative grid grid-cols-[8.5rem_1fr_7.5rem] gap-x-6" style={{ minWidth: `${19 + Math.max(2, cols.length) * 7.5}rem` }}>
       <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" aria-hidden>
         {edges.map((e) => {
           const p = path(e);
@@ -68,17 +70,21 @@ export function OrgMap({ company }: { company: Company }) {
         ))}
         {!company.workflows.length && <Empty>No workflows</Empty>}
       </Column>
-      <div className="grid grid-cols-2 content-center gap-x-3 gap-y-4 py-1">
-        {company.departments.map((d, i) => (
-          <div key={d.id} data-node={`d:${d.id}`} className="glass-inset relative flex items-center gap-2.5 rounded-2xl p-2 pr-3"
-            style={{ boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${accent(i)} 35%, transparent), 0 12px 30px -20px ${accent(i)}` }}>
-            <DeptMark index={i} size="size-8" />
-            <span className="min-w-0">
-              <span className="block truncate text-xs font-medium" title={d.id}>{d.name}</span>
-              <span className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />{deptHeadcount(company, d)}
-              </span>
-            </span>
+      <div className="flex items-center justify-around gap-x-3 py-1">
+        {cols.map((col, k) => (
+          <div key={k} className="flex min-w-28 flex-1 flex-col gap-y-3">
+            {col.map((id) => { const { d, i } = dept.get(id)!; return (
+              <div key={d.id} data-node={`d:${d.id}`} className="glass-inset relative flex items-center gap-2.5 rounded-2xl p-2 pr-3"
+                style={{ boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${accent(i)} 35%, transparent), 0 12px 30px -20px ${accent(i)}` }}>
+                <DeptMark index={i} size="size-8" />
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-medium" title={d.id}>{d.name}</span>
+                  <span className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                    <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />{deptHeadcount(company, d)}
+                  </span>
+                </span>
+              </div>
+            ); })}
           </div>
         ))}
         {!company.departments.length && <Empty>No departments</Empty>}
