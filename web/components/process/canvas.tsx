@@ -143,11 +143,13 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
       .map((e) => ({ ...e, selected: prev.find((p) => p.id === e.id)?.selected }))); // a selected edge stays deletable across re-syncs
   }, [wf, company, selected, focusId, onChange, setNodes, setEdges]);
 
-  const panelOpen = selected !== null;
-  useEffect(() => { // the panel takes a grid column: refit so nodes on the right do not end up under it
-    const t = setTimeout(() => fitView({ duration: 200 }));
-    return () => clearTimeout(t);
-  }, [panelOpen, fitView]);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { // refit whenever the canvas box changes size: panel opens, focus mode, window resize
+    let t: ReturnType<typeof setTimeout>;
+    const ro = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => fitView({ duration: 200 }), 50); });
+    ro.observe(box.current!);
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, [fitView]);
 
   useEffect(() => {
     if (!toast) return;
@@ -190,7 +192,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
 
   return (
     <div className={`grid min-h-0 flex-1 gap-4 ${selected ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
-      <div className="flex flex-wrap gap-2 lg:w-44 lg:flex-col">
+      <div className="flex min-h-0 flex-wrap gap-2 lg:w-44 lg:flex-col lg:overflow-y-auto">
         {company.departments.map((d, i) => (
           <button key={d.id} type="button" className={CHIP} {...chip(DEPT, d.id)} onClick={() => clickAdd("step", d.id)}>
             <span className="size-2 shrink-0 rounded-full" style={{ background: accent(i) }} />
@@ -205,7 +207,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         <p className="hidden text-xs text-muted-foreground lg:block">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run. An either/or split is modelled as two inflows.</p>
       </div>
       <div className="flex min-h-0 flex-col gap-2">
-        <div className="glass min-h-[32rem] flex-1 overflow-hidden rounded-2xl lg:min-h-0" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
+        <div ref={box} className="glass min-h-[32rem] flex-1 overflow-hidden rounded-2xl lg:min-h-0" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
           <ReactFlow colorMode="dark" fitView minZoom={0.3} maxZoom={1.5} nodesConnectable nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onSelectionChange={onSelectionChange}
             onNodeDragStop={(_, n) => edit((w) => ({ ...w, layout: { ...w.layout, [n.id]: [Math.round(n.position.x), Math.round(n.position.y)] } }))}
