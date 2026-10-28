@@ -28,7 +28,7 @@ export function Topbar() {
           <SelectTrigger aria-label="company" className="h-9 min-w-0 flex-1 rounded-full border-transparent glass-inset pl-2 sm:flex-none sm:w-72">
             <span className="flex items-center gap-2"><Logo className="size-5" /><SelectValue placeholder={mounted && t.company ? `Draft: ${t.company.name}` : "Loading…"} /></span>
           </SelectTrigger>
-          <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+          <SelectContent alignItemWithTrigger={false}>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>
         <Button variant="outline" size="sm" className="h-9 rounded-full px-3" onClick={t.save} disabled={t.busy || !t.company}><Save className="size-4" /> <span className="hidden sm:inline">Save</span></Button>
         <span className="ml-auto hidden text-xs text-muted-foreground md:block">{mounted && `${t.scenarios.length} scenarios · ${t.config.days} days × ${t.config.replications} reps`}</span>
