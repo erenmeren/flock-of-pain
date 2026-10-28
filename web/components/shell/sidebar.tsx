@@ -32,7 +32,7 @@ export function Sidebar({ className }: { className?: string }) {
   const mounted = useMounted();
   const keyOk = mounted && !!apiKey;
   return (
-    <aside className={cn("glass flex w-60 shrink-0 flex-col gap-6 rounded-2xl p-4", className)}>
+    <aside data-shell className={cn("glass flex w-60 shrink-0 flex-col gap-6 rounded-2xl p-4", className)}>
       <Link href="/" className="flex items-center gap-3 px-1 pt-1">
         <Logo />
         <span>

@@ -21,7 +21,7 @@ export function Topbar() {
   const items = { [EXAMPLE]: "Reynolds example", ...Object.fromEntries(t.saved.map((c) => [c.id, c.name])) };
   const pick = (v: string | null) => { if (v === EXAMPLE) t.loadExample(); else if (v) t.load(v); };
   return (
-    <header className="flex flex-col gap-2">
+    <header data-shell className="flex flex-col gap-2">
       <div className="glass flex items-center gap-2 rounded-2xl px-3 py-2">
         <Button variant="outline" size="icon-lg" className="rounded-full lg:hidden" aria-label="menu" onClick={() => setMenuAt(path)}><Menu className="size-4" /></Button>
         <Select value={t.selected || null} items={items} onValueChange={pick} disabled={t.busy}>

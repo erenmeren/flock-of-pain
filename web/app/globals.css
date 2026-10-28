@@ -147,6 +147,9 @@
 }
 
 /* glass panel: translucent card, hairline ring, light catching the top edge, deep soft shadow */
+/* Focus mode (workflow canvas): the shell chrome disappears, the page keeps the whole viewport. */
+html[data-focus] [data-shell] { display: none; }
+
 @utility glass {
   background: color-mix(in oklch, var(--card) 82%, transparent);
   backdrop-filter: blur(20px) saturate(140%);

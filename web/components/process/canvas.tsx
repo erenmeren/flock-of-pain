@@ -189,7 +189,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
   const chip = (type: string, value: string) => ({ draggable: true, onDragStart: (e: React.DragEvent) => e.dataTransfer.setData(type, value) });
 
   return (
-    <div className={`grid gap-4 ${selected ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
+    <div className={`grid min-h-0 flex-1 gap-4 ${selected ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
       <div className="flex flex-wrap gap-2 lg:w-44 lg:flex-col">
         {company.departments.map((d, i) => (
           <button key={d.id} type="button" className={CHIP} {...chip(DEPT, d.id)} onClick={() => clickAdd("step", d.id)}>
@@ -204,8 +204,8 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
           onClick={() => { edit((w) => ({ ...w, layout: autoLayout(w) })); setTimeout(() => fitView({ duration: 300 })); }}>Auto layout</button>
         <p className="hidden text-xs text-muted-foreground lg:block">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run. An either/or split is modelled as two inflows.</p>
       </div>
-      <div className="flex flex-col gap-2">
-        <div className="glass min-h-[32rem] h-[calc(100vh-14rem)] overflow-hidden rounded-2xl" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
+      <div className="flex min-h-0 flex-col gap-2">
+        <div className="glass min-h-[32rem] flex-1 overflow-hidden rounded-2xl lg:min-h-0" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
           <ReactFlow colorMode="dark" fitView minZoom={0.3} maxZoom={1.5} nodesConnectable nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onSelectionChange={onSelectionChange}
             onNodeDragStop={(_, n) => edit((w) => ({ ...w, layout: { ...w.layout, [n.id]: [Math.round(n.position.x), Math.round(n.position.y)] } }))}
