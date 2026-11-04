@@ -65,7 +65,7 @@ export function OverlayEditor({ o, company: c, taken = [], onChange, onRemove }:
   switch (o.type) {
     case "arrival_multiplier":
       body = <>
-        <Field label="Factor"><NumInput aria-label="arrival factor" className="w-24" value={o.factor} lo={0.01} onCommit={(factor) => onChange({ ...o, factor })} /></Field>
+        <Field label="Demand change %"><NumInput aria-label="arrival change percent" className="w-24" value={Math.round((o.factor - 1) * 100)} lo={-99} onCommit={(v) => onChange({ ...o, factor: 1 + v / 100 })} /></Field>
         <Field label="Workflow">
           <Pick label="multiplied workflow" value={o.workflow_id ?? ALL} items={{ [ALL]: "all workflows", ...Object.fromEntries(c.workflows.map((w) => [w.id, w.name])) }}
             onChange={(v) => onChange({ ...o, workflow_id: v === ALL ? null : v })} />

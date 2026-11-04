@@ -63,7 +63,7 @@ export default function PeoplePage() {
           <TableHeader>
             <TableRow>
               <TableHead>Person</TableHead><TableHead>Department · pool</TableHead><TableHead>Skills (comma) <Hint id="skills" /></TableHead>
-              <TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Speed <Hint id="speed" /></TableHead><TableHead className="text-right">Overtime rate <Hint id="overtime_rate" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
+              <TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Speed <Hint id="speed" /></TableHead><TableHead className="text-right">Overtime +% <Hint id="overtime_rate" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -111,7 +111,7 @@ export default function PeoplePage() {
                   <TableCell><SkillsInput id={r.id} skills={r.skills} onCommit={(skills) => set({ ...r, skills })} /></TableCell>
                   <TableCell className="text-right"><NumInput aria-label={`cost per hour of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" value={r.cost_per_hour} onCommit={(v) => set({ ...r, cost_per_hour: v })} /></TableCell>
                   <TableCell className="text-right"><NumInput aria-label={`speed factor of ${r.id}`} className="ml-auto w-16 text-right tabular-nums" lo={0.01} value={r.speed_factor ?? 1} onCommit={(v) => set({ ...r, speed_factor: v })} /></TableCell>
-                  <TableCell className="text-right"><OptNumInput aria-label={`overtime rate of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={1} step={0.1} value={r.overtime_rate} onCommit={(v) => set({ ...r, overtime_rate: v })} /></TableCell>
+                  <TableCell className="text-right"><OptNumInput aria-label={`overtime rate of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={0} step={5} value={r.overtime_rate === undefined ? undefined : Math.round((r.overtime_rate - 1) * 100)} onCommit={(v) => set({ ...r, overtime_rate: v === undefined ? undefined : 1 + v / 100 })} /></TableCell>
                   <TableCell>
                     {r.pool_id !== undefined && (
                       <Label className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">

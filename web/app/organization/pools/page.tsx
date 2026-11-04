@@ -46,7 +46,7 @@ export default function PoolsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Pool <Hint id="pool" /></TableHead><TableHead className="text-right">Headcount <Hint id="headcount" /></TableHead><TableHead className="text-right">Members <Hint id="members" /></TableHead>
-              <TableHead>Skills (comma) <Hint id="skills" /></TableHead><TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Overtime rate <Hint id="overtime_rate" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
+              <TableHead>Skills (comma) <Hint id="skills" /></TableHead><TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Overtime +% <Hint id="overtime_rate" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -79,7 +79,7 @@ export default function PoolsPage() {
                   <TableCell className="text-right tabular-nums">{members}</TableCell>
                   <TableCell><SkillsInput id={r.id} skills={r.skills} onCommit={(skills) => set({ ...r, skills })} /></TableCell>
                   <TableCell className="text-right"><NumInput aria-label={`cost per hour of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" value={r.cost_per_hour} onCommit={(v) => set({ ...r, cost_per_hour: v })} /></TableCell>
-                  <TableCell className="text-right"><OptNumInput aria-label={`overtime rate of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={1} step={0.1} value={r.overtime_rate} onCommit={(v) => set({ ...r, overtime_rate: v })} /></TableCell>
+                  <TableCell className="text-right"><OptNumInput aria-label={`overtime rate of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={0} step={5} value={r.overtime_rate === undefined ? undefined : Math.round((r.overtime_rate - 1) * 100)} onCommit={(v) => set({ ...r, overtime_rate: v === undefined ? undefined : 1 + v / 100 })} /></TableCell>
                   <TableCell>
                     {r.schedule ? <ScheduleEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
                       : <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}

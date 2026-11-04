@@ -48,7 +48,7 @@ export const HINTS: Record<string, string> = {
   department: "A group of staff. Each workflow step belongs to one department and needs one skill.",
   skills: "Comma-separated skills. A step is only picked up by staff that has its required skill.",
   cost: "Hourly cost of this person or pool member. Feeds the Labor cost KPI.",
-  overtime_rate: "Multiplier on the cost per hour for work done outside the schedule, e.g. 1.5. Empty means overtime costs the plain rate.",
+  overtime_rate: "Extra pay for work done outside the schedule, as a percent: 50 means time and a half. Empty means overtime costs the plain rate.",
   speed: "Work-speed multiplier: 2 finishes tasks twice as fast, 0.5 half as fast.",
   schedule: "Working hours. Outside them the person is off shift and their tasks wait.",
   pool: "Interchangeable staff sharing one skill set and schedule. Headcount is how many work at the same time.",
@@ -58,7 +58,7 @@ export const HINTS: Record<string, string> = {
   // scenarios
   scenarios: "A scenario is the base company plus a few changes (overlays): more orders, an outage, an extra employee. Baseline has no overlays. Every run simulates all scenarios so you can compare them.",
   outages: "Downtime of a system that every scenario sees. Start and end are minutes from the start of the run; the clock label shows the weekday time they mean.",
-  arrival_multiplier: "Multiplies the arrival rate of one workflow, or all of them. 1.3 means 30% more items. A time window limits it to arrivals between two minutes of the run (a seasonal peak).",
+  arrival_multiplier: "Changes how much work arrives for one workflow, or all of them: +30 means 30% more items, -20 means 20% fewer. A time window limits it to part of the run (a seasonal peak).",
   system_outage: "Takes a system down between two minutes. Steps that need it wait until it is back.",
   add_employee: "Adds a person to a department for this scenario only.",
   remove_resource: "Removes a person or a whole pool for this scenario only.",

@@ -152,8 +152,8 @@ function ProfileEditor({ id, profile, onChange, fit }: { id: string; profile?: P
     <div className={`grid gap-1 ${cols}`}>
       {labels.map((l, k) => (
         <label key={k} className="flex flex-col text-[10px] text-muted-foreground">{l}
-          <NumInput aria-label={`${key === "hours" ? "hour" : "weekday"} ${l} multiplier of ${id}`} className="h-7 px-1 text-xs tabular-nums" value={profile?.[key]?.[String(k)] ?? 1}
-            onCommit={(v) => onChange(setMultiplier(profile, key, String(k), v))} />
+          <NumInput aria-label={`${key === "hours" ? "hour" : "weekday"} ${l} multiplier of ${id}`} className="h-7 px-1 text-xs tabular-nums" value={Math.round((profile?.[key]?.[String(k)] ?? 1) * 100)}
+            onCommit={(v) => onChange(setMultiplier(profile, key, String(k), v / 100))} />
         </label>
       ))}
     </div>
@@ -162,7 +162,7 @@ function ProfileEditor({ id, profile, onChange, fit }: { id: string; profile?: P
     <details className="text-sm [&>summary]:cursor-pointer [&[open]>summary]:mb-2">
       <summary>Demand profile</summary>
       <div className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">Rate multiplier by hour of day, then by weekday. 2 doubles the rate, 0 stops arrivals.</p>
+        <p className="text-xs text-muted-foreground">Percent of the normal rate by hour of day, then by weekday. 100 = normal, 200 doubles the rate, 0 stops arrivals.</p>
         {fit}
         {row("hours", Array.from({ length: 24 }, (_, h) => String(h)), "grid-cols-6")}
         {row("weekdays", DAYS, "grid-cols-7")}
