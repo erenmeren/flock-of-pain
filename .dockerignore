@@ -1,0 +1,8 @@
+.venv
+.git
+web
+graphify-out
+flock.db
+docs
+tests
+__pycache__

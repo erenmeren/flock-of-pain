@@ -1,0 +1,20 @@
+# Local or single-host deploy. Put TLS (Caddy, nginx) in front of both ports.
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    volumes: ["flock-data:/data"]
+    environment:
+      FLOCK_CORS_ORIGINS: ${FLOCK_CORS_ORIGINS:-http://localhost:3000}
+      FLOCK_SIGNUP_CODE: ${FLOCK_SIGNUP_CODE:-}
+      FLOCK_GENERATE_DAILY_LIMIT: ${FLOCK_GENERATE_DAILY_LIMIT:-20}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  flock-data:
