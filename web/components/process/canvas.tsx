@@ -3,7 +3,7 @@ import "@xyflow/react/dist/style.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BaseEdge, Controls, EdgeLabelRenderer, type Edge, type EdgeProps, Handle, MarkerType, type Node, type NodeProps, type OnSelectionChangeFunc, Position, ReactFlow, ReactFlowProvider, getBezierPath, useEdgesState, useNodesInitialized, useNodesState, useReactFlow } from "@xyflow/react";
-import { ArrowDownToLine, Plus, X } from "lucide-react";
+import { ArrowDownToLine, Hourglass, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { INLINE_INPUT, accent } from "@/components/org/parts";
 import { fmt } from "@/components/page";
@@ -39,21 +39,23 @@ const TAG = "pointer-events-none absolute -top-4 whitespace-nowrap text-[10px] t
 
 function StepNode({ data }: NodeProps<Node<StepData, "step">>) {
   const { st, color, deptName, issues, fanIn, fanOut } = data;
+  const wait = st.required_skill === null;
   return (
-    <div className="relative flex w-52 flex-col gap-0.5 rounded-xl py-2 pr-2 pl-3.5 glass-inset">
+    <div className={`relative flex w-52 flex-col gap-0.5 rounded-xl py-2 pr-2 pl-3.5 glass-inset ${wait ? "border border-dashed border-muted-foreground/50" : ""}`}>
       <span aria-hidden className={`absolute inset-y-2 left-1 rounded-full ${color ? "w-[3px]" : "border-l-[3px] border-dashed border-muted-foreground/50"}`} style={color ? { background: color } : undefined} />
       <div className="flex items-center gap-1.5">
         <NameInput name={st.name} label={`name of step ${st.id}`} {...data} />
         {issues.length > 0 && <span title={issues.map((i) => i.text).join("\n")} className="size-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]" />}
       </div>
       <div className="flex items-center gap-1.5 px-1.5 text-xs text-muted-foreground">
-        <span className="truncate">{`${deptName || "no department"} · ${fmt(durationMean(st.duration))} min`}</span>
+        {wait ? <Hourglass aria-label="waiting, nobody works" className="size-3 shrink-0" /> : <span className="truncate">{deptName || "no department"}</span>}
+        <span className="shrink-0">{`· ${fmt(durationMean(st.duration))} min`}</span>
         {st.system_id && <span className="shrink-0 rounded-full px-1.5 font-mono text-[10px] glass-inset">{st.system_id}</span>}
       </div>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       {fanIn >= 2 && <span className={`${TAG} left-0`}>waits for all</span>}
-      {fanOut >= 2 && <span className={`${TAG} right-0`}>all run</span>}
+      {fanOut >= 2 && <span className={`${TAG} right-0`}>{st.branches?.length ? "by chance" : "all run"}</span>}
     </div>
   );
 }
@@ -79,13 +81,15 @@ const INFLOW = "application/x-flock-inflow";
 const CHIP = "press flex cursor-grab items-center gap-2 rounded-xl px-3 py-2 text-left text-sm glass-inset";
 
 /** Bezier arrow with a remove button at its midpoint while hovered or selected. */
-function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, selected, data }: EdgeProps<Edge<{ onRemove: () => void }>>) {
+function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, selected, data }: EdgeProps<Edge<{ onRemove: () => void; label?: string }>>) {
   const [hover, setHover] = useState(false);
   const [path, x, y] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   return (
     <>
       <g onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}><BaseEdge path={path} markerEnd={markerEnd} /></g>
       <EdgeLabelRenderer>
+        {data?.label && <span className="pointer-events-none absolute rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground"
+          style={{ transform: `translate(-50%, -150%) translate(${x}px, ${y}px)` }}>{data.label}</span>}
         <button type="button" aria-label="remove arrow" onClick={data?.onRemove}
           className={`nodrag nopan pointer-events-auto absolute flex size-4 items-center justify-center rounded-full bg-muted text-muted-foreground transition-opacity hover:text-foreground hover:opacity-100 focus-visible:opacity-100 ${selected || hover ? "opacity-100" : "opacity-0"}`}
           style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }}><X className="size-3" /></button>
@@ -137,8 +141,9 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
           ...named(st.id, (w, to, name) => renameStep({ ...w, steps: w.steps.map((s) => (s.id === st.id ? { ...s, name } : s)) }, st.id, to), "step") } };
       }),
     ].map((n) => ({ ...n, measured: prev.find((p) => p.id === n.id)?.measured }))); // kept sizes spare every node a hidden re-measure
+    const prob = (from: string, to: string) => wf.steps.find((s) => s.id === from)?.branches?.find((b) => b.to === to)?.prob;
     const edge = (from: string, to: string) => ({ id: `${from}->${to}`, source: from, target: to, type: "flow", deletable: true, markerEnd: { type: MarkerType.ArrowClosed },
-      data: { onRemove: () => onChange(disconnect(toInflows(wf), from, to)) } });
+      data: { onRemove: () => onChange(disconnect(toInflows(wf), from, to)), label: prob(from, to) === undefined ? undefined : `${+(prob(from, to)! * 100).toFixed(1)}%` } });
     setEdges((prev) => [...inflows.flatMap((i) => i.entry.map((e) => edge(i.id, e))), ...wf.steps.flatMap((s) => (s.depends_on ?? []).map((d) => edge(d, s.id)))]
       .map((e) => ({ ...e, selected: prev.find((p) => p.id === e.id)?.selected }))); // a selected edge stays deletable across re-syncs
   }, [wf, company, selected, focusId, onChange, setNodes, setEdges]);
@@ -204,7 +209,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         <button type="button" className={CHIP} {...chip(INFLOW, "")} onClick={() => clickAdd("inflow")}><ArrowDownToLine className="size-3.5" /> Inflow</button>
         <button type="button" className="press rounded-full border border-border px-3 py-1.5 text-sm hover:bg-muted"
           onClick={() => { edit((w) => ({ ...w, layout: autoLayout(w) })); setTimeout(() => fitView({ duration: 300 })); }}>Auto layout</button>
-        <p className="hidden text-xs text-muted-foreground lg:block">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run. An either/or split is modelled as two inflows.</p>
+        <p className="hidden text-xs text-muted-foreground lg:block">Several arrows into a step mean it waits for all of them; several arrows out mean all of them run, unless the step gives them a chance in % under Branches.</p>
       </div>
       <div className="flex min-h-0 flex-col gap-2">
         <div ref={box} className="glass min-h-[32rem] flex-1 overflow-hidden rounded-2xl lg:min-h-0" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>

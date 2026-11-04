@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { type Schedule, DAYS } from "@/lib/company";
+import { type Hours, type Schedule, DAYS, mergeWindows, splitAt, windowsOf } from "@/lib/company";
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 
@@ -34,35 +34,51 @@ export function Pick({ label, value, items, onChange, className = "w-48", placeh
   );
 }
 
-// shortcut: one [start, end] for every working day; per-day hours and absences are edited in the JSON tab
+// shortcut: the same one or two windows for every working day; per-day hours and absences are edited in the JSON tab
 export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedule: Schedule; onChange: (s: Schedule) => void }) {
   const days = Object.keys(schedule.weekday_hours);
-  const [kept, setKept] = useState<[number, number]>([9, 17]); // hours survive unchecking every day
-  const [start, end] = days.length ? schedule.weekday_hours[days[0]] : kept;
-  const uniform = days.every((k) => schedule.weekday_hours[k][0] === start && schedule.weekday_hours[k][1] === end);
-  if (!uniform) return <p className="text-xs">per-day hours: edit in the JSON tab</p>;
-  const rebuild = (keys: string[], s: number, e: number) => {
-    s = clamp(Math.floor(s), 0, 23);
-    e = clamp(Math.floor(e), s + 1, s + 24); // loader rule: 0 <= start < 24, start < end <= start + 24
-    setKept([s, e]);
-    onChange({ ...schedule, weekday_hours: Object.fromEntries(keys.sort().map((k) => [k, [s, e] as [number, number]])) });
+  const [kept, setKept] = useState<Hours[]>([[9, 17]]); // hours survive unchecking every day
+  const wins = days.length ? windowsOf(schedule.weekday_hours[days[0]]) : kept;
+  const same = (k: string) => JSON.stringify(windowsOf(schedule.weekday_hours[k])) === JSON.stringify(wins);
+  if (!wins.length || wins.length > 2 || !days.every(same)) return <p className="text-xs">per-day hours: edit in the JSON tab</p>;
+  const rebuild = (keys: string[], ws: Hours[]) => {
+    let lo = 0;
+    ws = ws.map(([s, e]) => { // loader rule: start < end <= start + 24, windows in order without overlap
+      s = clamp(Math.floor(s), lo, 23);
+      e = clamp(Math.floor(e), s + 1, s + 24);
+      lo = e;
+      return [s, e];
+    });
+    setKept(ws);
+    onChange({ ...schedule, weekday_hours: Object.fromEntries(keys.sort().map((k) => [k, ws.length === 1 ? ws[0] : ws])) });
   };
+  const at = (i: number, j: 0 | 1, v: number) => rebuild(days, wins.map((w, k) => (k === i ? (j ? [w[0], v] : [v, w[1]]) : w)));
+  const [s0, e0] = wins[0];
+  const btn = "press self-start rounded-full border border-border px-2 py-0.5 hover:bg-muted";
   return (
     <div className="flex flex-col gap-1.5 text-[11px] text-muted-foreground">
       <div className="flex gap-1.5">
         {DAYS.map((name, d) => (
           <Label key={d} className="flex items-center gap-1 text-[11px] font-normal">
             <Checkbox aria-label={`${name} for ${id}`} checked={days.includes(String(d))}
-              onCheckedChange={(c) => rebuild(c ? [...days, String(d)] : days.filter((k) => k !== String(d)), start, end)} /> {name}
+              onCheckedChange={(c) => rebuild(c ? [...days, String(d)] : days.filter((k) => k !== String(d)), wins)} /> {name}
           </Label>
         ))}
       </div>
-      <div className="flex items-center gap-1">
-        <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`shift start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : rebuild(days, Number(e.target.value), end))} />
-        to
-        <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`shift end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : rebuild(days, start, Number(e.target.value)))} />
-        h (overnight: end past 24)
-      </div>
+      {wins.map(([start, end], i) => {
+        const which = i ? "second shift" : "shift";
+        return (
+          <div key={i} className="flex items-center gap-1">
+            <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`${which} start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : at(i, 0, Number(e.target.value)))} />
+            to
+            <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`${which} end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : at(i, 1, Number(e.target.value)))} />
+            {i ? "h after the break" : "h (overnight: end past 24)"}
+          </div>
+        );
+      })}
+      {days.length > 0 && (wins.length === 2
+        ? <button type="button" className={btn} onClick={() => onChange(mergeWindows(schedule))}>Remove break</button>
+        : e0 - s0 >= 3 && <button type="button" className={btn} onClick={() => onChange(splitAt(schedule, clamp(13, s0 + 1, e0 - 2)))}>Add break</button>)}
     </div>
   );
 }

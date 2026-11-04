@@ -1,11 +1,8 @@
 import { Clock } from "lucide-react";
 import { cn } from "cn";
 import { accent } from "@/components/org/parts";
-import { type Company, type Schedule, type Step, type Workflow, DAYS, durationMean } from "@/lib/company";
-
-/** True when no resource in the step's department has its skill: the engine would queue it forever. */
-export const unskilled = (c: Company, st: Step) =>
-  !c.departments.find((d) => d.id === st.department_id)?.resources.some((r) => r.skills.includes(st.required_skill));
+import { unskilled } from "@/components/process/graph";
+import { type Company, type Schedule, type Workflow, DAYS, durationMean, windowsOf } from "@/lib/company";
 
 /** Sum of step means; null when any step has a duration kind without a simple mean. */
 export function cycleMean(wf: Workflow): number | null {
@@ -22,7 +19,7 @@ export function cycleMean(wf: Workflow): number | null {
 export function windowSummary(s: Schedule): string {
   const days = Object.keys(s.weekday_hours).map(Number).sort((a, b) => a - b);
   if (!days.length) return "no arrival window";
-  const hours = ([a, b]: [number, number]) => `${a}–${b}`;
+  const hours = (v: Schedule["weekday_hours"][string]) => windowsOf(v).map(([a, b]) => `${a}–${b}`).join(", ");
   const [h0] = days.map((d) => s.weekday_hours[String(d)]);
   if (!days.every((d) => hours(s.weekday_hours[String(d)]) === hours(h0)))
     return days.map((d) => `${DAYS[d]} ${hours(s.weekday_hours[String(d)])}`).join(", ");

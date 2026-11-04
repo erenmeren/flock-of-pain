@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Maximize2, Minimize2, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/hint";
 import { IconTile, PageHeader, fmt } from "@/components/page";
-import { IdTag } from "@/components/editor-fields";
+import { IdTag, clamp } from "@/components/editor-fields";
 import { Input } from "@/components/ui/input";
 import { INLINE_INPUT } from "@/components/org/parts";
 import { ProcessCanvas } from "@/components/process/canvas";
@@ -57,7 +58,7 @@ export function WorkflowPage() {
   const scen = scenarioRefs(scenarios).workflows.has(wf.id);
   return (
     <div className="flex h-full flex-col gap-4">
-      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(rateOf(wf), 2)}/h · ${n} inflow${n === 1 ? "" : "s"} · total work ${fmt(cycleMean(wf))} min`}>
+      <PageHeader title={wf.name} subtitle={`${wf.id} · ${fmt(rateOf(wf), 2)}/h · ${n} inflow${n === 1 ? "" : "s"} · total work ${fmt(cycleMean(wf))} min${wf.cutoff_hour === undefined ? "" : ` · Cut-off ${String(wf.cutoff_hour).padStart(2, "0")}:00`}`}>
         <Button variant="outline" size="sm" className="rounded-full" aria-pressed={focus} onClick={() => setFocus((f) => !f)}>{focus ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />} {focus ? "Exit focus" : "Focus"}</Button>
         {back}
       </PageHeader>
@@ -74,6 +75,13 @@ export function WorkflowPage() {
             }} />
           <IdTag id={wf.id} />
         </div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Cut-off hour<Hint id="cutoff" />
+          <Input key={wf.cutoff_hour ?? "none"} type="number" min={0} max={23} aria-label={`cut-off hour of ${wf.id}`} className="h-7 w-16 tabular-nums" placeholder="none" defaultValue={wf.cutoff_hour ?? ""}
+            onBlur={(e) => {
+              const t = e.target.value.trim(), v = t === "" ? undefined : clamp(Math.floor(Number(t)), 0, 23);
+              if (v !== wf.cutoff_hour) { const w = { ...wf, cutoff_hour: v }; if (v === undefined) delete w.cutoff_hour; onChange(w); }
+            }} />
+        </label>
         <Button variant="destructive" size="sm" className="rounded-full" disabled={scen} title={scen ? "referenced by a scenario" : undefined} onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>
       </div>
       <ProcessCanvas wf={wf} company={company} onChange={onChange} />

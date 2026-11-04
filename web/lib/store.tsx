@@ -11,7 +11,7 @@ import { useConfirm } from "@/lib/confirm";
 
 export type Config = { seed: number; days: number; replications: number; policy: string; include_events: boolean; save: boolean };
 export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", include_events: false, save: false };
-export const POLICIES = ["priority", "fifo", "least_loaded"];
+export const POLICIES = ["priority", "fifo", "least_loaded", "edd"];
 
 /** Where the shown result came from, so a page never mixes another company's numbers with this one. */
 export type ResultSource = { kind: "run"; company_id: string; name: string } | { kind: "history"; run_id: number; name: string };

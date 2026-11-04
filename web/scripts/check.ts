@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { membersOf, movePerson, removeDepartment, removeResource, setResource } from "@/components/org/ops";
 import { deptColumns, handoffs, healthScores, mapEdges, minutes, workflowMeans } from "@/components/dashboard/derive";
-import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, stepIssues, toInflows, wouldCycle } from "@/components/process/graph";
+import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, setBranch, stepIssues, toInflows, unskilled, wouldCycle } from "@/components/process/graph";
+
 import { autoLayout, fillLayout } from "@/components/process/layout";
-import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, renameDepartment, renameInScenarios, renameSystem, scenarioRefs, slug } from "@/lib/company";
+import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, mergeWindows, renameDepartment, renameInScenarios, renameSystem, scenarioRefs, setMultiplier, slug, splitAt, windowsOf } from "@/lib/company";
 import type { SimEvent } from "@/lib/api";
 import { snapshot } from "@/lib/playback";
 
@@ -167,7 +168,7 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
 
 // workflowMeans averages per-workflow metrics over replications
 {
-  const m = (completed: number) => ({ started: 4, completed, cancelled: 0, throughput_per_day: completed, cycle_p50: 10, cycle_p90: 20, wait_p50: 0, wait_p90: 0, sla_breached: 0, sla_breach_rate: 0, steps_completed: 0, failures: 0, rework_rate: 0, cost_per_completed: 0 });
+  const m = (completed: number) => ({ started: 4, completed, cancelled: 0, throughput_per_day: completed, cycle_p50: 10, cycle_p90: 20, wait_p50: 0, wait_p90: 0, sla_breached: 0, sla_breach_rate: 0, deadline_missed: 0, deadline_miss_rate: 0, steps_completed: 0, failures: 0, rework_rate: 0, cost_per_completed: 0 });
   const s = { id: "s", name: "s", summary: {}, ledger: [], off_shift_minutes: 0, runs: [{ seed: 1, metrics: { workflows: { a: m(2) } } }, { seed: 2, metrics: { workflows: { a: m(4) } } }] };
   assert.equal(workflowMeans(s).a.completed, 3);
   assert.equal(workflowMeans(s).a.cycle_p50, 10);
@@ -255,6 +256,67 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(at(9).tasks[0].state, "QUEUED"); // stops before the t=10 start
   assert.deepEqual(at(9).perDept, { a: { QUEUED: 1, IN_PROGRESS: 0, BLOCKED: 0 } });
   assert.equal(at(60).tasks.length, 0);
+}
+
+// office-floor model: split shifts, demand profiles, cut-off, branches, wait steps
+{
+  // windowsOf reads a bare pair or a list of pairs
+  assert.deepEqual(windowsOf([9, 17]), [[9, 17]]);
+  assert.deepEqual(windowsOf([[9, 13], [14, 17]]), [[9, 13], [14, 17]]);
+  assert.deepEqual(windowsOf([]), []);
+  // splitAt cuts a one-hour break at `hour` in every day; mergeWindows undoes it as a bare pair
+  const two = { weekday_hours: { "0": [9, 17] as [number, number], "1": [9, 17] as [number, number] }, absences: [[0, 1] as [number, number]] };
+  const split = splitAt(two, 13);
+  assert.deepEqual(split.weekday_hours, { "0": [[9, 13], [14, 17]], "1": [[9, 13], [14, 17]] });
+  assert.deepEqual(split.absences, two.absences);
+  assert.deepEqual(mergeWindows(split), two);
+  assert.deepEqual(splitAt({ weekday_hours: { "0": [9, 10] } }, 13).weekday_hours, { "0": [9, 10] }); // no room for a break: unchanged
+  assert.deepEqual(mergeWindows(two), two);
+  // setMultiplier keeps only values that differ from 1 and drops an empty profile
+  const p1 = setMultiplier(undefined, "hours", "9", 2);
+  assert.deepEqual(p1, { hours: { "9": 2 } });
+  assert.deepEqual(setMultiplier(p1, "weekdays", "4", 0.5), { hours: { "9": 2 }, weekdays: { "4": 0.5 } });
+  assert.equal(setMultiplier(p1, "hours", "9", 1), undefined);
+
+  // checkCompany: the new shapes load, the broken ones are rejected
+  const wait = { ...step("w", "a"), required_skill: null, depends_on: ["1"] };
+  const okc: Company = { ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [{ ...chain, cutoff_hour: 22,
+    arrival: { ...chain.arrival, profile: { hours: { "9": 0.5 }, weekdays: { "0": 1.3 } }, window: { weekday_hours: { "0": [[9, 13], [14, 17]] } } },
+    steps: [{ ...chain.steps[0], branches: [{ to: "2", prob: 0.15 }] }, ...chain.steps.slice(1), wait] }] };
+  checkCompany(okc);
+  const wf0 = okc.workflows[0];
+  const bad = (w: object) => () => checkCompany({ ...okc, workflows: [{ ...wf0, ...w }] });
+  assert.throws(bad({ steps: [{ ...wf0.steps[0], branches: [{ to: "ghost", prob: 0.1 }] }, ...wf0.steps.slice(1)] }), /branch to unknown step ghost/);
+  assert.throws(bad({ steps: [...wf0.steps.slice(0, 4), { ...wait, system_id: "erp" }] }), /wait step.*system/);
+  assert.throws(bad({ cutoff_hour: 24 }), /cutoff_hour/);
+  assert.throws(bad({ cutoff_hour: -1 }), /cutoff_hour/);
+  assert.throws(bad({ arrival: { ...wf0.arrival, profile: { hours: { "9": "x" } } } }), /profile/);
+  assert.throws(() => checkCompany({ ...okc, workflows: [{ ...wf0, arrival: undefined, inflows: [{ id: "i", name: "i", rate_per_hour: 1, window: sched, entry: [], profile: { weekdays: { "0": null } } }] }] }), /profile/);
+  assert.throws(() => checkCompany({ ...c, departments: [{ id: "a", name: "A", resources: [{ id: "r", skills: [], cost_per_hour: 1, schedule: { weekday_hours: { "0": [[9, 13], 14] } } }] }] }), /weekday_hours/);
+
+  // a wait step needs no skill: no issue, not unskilled, run not blocked; hand-offs and map edges as with a worked step
+  assert.deepEqual(stepIssues(c, c1, { ...step("1", "a"), required_skill: null }).map((i) => i.text), []);
+  assert.equal(unskilled(c, { ...step("1", "b"), required_skill: null }), false);
+  assert.equal(blockingIssue({ ...c, workflows: [{ ...c1, steps: c1.steps.map((s) => ({ ...s, required_skill: null, system_id: null })) }] }), null);
+  const waitChain = { ...chain, steps: chain.steps.map((s, i) => (i === 2 ? { ...s, required_skill: null } : s)) };
+  assert.equal(handoffs(waitChain), handoffs(chain));
+  assert.deepEqual(edgeKeys(waitChain), edgeKeys(chain));
+
+  // setBranch: a percentage sets the target's probability, 0 or null removes it (= always runs)
+  const b1 = setBranch(step("x", "a"), "y", 0.15);
+  assert.deepEqual(b1.branches, [{ to: "y", prob: 0.15 }]);
+  assert.deepEqual(setBranch(b1, "z", 0.05).branches, [{ to: "y", prob: 0.15 }, { to: "z", prob: 0.05 }]);
+  assert.deepEqual(setBranch(b1, "y", 0.2).branches, [{ to: "y", prob: 0.2 }]);
+  assert.equal(setBranch(b1, "y", null).branches, undefined);
+  // branches follow renames, removals and a removed arrow
+  const bw: Workflow = { ...c1, steps: [{ ...c1.steps[0], branches: [{ to: "2", prob: 0.3 }] }, ...c1.steps.slice(1)] };
+  assert.deepEqual(renameStep(bw, "2", "two").steps[0].branches, [{ to: "two", prob: 0.3 }]);
+  assert.equal(removeNode(bw, "2").steps[0].branches, undefined);
+  assert.equal(disconnect(bw, "1", "2").steps[0].branches, undefined);
+  assert.deepEqual(disconnect(bw, "phone", "1").steps[0].branches, [{ to: "2", prob: 0.3 }]);
+
+  // windowed arrival multipliers pass the scenario check
+  checkScenarios([{ id: "s", name: "s", overlays: [{ type: "arrival_multiplier", factor: 1.5, workflow_id: null, start: 480, end: 960 }] }]);
 }
 
 console.log("ok");

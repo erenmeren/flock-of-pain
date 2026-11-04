@@ -2,7 +2,8 @@
 
 import { Clock } from "lucide-react";
 import { cn } from "cn";
-import { cycleMean, unskilled } from "@/components/process/step-chain";
+import { cycleMean } from "@/components/process/step-chain";
+import { unskilled } from "@/components/process/graph";
 import { accent } from "@/components/org/parts";
 import { fmt } from "@/components/page";
 import type { ScenarioResult } from "@/lib/api";

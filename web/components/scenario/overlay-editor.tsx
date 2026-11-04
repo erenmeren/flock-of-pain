@@ -70,6 +70,11 @@ export function OverlayEditor({ o, company: c, taken = [], onChange, onRemove }:
           <Pick label="multiplied workflow" value={o.workflow_id ?? ALL} items={{ [ALL]: "all workflows", ...Object.fromEntries(c.workflows.map((w) => [w.id, w.name])) }}
             onChange={(v) => onChange({ ...o, workflow_id: v === ALL ? null : v })} />
         </Field>
+        <Field label="When">
+          <Pick label="multiplier window" className="w-36" value={o.start === undefined ? ALL : "window"} items={{ [ALL]: "whole run", window: "time window" }}
+            onChange={(v) => { const w: typeof o = { ...o, start: 2 * DAY + 480, end: 2 * DAY + 960 }; if (v === ALL) { delete w.start; delete w.end; } onChange(w); }} />
+        </Field>
+        {o.start !== undefined && o.end !== undefined && <MinuteRange label="multiplier window" start={o.start} end={o.end} onChange={(start, end) => onChange({ ...o, start, end })} />}
       </>;
       break;
     case "system_outage":

@@ -1,6 +1,8 @@
 // TypeScript mirror of the Company JSON contract (src/flock_of_pain/io.py).
 export type Hours = [number, number];
-export type Schedule = { weekday_hours: Record<string, Hours>; absences?: Hours[] };
+export type Schedule = { weekday_hours: Record<string, Hours | Hours[]>; absences?: Hours[] }; // one pair or a list of windows per day
+/** Multipliers on rate_per_hour by hour of day ("0".."23") and weekday ("0".."6"); a missing key is 1. */
+export type Profile = { hours?: Record<string, number>; weekdays?: Record<string, number> };
 export type Resource = {
   id: string;
   name?: string;
@@ -18,7 +20,7 @@ export type Step = {
   id: string;
   name: string;
   department_id: string;
-  required_skill: string;
+  required_skill: string | null; // null = wait step: nobody works, it only takes time
   duration: Dist;
   depends_on?: string[];
   system_id?: string | null;
@@ -27,13 +29,15 @@ export type Step = {
   failure_prob?: number;
   rework_to?: string | null;
   max_retries?: number;
+  branches?: { to: string; prob: number }[]; // exactly one target (or none) runs; the rest are skipped
 };
 export type Pos = [number, number];
-export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[] };
+export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[]; profile?: Profile };
 export type Workflow = {
   id: string;
   name: string;
-  arrival?: { rate_per_hour: number; window: Schedule }; // an arrival or inflows, never both
+  arrival?: { rate_per_hour: number; window: Schedule; profile?: Profile }; // an arrival or inflows, never both
+  cutoff_hour?: number; // an instance is due at the next time of day with this hour
   inflows?: Inflow[];
   layout?: Record<string, Pos>; // canvas positions by step/inflow id
   steps: Step[];
@@ -53,6 +57,34 @@ export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const weekdays9to5 = (): Schedule => ({
   weekday_hours: Object.fromEntries([0, 1, 2, 3, 4].map((d) => [String(d), [9, 17]])),
 });
+
+/** The windows of one weekday_hours value: a bare pair reads as one window. */
+export const windowsOf = (v: Hours | Hours[]): Hours[] => (typeof v[0] === "number" ? [v as Hours] : (v as Hours[]));
+
+/** Every day's window that holds `hour` gets a one-hour break there: [s, e] -> [s, hour], [hour + 1, e]. */
+export function splitAt(s: Schedule, hour: number): Schedule {
+  const cut = (ws: Hours[]): Hours | Hours[] => {
+    const out = ws.flatMap(([a, b]): Hours[] => (a < hour && hour + 1 < b ? [[a, hour], [hour + 1, b]] : [[a, b]]));
+    return out.length === 1 ? out[0] : out;
+  };
+  return { ...s, weekday_hours: Object.fromEntries(Object.entries(s.weekday_hours).map(([k, v]) => [k, cut(windowsOf(v))])) };
+}
+
+/** Every day back to one window, from its first start to its last end. */
+export function mergeWindows(s: Schedule): Schedule {
+  return { ...s, weekday_hours: Object.fromEntries(Object.entries(s.weekday_hours).map(([k, v]) => {
+    const ws = windowsOf(v);
+    return [k, ws.length ? [ws[0][0], ws[ws.length - 1][1]] as Hours : v];
+  })) };
+}
+
+/** Profile with `key`'s multiplier at `k` set; values of 1 are dropped and an all-1 profile is undefined. */
+export function setMultiplier(p: Profile | undefined, key: keyof Profile, k: string, v: number): Profile | undefined {
+  const m = Object.fromEntries(Object.entries({ ...p?.[key], [k]: v }).filter(([, x]) => x !== 1));
+  const out: Profile = { ...p, [key]: m };
+  if (!Object.keys(m).length) delete out[key];
+  return Object.keys(out).length ? out : undefined;
+}
 
 export const slug = (s: string) =>
   s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -76,9 +108,11 @@ export function checkCompany(c: unknown): Company {
   if (typeof c.id !== "string" || !c.id || typeof c.name !== "string") throw new Error("company needs a non-empty string id and a string name");
   const out = { systems: [], workflows: [], ...c } as unknown as Company;
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
-  const hoursOk = (h: unknown) => isObj(h) && Object.values(h).every((v) => Array.isArray(v) && v.length === 2);
-  const stepOk = (st: unknown) => isObj(st) && typeof st.id === "string" && typeof st.required_skill === "string" && isObj(st.duration)
-    && (st.depends_on === undefined || Array.isArray(st.depends_on));
+  const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && typeof v[0] === "number" && typeof v[1] === "number";
+  const hoursOk = (h: unknown) => isObj(h) && Object.values(h).every((v) => pair(v) || (Array.isArray(v) && v.every(pair)));
+  const stepOk = (st: unknown) => isObj(st) && typeof st.id === "string" && (typeof st.required_skill === "string" || st.required_skill === null) && isObj(st.duration)
+    && (st.depends_on === undefined || Array.isArray(st.depends_on))
+    && (st.branches === undefined || (Array.isArray(st.branches) && st.branches.every((b) => isObj(b) && typeof b.to === "string" && typeof b.prob === "number")));
   if (!Array.isArray(out.workflows) || !out.workflows.every((w) => isObj(w) && Array.isArray(w.steps) && w.steps.every(stepOk)
       && (w.arrival === undefined || (isObj(w.arrival) && typeof w.arrival.rate_per_hour === "number" && isObj(w.arrival.window) && hoursOk(w.arrival.window.weekday_hours)))
       && (w.inflows === undefined || (Array.isArray(w.inflows) && w.inflows.every((i) => isObj(i) && typeof i.id === "string" && Array.isArray(i.entry)
@@ -92,11 +126,16 @@ export function checkCompany(c: unknown): Company {
     for (const r of d.resources) {
       if (!isObj(r) || !Array.isArray(r.skills)) throw new Error("each resource needs a skills list");
       if (r.schedule != null && (!isObj(r.schedule) || !hoursOk(r.schedule.weekday_hours)))
-        throw new Error("schedule needs weekday_hours of [start, end] pairs");
+        throw new Error("schedule needs weekday_hours of [start, end] pairs or lists of them");
     }
   }
   const depts = new Set(out.departments.map((d) => d.id)), systems = new Set(out.systems.map((s) => s.id));
+  const profileOk = (p: unknown) => p === undefined || (isObj(p) && [p.hours, p.weekdays].every((m) => m === undefined || (isObj(m) && Object.values(m).every((v) => typeof v === "number"))));
   for (const w of out.workflows) {
+    if (w.cutoff_hour !== undefined && !(typeof w.cutoff_hour === "number" && w.cutoff_hour >= 0 && w.cutoff_hour < 24))
+      throw new Error(`workflow ${w.id}: cutoff_hour must be a number in [0, 24)`);
+    if (![w.arrival?.profile, ...(w.inflows ?? []).map((i) => i.profile)].every(profileOk))
+      throw new Error(`workflow ${w.id}: profile multipliers must be numbers`);
     const steps = new Set(w.steps.map((s) => s.id));
     for (const st of w.steps) {
       const at = `step ${st.id} in workflow ${w.id}`;
@@ -104,6 +143,9 @@ export function checkCompany(c: unknown): Company {
       if (st.system_id && !systems.has(st.system_id)) throw new Error(`${at}: unknown system ${st.system_id}`);
       const dep = st.depends_on?.find((d) => !steps.has(d));
       if (dep !== undefined) throw new Error(`${at}: depends on unknown step ${dep}`);
+      const to = st.branches?.find((b) => !steps.has(b.to));
+      if (to) throw new Error(`${at}: branch to unknown step ${to.to}`);
+      if (st.required_skill === null && st.system_id) throw new Error(`${at}: a wait step cannot use a system`);
     }
   }
   const outage = out.outages?.find((o) => !systems.has(o[0]));
@@ -144,7 +186,7 @@ export function durationMean(d: Dist): number | null {
 
 // Scenario JSON contract (src/flock_of_pain/io.py: OVERLAY_TYPES).
 export type Overlay =
-  | { type: "arrival_multiplier"; factor: number; workflow_id: string | null }
+  | { type: "arrival_multiplier"; factor: number; workflow_id: string | null; start?: number; end?: number } // no start/end = whole run
   | { type: "system_outage"; system_id: string; start: number; end: number }
   | { type: "add_employee"; department_id: string; employee: Resource }
   | { type: "remove_resource"; resource_id: string }

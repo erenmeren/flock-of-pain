@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type Config, POLICIES, useTwin } from "@/lib/store";
 
+const POLICY_LABEL: Record<string, string> = { edd: "Earliest due date" };
 const NUMBERS: [keyof Config, string][] = [["seed", "Seed"], ["days", "Days"], ["replications", "Replications"]];
 const FIELD = "flex flex-col items-start gap-1.5 rounded-xl glass-inset p-3 text-[11px] font-normal uppercase tracking-wide text-muted-foreground";
 const TOGGLE = "flex cursor-pointer items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm font-normal hover:bg-white/[0.05]";
@@ -43,9 +44,9 @@ export default function Simulation() {
             ))}
             <Label className={FIELD}>
               <span className="flex items-center gap-1">Policy<Hint id="policy" /></span>
-              <Select value={config.policy} items={Object.fromEntries(POLICIES.map((p) => [p, p]))} onValueChange={(v) => v && setConfig({ ...config, policy: v })}>
+              <Select value={config.policy} items={Object.fromEntries(POLICIES.map((p) => [p, POLICY_LABEL[p] ?? p]))} onValueChange={(v) => v && setConfig({ ...config, policy: v })}>
                 <SelectTrigger aria-label="policy" className="w-full normal-case tracking-normal"><SelectValue /></SelectTrigger>
-                <SelectContent>{POLICIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+                <SelectContent>{POLICIES.map((p) => <SelectItem key={p} value={p}>{POLICY_LABEL[p] ?? p}</SelectItem>)}</SelectContent>
               </Select>
             </Label>
           </div>

@@ -74,12 +74,22 @@ export function connect(wf: Workflow, from: string, to: string): Workflow | null
   return { ...wf, steps: wf.steps.map((s) => (s.id === to ? { ...s, depends_on: [...deps(s), from] } : s)) };
 }
 
+/** The step with `to` as a branch target at probability `prob`; 0 or null takes it out (it always runs). */
+export function setBranch(st: Step, to: string, prob: number | null): Step {
+  const bs = st.branches ?? [];
+  const next = prob ? (bs.some((b) => b.to === to) ? bs.map((b) => (b.to === to ? { to, prob } : b)) : [...bs, { to, prob }]) : bs.filter((b) => b.to !== to);
+  const out: Step = { ...st, branches: next };
+  if (!next.length) delete out.branches;
+  return out;
+}
+
 /** Removes the edge from -> to; a `rework_to` that pointed at the removed dependency is cleared. */
 export function disconnect(wf: Workflow, from: string, to: string): Workflow {
   return {
     ...wf,
     inflows: wf.inflows?.map((i) => (i.id === from ? { ...i, entry: i.entry.filter((e) => e !== to) } : i)),
-    steps: wf.steps.map((s) => (s.id === to && !wf.inflows?.some((i) => i.id === from) ? { ...s, depends_on: deps(s).filter((d) => d !== from), rework_to: s.rework_to === from ? null : s.rework_to } : s)),
+    steps: wf.steps.map((s) => (s.id === to && !wf.inflows?.some((i) => i.id === from) ? { ...s, depends_on: deps(s).filter((d) => d !== from), rework_to: s.rework_to === from ? null : s.rework_to }
+      : s.id === from && s.branches ? setBranch(s, to, null) : s)),
   };
 }
 
@@ -89,7 +99,7 @@ export function removeNode(wf: Workflow, id: string): Workflow {
     ...wf,
     inflows: wf.inflows?.filter((i) => i.id !== id).map((i) => ({ ...i, entry: i.entry.filter((e) => e !== id) })),
     layout: without(wf.layout, id),
-    steps: wf.steps.filter((s) => s.id !== id).map((s) => ({ ...s, depends_on: deps(s).filter((d) => d !== id), rework_to: s.rework_to === id ? null : s.rework_to })),
+    steps: wf.steps.filter((s) => s.id !== id).map((s) => setBranch({ ...s, depends_on: deps(s).filter((d) => d !== id), rework_to: s.rework_to === id ? null : s.rework_to }, id, null)),
   };
 }
 
@@ -100,7 +110,8 @@ export function renameStep(wf: Workflow, from: string, to: string): Workflow {
     ...wf,
     inflows: wf.inflows?.map((i) => ({ ...i, entry: i.entry.map(r) })),
     layout: moved(wf.layout, from, to),
-    steps: wf.steps.map((s) => ({ ...s, id: r(s.id), depends_on: deps(s).map(r), rework_to: s.rework_to == null ? s.rework_to : r(s.rework_to) })),
+    steps: wf.steps.map((s) => ({ ...s, id: r(s.id), depends_on: deps(s).map(r), rework_to: s.rework_to == null ? s.rework_to : r(s.rework_to),
+      ...(s.branches && { branches: s.branches.map((b) => ({ ...b, to: r(b.to) })) }) })),
   };
 }
 
@@ -148,6 +159,10 @@ export function nextFreePos(wf: Workflow): Pos {
   return [r[0] + COL, r[1]];
 }
 
+/** True when no resource in the step's department has its skill: the engine would queue it forever. A wait step needs nobody. */
+export const unskilled = (c: Company, st: Step) => st.required_skill !== null
+  && !c.departments.find((d) => d.id === st.department_id)?.resources.some((r) => r.skills.includes(st.required_skill!));
+
 export type Issue = { blocking: boolean; text: string };
 
 /** What is wrong with a step: unfinished fields block a run, the rest only warn. */
@@ -156,7 +171,7 @@ export function stepIssues(c: Company, wf: Workflow, st: Step, reach = reachable
   const dept = c.departments.find((d) => d.id === st.department_id);
   if (st.department_id === "") out.push({ blocking: true, text: "Who does this?" });
   if (st.required_skill === "") out.push({ blocking: true, text: "What skill is needed?" });
-  else if (st.department_id !== "" && !dept?.resources.some((r) => r.skills.includes(st.required_skill)))
+  else if (st.required_skill !== null && st.department_id !== "" && !dept?.resources.some((r) => r.skills.includes(st.required_skill!)))
     out.push({ blocking: false, text: `Nobody in ${dept?.name ?? st.department_id} has \`${st.required_skill}\`` });
   if (!reach.has(st.id)) out.push({ blocking: false, text: "Not connected to an inflow" });
   return out;

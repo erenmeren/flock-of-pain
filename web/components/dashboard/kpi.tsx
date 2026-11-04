@@ -13,7 +13,7 @@ import type { ResultSource } from "@/lib/store";
 /** KPIs every result carries; any other key is a per-department utilization. */
 export const BASE_KPIS = [
   "throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90",
-  "sla_breach_rate", "rework_rate", "mean_dept_utilization", "labor_cost",
+  "sla_breach_rate", "deadline_miss_rate", "rework_rate", "mean_dept_utilization", "labor_cost",
 ];
 
 export const KPI_LABEL: Record<string, string> = {
@@ -23,6 +23,7 @@ export const KPI_LABEL: Record<string, string> = {
   cycle_p90: "Cycle time p90 (min)",
   wait_p90: "Wait p90 (min)",
   sla_breach_rate: "SLA breach rate",
+  deadline_miss_rate: "Missed cut-off %",
   rework_rate: "Rework rate",
   mean_dept_utilization: "Mean utilization",
   labor_cost: "Labor cost",

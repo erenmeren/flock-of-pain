@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumInput, Pick, ScheduleEditor, clamp } from "@/components/editor-fields";
-import { renameInflow, stepIssues } from "@/components/process/graph";
-import { type Company, type Dist, type Inflow, type Step, type Workflow, durationMean, idFor } from "@/lib/company";
+import { renameInflow, setBranch, stepIssues } from "@/components/process/graph";
+import { type Company, type Dist, type Inflow, type Profile, type Step, type Workflow, DAYS, durationMean, idFor, setMultiplier } from "@/lib/company";
 
-const NONE = "__none__";
+const NONE = "__none__", WAIT = "__wait__";
 
 /** The duration written when the mean is edited: const stays const, anything else becomes lognormal_mean. */
 export function withMean(d: Dist, mean: number): Dist {
@@ -33,6 +33,8 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
   const reworkItems = { [NONE]: "none", [id]: `${id} (self)`, ...Object.fromEntries((st.depends_on ?? []).map((d) => [d, d])) };
   const waits = (st.depends_on ?? []).map((d) => wf.steps.find((s) => s.id === d)?.name ?? d).join(", ");
   const commitSkill = (e: React.FocusEvent<HTMLInputElement>) => { const v = e.target.value.trim(); if (v !== st.required_skill) set({ required_skill: v }); };
+  const wait = st.required_skill === null;
+  const kids = wf.steps.filter((s) => s.depends_on?.includes(id));
   return (
     <>
       {stepIssues(company, wf, st).map((i) => <p key={i.text} className="text-xs text-amber-400">{i.text.startsWith("Nobody in") ? `${i.text}. Typing a skill here does not give it to anyone; add it on the People page.` : i.text}</p>)}
@@ -40,30 +42,52 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
         <Pick className="w-full" label={`department of step ${id}`} items={deptItems} value={st.department_id || NONE} onChange={(v) => {
           if (v === NONE) return set({ department_id: "" });
           const ks = skillsOf(v);
-          set({ department_id: v, required_skill: ks.includes(st.required_skill) ? st.required_skill : ks.length === 1 ? ks[0] : "" });
+          set({ department_id: v, required_skill: wait ? null : ks.includes(st.required_skill!) ? st.required_skill : ks.length === 1 ? ks[0] : "" });
         }} />
       </Field>
       <Field label="Skill" hint="step_skill">
-        <Input key={`${st.department_id}:${st.required_skill}`} aria-label={`skill of step ${id}`} list={`skills-${id}`} defaultValue={st.required_skill} onBlur={commitSkill} />
-        <datalist id={`skills-${id}`}>{skills.map((s) => <option key={s} value={s} />)}</datalist>
+        {/* a wait step has no worker, so no system, failures or rework (loader rule) */}
+        <Pick className="w-full" label={`work kind of step ${id}`} items={{ [WAIT]: "Waiting (nobody works)", [NONE]: "Someone with a skill" }} value={wait ? WAIT : NONE}
+          onChange={(v) => (v === WAIT ? !wait && set({ required_skill: null, system_id: null, failure_prob: 0, rework_to: null }) : wait && set({ required_skill: skills.length === 1 ? skills[0] : "" }))} />
+        {!wait && <>
+          <Input key={`${st.department_id}:${st.required_skill}`} aria-label={`skill of step ${id}`} list={`skills-${id}`} defaultValue={st.required_skill ?? ""} onBlur={commitSkill} />
+          <datalist id={`skills-${id}`}>{skills.map((s) => <option key={s} value={s} />)}</datalist>
+        </>}
       </Field>
       <Field label="Mean duration (min)" hint="duration">
         {mean === null ? <span className="text-xs text-muted-foreground">duration kind `{st.duration.kind}`: edit in the JSON tab</span>
           : <NumInput min={0.01} lo={0.01} aria-label={`mean minutes of step ${id}`} className="w-full tabular-nums" value={Number(mean.toFixed(2))} onCommit={(v) => set({ duration: withMean(st.duration, v) })} />}
       </Field>
-      <Field label="System" hint="step_system"><Pick className="w-full" label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
+      {!wait && <Field label="System" hint="step_system"><Pick className="w-full" label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>}
       <Field label="SLA minutes" hint="sla">
         <Input key={st.sla_minutes ?? "none"} type="number" min={0} aria-label={`sla minutes of step ${id}`} className="w-full tabular-nums" defaultValue={st.sla_minutes ?? ""} placeholder="none"
           onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity) || null; if (v !== (st.sla_minutes ?? null)) set({ sla_minutes: v }); }} />
       </Field>
       <p className="text-xs text-muted-foreground">Waits for: {waits || "nothing (entry step)"}</p>
+      {kids.length > 0 && (
+        <Field label="Branches: chance in %" hint="branches">
+          {kids.map((k) => {
+            const p = st.branches?.find((b) => b.to === k.id)?.prob;
+            return (
+              <div key={k.id} className="flex items-center gap-2 text-xs">
+                <span className="flex-1 truncate">{k.name}</span>
+                <Input key={p ?? "always"} type="number" min={0} max={100} aria-label={`branch percent from ${id} to ${k.id}`} className="h-7 w-20 tabular-nums" placeholder="always"
+                  defaultValue={p === undefined ? "" : Number((p * 100).toFixed(2))}
+                  onBlur={(e) => { const v = clamp(Number(e.target.value), 0, 100) / 100 || null; if (v !== (p ?? null)) onChange({ ...wf, steps: wf.steps.map((s) => (s.id === id ? setBranch(s, k.id, v) : s)) }); }} />
+              </div>
+            );
+          })}
+        </Field>
+      )}
       <details className="flex flex-col gap-3 text-sm [&>summary]:cursor-pointer [&[open]>summary]:mb-3">
         <summary>Advanced</summary>
         <div className="flex flex-col gap-3">
           <Field label="Priority" hint="priority"><NumInput lo={-1e9} hi={1e9} aria-label={`priority of step ${id}`} className="w-full tabular-nums" value={st.priority ?? 0} onCommit={(v) => set({ priority: Math.floor(v) })} /></Field>
+          {!wait && <>
           <Field label="Fail %" hint="fail"><NumInput hi={100} aria-label={`failure percent of step ${id}`} className="w-full tabular-nums" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))} onCommit={(v) => set({ failure_prob: v / 100 })} /></Field>
           <Field label="Rework to" hint="rework_to"><Pick className="w-full" label={`rework target of step ${id}`} items={reworkItems} value={st.rework_to ?? NONE} onChange={(v) => set({ rework_to: v === NONE ? null : v })} /></Field>
           <Field label="Retries" hint="retries"><NumInput aria-label={`retries of step ${id}`} className="w-full tabular-nums" value={st.max_retries ?? 0} onCommit={(v) => set({ max_retries: Math.floor(v) })} /></Field>
+          </>}
           {st.duration.kind === "lognormal_mean" && mean !== null && (
             <Field label="Sigma" hint="sigma"><NumInput lo={0.05} hi={3} aria-label={`sigma of step ${id}`} className="w-full tabular-nums" value={st.duration.sigma ?? 0.4} onCommit={(v) => set({ duration: { kind: "lognormal_mean", mean, sigma: v } })} /></Field>
           )}
@@ -71,6 +95,30 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
       </details>
       <RemoveBtn onRemove={onRemove} />
     </>
+  );
+}
+
+/** Hour-of-day and weekday multipliers on the rate; 1 everywhere writes no profile. */
+function ProfileEditor({ id, profile, onChange }: { id: string; profile?: Profile; onChange: (p: Profile | undefined) => void }) {
+  const row = (key: keyof Profile, labels: string[], cols: string) => (
+    <div className={`grid gap-1 ${cols}`}>
+      {labels.map((l, k) => (
+        <label key={k} className="flex flex-col text-[10px] text-muted-foreground">{l}
+          <NumInput aria-label={`${key === "hours" ? "hour" : "weekday"} ${l} multiplier of ${id}`} className="h-7 px-1 text-xs tabular-nums" value={profile?.[key]?.[String(k)] ?? 1}
+            onCommit={(v) => onChange(setMultiplier(profile, key, String(k), v))} />
+        </label>
+      ))}
+    </div>
+  );
+  return (
+    <details className="text-sm [&>summary]:cursor-pointer [&[open]>summary]:mb-2">
+      <summary>Demand profile</summary>
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-muted-foreground">Rate multiplier by hour of day, then by weekday. 2 doubles the rate, 0 stops arrivals.</p>
+        {row("hours", Array.from({ length: 24 }, (_, h) => String(h)), "grid-cols-6")}
+        {row("weekdays", DAYS, "grid-cols-7")}
+      </div>
+    </details>
   );
 }
 
@@ -93,6 +141,7 @@ function InflowPanel({ wf, inflow, onChange, onRemove, onRenamed }: Omit<Props, 
       </Field>
       <Field label="Rate per hour" hint="rate"><NumInput min={0} aria-label={`rate per hour of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.rate_per_hour} onCommit={(v) => set({ rate_per_hour: v })} /></Field>
       <Field label="Window" hint="window"><ScheduleEditor id={`inflow ${inflow.id}`} schedule={inflow.window} onChange={(window) => set({ window })} /></Field>
+      <ProfileEditor id={`inflow ${inflow.id}`} profile={inflow.profile} onChange={(profile) => set({ profile })} />
       <p className="flex items-center gap-1 text-xs text-muted-foreground">Enters at: {enters || "no step yet"}<Hint id="entry" /></p>
       <RemoveBtn onRemove={onRemove} />
     </>
