@@ -35,6 +35,8 @@ class WorkflowMetrics:
     sla_breach_rate: float = 0.0
     deadline_missed: int = 0
     deadline_miss_rate: float = 0.0
+    abandoned: int = 0
+    abandon_rate: float = 0.0
     steps_completed: int = 0
     failures: int = 0
     rework_rate: float = 0.0
@@ -49,6 +51,7 @@ class ResourceMetrics:
     tasks_completed: int = 0
     blocked_minutes: float = 0.0
     labor_cost: float = 0.0
+    overtime_minutes: float = 0.0
 
 
 @dataclass
@@ -58,6 +61,7 @@ class DeptMetrics:
     backlog_max: int = 0
     wait_p50: float = 0.0
     labor_cost: float = 0.0
+    overtime_minutes: float = 0.0
 
 
 @dataclass
@@ -77,6 +81,7 @@ class Metrics:
     resources: dict[str, ResourceMetrics] = field(default_factory=dict)
     ledger: list[LedgerRow] = field(default_factory=list)
     labor_cost: float = 0.0
+    overtime_minutes: float = 0.0
 
 
 @dataclass
@@ -99,6 +104,9 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     waits_dept: dict[str, list[float]] = defaultdict(list)
     wf_cost: dict[str, float] = defaultdict(float)
     overrun: dict[str, float] = defaultdict(float)  # resource -> busy minutes outside its shift
+    pools = {r.id: r for r in resources if r.is_pool}
+    ot = {r.id: next((x.overtime_rate for x in (r, pools.get(r.pool_id)) if x is not None and x.overtime_rate is not None),
+                     1.0) for r in resources}  # carved employees inherit the pool's rate
     wf_started: dict[str, float] = {}
     cycles: dict[str, list[float]] = defaultdict(list)
     cancelled: dict[str, set[str]] = defaultdict(set)
@@ -119,8 +127,9 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
             minutes = t - tr.run[0]
             r = company.resource(tr.run[1])
             rm[r.id].busy_minutes += minutes
-            overrun[r.id] += minutes - r.schedule.on_minutes(tr.run[0], t)
-            wf_cost[e.workflow_id] += minutes / 60 * r.cost_per_hour
+            off = minutes - r.schedule.on_minutes(tr.run[0], t)
+            overrun[r.id] += off
+            wf_cost[e.workflow_id] += (minutes + off * (ot[r.id] - 1)) / 60 * r.cost_per_hour
         tr.run = None
 
     def close_block(e: Event, tr: _TaskTrack, t: float) -> None:
@@ -155,6 +164,8 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
             breached[e.workflow_id].add(e.instance_id)
         elif e.kind == K.DEADLINE_MISSED:
             w.deadline_missed += 1
+        elif e.kind == K.TASK_ABANDONED:
+            w.abandoned += 1
         if e.task_id is None:
             continue
         tr = tracks[e.task_id]
@@ -210,11 +221,13 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         # a task may run past shift end; those minutes count as available too, so utilization stays <= 1
         available = m.on_shift_minutes * r.capacity + overrun[r.id]
         m.utilization = _div(m.busy_minutes, available)
-        m.labor_cost = m.busy_minutes / 60 * r.cost_per_hour
+        m.overtime_minutes = overrun[r.id]
+        m.labor_cost = (m.busy_minutes + m.overtime_minutes * (ot[r.id] - 1)) / 60 * r.cost_per_hour
         by_dept[r.department_id][0] += m.busy_minutes
         by_dept[r.department_id][1] += available
         if r.department_id in dm:
             dm[r.department_id].labor_cost += m.labor_cost
+            dm[r.department_id].overtime_minutes += m.overtime_minutes
     for d_id, d in dm.items():
         d.utilization = _div(*by_dept[d_id])
         d.wait_p50 = percentile(waits_dept[d_id], 50)
@@ -228,9 +241,11 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         w.sla_breached = len(breached[w_id] & done[w_id])
         w.sla_breach_rate = _div(w.sla_breached, w.completed)
         w.deadline_miss_rate = _div(w.deadline_missed, w.started)
+        w.abandon_rate = _div(w.abandoned, w.started)
         w.rework_rate = _div(w.failures, w.failures + w.steps_completed)
         w.cost_per_completed = _div(wf_cost[w_id], w.completed)
 
     rows = [LedgerRow(d, reason, blocker, minutes, n) for (d, reason, blocker), (minutes, n) in ledger.items()]
     rows.sort(key=lambda r: (-r.minutes, r.department_id, r.reason or "", r.blocker_id or ""))
-    return Metrics(horizon_minutes, wm, dm, rm, rows, sum(m.labor_cost for m in rm.values()))
+    return Metrics(horizon_minutes, wm, dm, rm, rows, sum(m.labor_cost for m in rm.values()),
+                   sum(m.overtime_minutes for m in rm.values()))

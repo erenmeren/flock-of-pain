@@ -17,7 +17,7 @@ from flock_of_pain.scheduling import POLICIES
 _REQUIRED = object()
 _KINDS = {"const", "uniform", "triangular", "lognormal", "exponential"}
 _STEP_DEFAULTS = {"depends_on": [], "system_id": None, "priority": 0, "sla_minutes": None, "failure_prob": 0.0,
-                  "rework_to": None, "max_retries": 0}
+                  "rework_to": None, "max_retries": 0, "release_hours": []}
 # caps keep one /simulate call bounded: event count grows with arrival rate and with retries per instant
 MAX_RATE_PER_HOUR = 10000
 MAX_RETRIES = 100
@@ -192,10 +192,12 @@ def resource_from_dict(d: dict, department_id: str, path: str) -> Resource:
         skills=set(_strs(d, "skills", path)), cost_per_hour=_get(d, "cost_per_hour", path, float, 0.0),
         speed_factor=_get(d, "speed_factor", path, float, 1.0),
         schedule=schedule_from_dict(_get(d, "schedule", path, dict, None), _join(path, "schedule")),
-        pool_id=_get(d, "pool_id", path, str, None), headcount=_get(d, "headcount", path, int, None))
+        pool_id=_get(d, "pool_id", path, str, None), headcount=_get(d, "headcount", path, int, None),
+        overtime_rate=_get(d, "overtime_rate", path, float, None))
     _done(d, path)
     _check(path, ("cost_per_hour", r.cost_per_hour >= 0, "must be >= 0"), ("speed_factor", r.speed_factor > 0, "must be > 0"),
-           ("headcount", r.headcount is None or r.headcount >= 0, "must be >= 0"))
+           ("headcount", r.headcount is None or r.headcount >= 0, "must be >= 0"),
+           ("overtime_rate", r.overtime_rate is None or r.overtime_rate >= 1, "must be >= 1"))
     return r
 
 
@@ -205,6 +207,8 @@ def resource_to_dict(r: Resource, pool: Resource | None = None) -> dict:
         out["name"] = r.name
     out["skills"] = sorted(r.skills)
     out["cost_per_hour"] = r.cost_per_hour
+    if r.overtime_rate is not None:
+        out["overtime_rate"] = r.overtime_rate
     if r.speed_factor != 1.0:
         out["speed_factor"] = r.speed_factor
     out["schedule"] = None if pool is not None and r.schedule is pool.schedule else schedule_to_dict(r.schedule)
@@ -231,9 +235,17 @@ def _step_from_dict(d: dict, path: str) -> Step:
              depends_on=list(_strs(d, "depends_on", path, [])), system_id=_get(d, "system_id", path, str, None),
              priority=_get(d, "priority", path, int, 0), sla_minutes=_get(d, "sla_minutes", path, float, None),
              failure_prob=_get(d, "failure_prob", path, float, 0.0), rework_to=_get(d, "rework_to", path, str, None),
-             max_retries=_get(d, "max_retries", path, int, 0), branches=_items(d, "branches", path, _branch_from_dict, []))
+             max_retries=_get(d, "max_retries", path, int, 0), branches=_items(d, "branches", path, _branch_from_dict, []),
+             release_hours=_get(d, "release_hours", path, list, []))
+    if (p := _get(d, "patience", path, dict, None)) is not None:
+        s.patience = dist_from_dict(p, _join(path, "patience"))
     _done(d, path)
     _check(path, ("max_retries", s.max_retries <= MAX_RETRIES, f"must be <= {MAX_RETRIES}"))
+    rp = _join(path, "release_hours")
+    for i, h in enumerate(s.release_hours):
+        if (not isinstance(h, (int, float)) or isinstance(h, bool) or not 0 <= h < 24
+                or (i and not s.release_hours[i - 1] < h)):
+            raise SchemaError(f"{rp}[{i}]", "expected sorted, distinct hours 0 <= h < 24")
     return s
 
 
@@ -241,6 +253,8 @@ def _step_to_dict(s: Step) -> dict:
     out = {"id": s.id, "name": s.name, "department_id": s.department_id, "required_skill": s.required_skill,
            "duration": dist_to_dict(s.duration)}
     out.update({k: getattr(s, k) for k, v in _STEP_DEFAULTS.items() if getattr(s, k) != v})
+    if s.patience is not None:
+        out["patience"] = dist_to_dict(s.patience)
     if s.branches:
         out["branches"] = [{"to": to, "prob": p} for to, p in s.branches]
     return out
@@ -395,13 +409,21 @@ def run_config_from_dict(d: dict) -> RunConfig:
     d = _obj(d, "")
     seed, days = _get(d, "seed", "", int), _get(d, "days", "", float)
     reps, policy = _get(d, "replications", "", int, 1), _get(d, "policy", "", str, "priority")
+    crn = _get(d, "crn", "", bool, False)
     _done(d, "")
     for k, ok in (("days", days > 0), ("replications", reps >= 1)):
         if not ok:
             raise SchemaError(k, "must be > 0" if k == "days" else "must be >= 1")
     if policy not in POLICIES:
         raise SchemaError("policy", f"unknown policy {policy!r}")
-    return RunConfig(seed, days * 1440, reps, policy)
+    return RunConfig(seed, days * 1440, reps, policy, crn)
+
+
+def run_config_to_dict(c: RunConfig) -> dict:
+    out = {"seed": c.seed, "days": c.horizon_minutes / 1440, "replications": c.replications, "policy": c.policy}
+    if c.crn:
+        out["crn"] = True
+    return out
 
 
 def metrics_to_dict(m: Metrics) -> dict:

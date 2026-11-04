@@ -33,7 +33,30 @@ def main(argv: list[str] | None = None) -> int:
     tsub.add_parser("rotate", help="replace a tenant's API key").add_argument("id")
     tsub.add_parser("list", help="list tenants")
     sub.add_parser("backup", help="copy the FLOCK_DB database to PATH (safe while the API runs)").add_argument("path", type=Path)
+    cal = sub.add_parser("calibrate", help="fit arrivals (timestamps) or durations (minutes) from a CSV column; prints JSON")
+    cal.add_argument("what", choices=["arrivals", "durations"])
+    cal.add_argument("path", type=Path)
+    cal.add_argument("--column", type=int, default=0, help="0-based column (default 0)")
     args = parser.parse_args(argv)
+    if args.command == "calibrate":
+        import csv
+        from datetime import datetime
+        from flock_of_pain import calibrate
+        arrivals = args.what == "arrivals"
+        parse = (lambda s: datetime.fromisoformat(s).replace(tzinfo=None)) if arrivals else float
+        try:
+            values = []
+            for i, row in enumerate(r for r in csv.reader(args.path.read_text(encoding="utf-8").splitlines()) if r):
+                try:
+                    values.append(parse(row[args.column].strip()))
+                except ValueError:
+                    if i:  # only an unparseable first row is a header
+                        raise ValueError(f"row {i + 1}: cannot parse {row[args.column]!r}") from None
+            print(json.dumps((calibrate.fit_arrivals if arrivals else calibrate.fit_duration)(values), indent=2))
+        except (ValueError, IndexError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        return 0
     if args.command == "backup":
         from flock_of_pain import store
         store.backup(str(args.path))

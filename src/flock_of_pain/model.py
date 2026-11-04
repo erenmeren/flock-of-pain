@@ -20,6 +20,7 @@ class Resource:
     schedule: Schedule | None = None
     pool_id: str | None = None
     headcount: int | None = None
+    overtime_rate: float | None = None  # cost multiplier for busy minutes off shift; None: the pool's, else 1
 
     @property
     def is_pool(self) -> bool:
@@ -75,6 +76,8 @@ class Step:
     rework_to: str | None = None
     max_retries: int = 0
     branches: list[tuple[str, float]] = field(default_factory=list)  # (target step id, probability)
+    release_hours: list[float] = field(default_factory=list)  # batch release: hours of day when held tasks go out
+    patience: Dist | None = None  # a task still queued this long after queueing is abandoned
 
 
 @dataclass
@@ -201,7 +204,8 @@ class Company:
                     raise ModelError(f"step {s.id}: empty required_skill")
                 if not draft and s.required_skill is None:
                     for bad, what in ((s.system_id is not None, "system_id"), (s.failure_prob != 0, "failure_prob"),
-                                      (s.rework_to is not None, "rework_to")):
+                                      (s.rework_to is not None, "rework_to"), (bool(s.release_hours), "release_hours"),
+                                      (s.patience is not None, "patience")):
                         if bad:
                             raise ModelError(f"step {s.id}: a wait step (required_skill null) takes no {what}")
                 if s.system_id is not None and s.system_id not in system_ids:

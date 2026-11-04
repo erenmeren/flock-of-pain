@@ -271,3 +271,22 @@ def test_delete_run_endpoint():
     assert client.delete(f"/runs/{rid}", headers={"X-API-Key": other}).status_code == 404
     assert client.delete(f"/runs/{rid}").json() == {"deleted": rid}
     assert client.delete(f"/runs/{rid}").status_code == 404
+
+
+def test_calibrate_endpoints():
+    r = client.post("/calibrate/arrivals", json={"timestamps": ["2026-10-05T09:10:00", "2026-10-05T09:40:00+02:00",
+                                                               "2026-10-06T10:05:00Z"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["observed_days"] == 2 and r.json()["profile"]["hours"] == {"10": 0.67, "9": 1.33}
+    r = client.post("/calibrate/durations", json={"minutes": [10, 20, 30]})
+    assert r.status_code == 200 and r.json()["n"] == 3 and r.json()["kind"] == "lognormal_mean"
+    for url, body, path in [
+        ("/calibrate/arrivals", {"timestamps": ["2026-10-05T09:10:00"]}, "timestamps"),
+        ("/calibrate/arrivals", {"timestamps": ["2026-10-05T09:10:00", "noon"]}, "timestamps[1]"),
+        ("/calibrate/arrivals", {"timestamps": ["2026-10-05"] * (api.MAX_CALIBRATE + 1)}, "timestamps"),
+        ("/calibrate/durations", {"minutes": [5, 0]}, "minutes"),
+        ("/calibrate/durations", {"minutes": [1.0] * (api.MAX_CALIBRATE + 1)}, "minutes"),
+    ]:
+        r = client.post(url, json=body)
+        assert r.status_code == 422 and r.json()["path"] == path, (url, r.text)
+    assert client.post("/calibrate/durations", json={"minutes": [1, 2]}, headers={"X-API-Key": ""}).status_code == 401

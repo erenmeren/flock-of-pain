@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import sqlite3
+from datetime import datetime
 
 from fastapi import Depends, FastAPI, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,11 +12,12 @@ from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
-from flock_of_pain import agent, store
+from flock_of_pain import agent, calibrate, store
 from flock_of_pain.agent import load_bundle, section
 from flock_of_pain.examples import reynolds
 from flock_of_pain.experiment import ASSUMPTION, KPI_KEYS, off_shift_minutes, run_experiment, top_ledger
-from flock_of_pain.io import SchemaError, company_to_dict, metrics_to_dict, run_config_from_dict, scenario_to_dict
+from flock_of_pain.io import (SchemaError, company_to_dict, metrics_to_dict, run_config_from_dict, run_config_to_dict,
+                              scenario_to_dict)
 from flock_of_pain.model import ModelError
 
 MAX_EVENT_RUN_DAYS, MAX_RUNS = 30, 400  # ~38 GB of events at 365 x 50 x 4 without a cap
@@ -25,6 +27,7 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 # parsed at import, so a typo fails at startup instead of a 500 per request
 GENERATE_DAILY_LIMIT = int(os.environ.get("FLOCK_GENERATE_DAILY_LIMIT", "20"))  # per tenant
 GENERATE_GLOBAL_DAILY_LIMIT = int(os.environ.get("FLOCK_GENERATE_GLOBAL_DAILY_LIMIT", "200"))  # all tenants together
+MAX_CALIBRATE = 100000  # entries per /calibrate list
 MAX_TENANTS = int(os.environ.get("FLOCK_MAX_TENANTS", "100"))  # /signup refuses past this
 
 app = FastAPI(title="Flock of Pain")
@@ -81,6 +84,14 @@ class Bundle(BaseModel):
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20000)
+
+
+class ArrivalsRequest(BaseModel):
+    timestamps: list[str]
+
+
+class DurationsRequest(BaseModel):
+    minutes: list[float]
 
 
 class SignupRequest(BaseModel):
@@ -160,8 +171,7 @@ def simulate(req: SimulateRequest, tenant: str = Tenant):
         stored = {**out, "scenarios": [{**s, "runs": [{"seed": r["seed"], "metrics": r["metrics"]} for r in s["runs"]]}
                                        for s in out["scenarios"]]}
         request = {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios],
-                   "config": {"seed": config.seed, "days": config.horizon_minutes / 1440,
-                              "replications": config.replications, "policy": config.policy}}  # resolved, not as sent
+                   "config": run_config_to_dict(config)}  # resolved, not as sent
         out["run_id"] = store.save_run(tenant, req.company_id, req.name or company.name, request, stored)
     return out
 
@@ -212,6 +222,31 @@ def generate(req: GenerateRequest, tenant: str = Tenant):
         raise QuotaError(f"daily /generate limit of {GENERATE_DAILY_LIMIT} per tenant or {GENERATE_GLOBAL_DAILY_LIMIT} "
                          "for all tenants reached; try again tomorrow (UTC)")
     return agent.generate(req.prompt)
+
+
+def _fit(key: str, xs: list, fit):
+    if len(xs) > MAX_CALIBRATE:
+        raise SchemaError(key, f"more than {MAX_CALIBRATE} entries")
+    try:
+        return fit(xs)
+    except ValueError as e:
+        raise SchemaError(key, str(e)) from None
+
+
+@app.post("/calibrate/arrivals")
+def calibrate_arrivals(req: ArrivalsRequest, tenant: str = Tenant):
+    ts = []
+    for i, s in enumerate(req.timestamps[:MAX_CALIBRATE + 1]):
+        try:
+            ts.append(datetime.fromisoformat(s).replace(tzinfo=None))  # the wall clock as written counts
+        except ValueError:
+            raise SchemaError(f"timestamps[{i}]", "expected an ISO 8601 date-time") from None
+    return _fit("timestamps", ts, calibrate.fit_arrivals)
+
+
+@app.post("/calibrate/durations")
+def calibrate_durations(req: DurationsRequest, tenant: str = Tenant):
+    return _fit("minutes", req.minutes, calibrate.fit_duration)
 
 
 @app.post("/signup")

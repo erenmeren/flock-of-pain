@@ -52,3 +52,15 @@ def test_backup_command(tmp_path, monkeypatch):
     store.create_tenant("acme", "Acme")
     assert main(["backup", str(tmp_path / "b.db")]) == 0
     assert sqlite3.connect(tmp_path / "b.db").execute("SELECT id FROM tenants").fetchall() == [("acme",)]
+
+
+def test_calibrate_commands(tmp_path, capsys):
+    p = tmp_path / "a.csv"
+    p.write_text("id,created\n1,2026-10-05T09:10:00\n2,2026-10-05T09:40:00\n3,2026-10-06T10:05:00\n")
+    assert main(["calibrate", "arrivals", str(p), "--column", "1"]) == 0
+    assert json.loads(capsys.readouterr().out)["observed_days"] == 2
+    p.write_text("minutes\n10\n20\n30\n")
+    assert main(["calibrate", "durations", str(p)]) == 0
+    assert json.loads(capsys.readouterr().out)["n"] == 3
+    p.write_text("minutes\n10\nx\n")
+    assert main(["calibrate", "durations", str(p)]) == 1 and "row 3" in capsys.readouterr().err

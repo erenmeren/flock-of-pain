@@ -325,3 +325,32 @@ def test_rework_into_wait_step():
     arrive_at(e, 9 * 60)
     e.run()
     assert [x.t for x in task_events(e, "w-000001:w:0") if x.kind == K.TASK_STARTED] == [550, 795]
+
+
+def test_release_hours_hold_until_release():
+    e = Engine(tiny_company(pool_headcount=1, steps=[Step("a", "A", "cs", "support", const(10), release_hours=[12, 17])]),
+               RunConfig(seed=1, horizon_minutes=2 * DAY))
+    arrive_at(e, 540)
+    arrive_at(e, 600)
+    assert sum(getattr(f, "func", None) == e._release for _, _, f in e._heap) == 1  # one callback per release moment
+    arrive_at(e, 750)
+    e.run()
+    q = lambda tid: [(x.t, x.reason) for x in task_events(e, tid) if x.kind == K.TASK_QUEUED]
+    assert q("w-000001:a:0") == [(540, Reason.BATCH_HOLD)]
+    assert q("w-000002:a:0") == [(600, Reason.BATCH_HOLD), (720, Reason.ALL_RESOURCES_BUSY)]
+    assert q("w-000003:a:0") == [(750, Reason.BATCH_HOLD), (1020, Reason.OFF_SHIFT)]  # released after shift end
+    assert [first(e, K.TASK_STARTED, f"w-00000{i}:a:0").t for i in (1, 2, 3)] == [720, 730, DAY + 540]
+
+
+def test_patience_abandons_only_still_queued_tasks():
+    from flock_of_pain.analytics import compute_metrics
+    e = Engine(tiny_company(pool_headcount=1, steps=[Step("a", "A", "cs", "support", const(60), patience=const(60))]),
+               RunConfig(seed=1, horizon_minutes=DAY))
+    for t in (540, 560, 570):
+        arrive_at(e, t)
+    e.run()
+    assert [(x.t, x.task_id) for x in e.events if x.kind == K.TASK_ABANDONED] == [(630, "w-000003:a:0")]
+    assert first(e, K.TASK_STARTED, "w-000002:a:0").t == 600  # started before its patience ran out at 620
+    assert task_events(e, "w-000003:a:0")[-1].kind == K.TASK_CANCELLED and "w-000003" not in e.instances
+    w = compute_metrics(e.events, e.company, DAY).workflows["w"]
+    assert (w.started, w.completed, w.abandoned, w.abandon_rate) == (3, 2, 1, 1 / 3)

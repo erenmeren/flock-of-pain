@@ -94,7 +94,7 @@ def test_step_depends_on_is_copied():
     assert s.depends_on == deps and s.depends_on is not deps
 
 
-from flock_of_pain.io import scenario_from_dict, scenario_to_dict, run_config_from_dict, metrics_to_dict
+from flock_of_pain.io import scenario_from_dict, scenario_to_dict, run_config_from_dict, metrics_to_dict, run_config_to_dict
 
 
 def test_scenario_round_trip():
@@ -115,6 +115,9 @@ def test_scenario_unknown_type_path():
 def test_run_config():
     c = run_config_from_dict({"seed": 7, "days": 2, "replications": 3, "policy": "fifo"})
     assert (c.seed, c.horizon_minutes, c.replications, c.policy) == (7, 2880, 3, "fifo")
+    assert c.crn is False and run_config_to_dict(c) == {"seed": 7, "days": 2, "replications": 3, "policy": "fifo"}
+    c = run_config_from_dict({"seed": 7, "days": 2, "crn": True})
+    assert c.crn is True and run_config_to_dict(c)["crn"] is True
     with pytest.raises(SchemaError) as e:
         run_config_from_dict({"seed": 7, "days": 2, "policy": "lifo"})
     assert e.value.path == "policy"
@@ -151,6 +154,7 @@ def _res(**kw):
     ({"speed_factor": -1}, "departments[0].resources[0].speed_factor"),
     ({"headcount": -1}, "departments[0].resources[0].headcount"),
     ({"cost_per_hour": -1}, "departments[0].resources[0].cost_per_hour"),
+    ({"overtime_rate": 0.9}, "departments[0].resources[0].overtime_rate"),
     ({"schedule": {"weekday_hours": {"0": [17, 9]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
     ({"schedule": {"weekday_hours": {"0": [-1, 9]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
     ({"schedule": {"weekday_hours": {"0": [24, 30]}}}, "departments[0].resources[0].schedule.weekday_hours.0"),
@@ -480,3 +484,37 @@ def test_required_skill_key_still_required():
     del d["workflows"][0]["steps"][0]["required_skill"]
     with pytest.raises(SchemaError, match="missing"):
         company_from_dict(d)
+
+
+def test_release_hours_round_trip_and_rules():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["steps"][0]["release_hours"] = [12, 16.5]
+    c = company_from_dict(d)
+    assert c.workflows[0].steps[0].release_hours == [12, 16.5]
+    assert company_to_dict(c) == d
+    for bad in ([24], [-1], [17, 12], [12, 12], ["x"]):
+        d["workflows"][0]["steps"][0]["release_hours"] = bad
+        with pytest.raises(SchemaError, match="release_hours"):
+            company_from_dict(d, draft=True)
+    d = _wait_company(release_hours=[12])
+    with pytest.raises(ModelError, match="release_hours"):
+        company_from_dict(d)
+    company_from_dict(d, draft=True)
+
+
+def test_patience_round_trip_and_wait_step_rule():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["steps"][0]["patience"] = {"kind": "const", "a": 5, "b": 0, "c": 0}
+    c = company_from_dict(d)
+    assert c.workflows[0].steps[0].patience.a == 5 and company_to_dict(c) == d
+    d = _wait_company(patience={"kind": "const", "a": 5, "b": 0, "c": 0})
+    with pytest.raises(ModelError, match="patience"):
+        company_from_dict(d)
+    company_from_dict(d, draft=True)
+
+
+def test_overtime_rate_round_trip():
+    d = company_to_dict(reynolds.build())
+    d["departments"][0]["resources"][0]["overtime_rate"] = 1.5
+    c = company_from_dict(d)
+    assert c.resources()[0].overtime_rate == 1.5 and company_to_dict(c) == d

@@ -18,3 +18,25 @@ def test_event_log_hash_pinned(scenario):
     e = Engine(scenario.materialize(), RunConfig(seed=42, horizon_minutes=14400)); e.run()
     h = hashlib.sha256("\n".join(ev.to_json() for ev in e.events).encode()).hexdigest()
     assert h == HASHES[scenario.id]
+
+
+
+def _log(scenario, crn):
+    e = Engine(scenario.materialize(), RunConfig(seed=42, horizon_minutes=3 * 1440, crn=crn)); e.run()
+    return e.events
+
+
+def test_crn_runs_repeat_and_keep_arrivals_across_scenarios():
+    from conftest import tiny_company
+    from flock_of_pain.dist import lognormal_mean
+    from flock_of_pain.model import Resource, Step
+    from flock_of_pain.scenario import AddEmployee, Scenario
+    from flock_of_pain.schedule import business_hours
+    c = tiny_company(rate_per_hour=6, pool_headcount=1, employees=0,
+                     steps=[Step("a", "A", "cs", "support", lognormal_mean(15), failure_prob=0.1, max_retries=1)])
+    base = Scenario("b", "b", c)
+    extra = Scenario("x", "x", c, [AddEmployee("cs", Resource("new", "cs", {"support"}, schedule=business_hours(9, 17)))])
+    assert _log(base, True) == _log(base, True)
+    starts = lambda evs: [(e.t, e.workflow_id) for e in evs if e.kind in ("WORKFLOW_STARTED", "TASK_CREATED")]
+    assert starts(_log(base, True)) == starts(_log(extra, True))
+    assert starts(_log(base, False)) != starts(_log(extra, False))

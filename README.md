@@ -21,6 +21,7 @@ uv run python -m flock_of_pain demo --days 10 --reps 5 --seed 42
 
 Options: `--policy` picks the dispatch policy, `--events-dir PATH` writes one `<experiment>-<seed>.jsonl` event log per run, and `--company PATH` runs the scenarios against a company JSON file instead of the built-in Reynolds company.
 `uv run python -m flock_of_pain export-example PATH` writes the Reynolds company as JSON, a starting point for `--company`.
+`uv run python -m flock_of_pain calibrate arrivals FILE.csv [--column N]` and `calibrate durations FILE.csv [--column N]` print a fitted arrival rate and profile or a duration distribution as JSON (see Calibration).
 `uv run --extra api python -m flock_of_pain generate "a 40-person e-commerce support team ..." --out c.json` asks Claude for a company plus scenarios (see API `/generate`); `demo --company c.json` then runs those scenarios.
 The demo runs the synthetic Reynolds company (`src/flock_of_pain/examples/reynolds.py`) under four scenarios: baseline, demand +30%, a 2-hour ERP outage, and one extra CS employee.
 
@@ -41,6 +42,11 @@ Every endpoint except `GET /example` needs a tenant API key in the `X-API-Key` h
 - Saved companies (SQLite file from `FLOCK_DB`, default `./flock.db`, scoped to the tenant; a pre-tenant database is migrated to the tenant `default`, rotate its key first): `GET /companies`, `PUT /companies/{id}` with `{"company", "scenarios"}` (validated, stored in canonical form, `company.id` must equal the URL id; a draft is accepted: steps without department or skill, inflows without entries and workflows with neither `arrival` nor `inflows` are stored, and `/simulate` rejects them with 422), `GET /companies/{id}`, `DELETE /companies/{id}` (also deletes that company's saved runs). Creating a new company id past `FLOCK_MAX_COMPANIES` returns 409; updates are always allowed.
 - Run history: `POST /simulate` with `"save": true` (plus optional `company_id`, `name`) stores the request and the result without events and returns `run_id`; `GET /runs?company_id=&limit=` lists, `GET /runs/{id}` returns request and result, `DELETE /runs/{id}` deletes one. Each tenant keeps its newest `FLOCK_MAX_RUNS` runs; older ones are deleted on save.
 - `POST /generate`: body `{"prompt"}`, a plain-language company description; Claude returns `{"company", "scenarios"}` in the `/example` shape, validated by the same loader (one repair round). Needs `ANTHROPIC_API_KEY` (or an `ant auth login` profile); model `claude-opus-5-5`, override with `FLOCK_MODEL`. Failures return 502 `{"path": null, "message"}`. Each tenant gets `FLOCK_GENERATE_DAILY_LIMIT` calls per UTC day (default 20; a failed call counts), then 429; all tenants together get `FLOCK_GENERATE_GLOBAL_DAILY_LIMIT` (default 200), then 429.
+- `POST /calibrate/arrivals` with `{"timestamps": ["2026-10-06T09:14:00", ...]}` (ISO 8601; the wall clock as written counts, an offset is ignored) returns `{"rate_per_hour", "profile", "observed_days"}`; `POST /calibrate/durations` with `{"minutes": [...]}` returns `{"kind": "lognormal_mean", "mean", "sigma", "n", "p50", "p90"}`. At most 100000 entries each (and the 2 MB body cap); fewer than 2 usable values or a bad entry returns 422.
+
+### Calibration
+
+Calibration fits model inputs to observed data instead of guessing them. Arrivals: timestamps are grouped by calendar date (dates without arrivals are not observed); `rate_per_hour` is the mean hourly count over hours that have arrivals, and `hours` / `weekdays` are multipliers against that mean and against the mean weekday total (rounded to 2 decimals, 1.0 omitted). Durations: a lognormal with the sample mean and the population standard deviation of `log(x)` (clamped to 0.05..2); values <= 0 are dropped. Put the result into an `arrival` or inflow and a step `duration`. The fit sees only the data: arrivals already shaped by queueing or durations that include waiting are fitted as they are.
 
 ## Hosting
 
@@ -88,6 +94,10 @@ Optional Company JSON additions; a file without them runs exactly as before.
 - Branching: `"branches": [{"to": "credit_check", "prob": 0.15}]` on a step; each target depends on the step, and targets not drawn are skipped.
 - Wait step: `"required_skill": null` waits for its duration (a customer reply, say) with nobody working.
 - Split shifts: `"weekday_hours": {"0": [[9, 13], [14, 17.5]], "1": [9, 17]}`.
+- Batch release: `"release_hours": [12, 17]` on a step holds its new tasks (`BATCH_HOLD` in the ledger) until the next listed hour.
+- Abandonment: `"patience": {"kind": "lognormal_mean", "mean": 4, "sigma": 0.6}` on a step; a task still queued after its drawn patience logs `TASK_ABANDONED` and its instance is cancelled (KPI `abandon_rate`).
+- Overtime cost: `"overtime_rate": 1.5` on a resource charges busy minutes outside its shift at 1.5x `cost_per_hour`; carved employees inherit the pool's rate (KPI `overtime_hours_per_day`).
+- Common random numbers: `"crn": true` in the run config gives arrivals, durations, failures, branches and patience their own random streams, so scenario differences come from the change, not the dice.
 
 ## Web
 

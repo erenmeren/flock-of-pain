@@ -1,3 +1,4 @@
+import hashlib
 import heapq
 import math
 import random
@@ -21,6 +22,7 @@ class RunConfig:
     horizon_minutes: float
     replications: int = 1
     policy: str = "priority"
+    crn: bool = False  # common random numbers: one stream per random purpose, stable across scenarios
 
 
 @dataclass
@@ -46,6 +48,7 @@ class Engine:
         self.horizon = config.horizon_minutes
         self.policy = POLICIES[config.policy]()
         self.rng = random.Random(config.seed)
+        self._streams: dict[tuple[str, str], random.Random] = {}
         self.now = 0.0
         self.events: list[Event] = []
         self._heap: list[tuple[float, int, Callable[[], None]]] = []
@@ -67,6 +70,8 @@ class Engine:
         self.tasks_by_id: dict[str, Task] = {}  # tasks in in_progress only
         self._created = 0
         self._queue_keys: dict[str, tuple] = {}  # task id -> policy order_key, fixed while queued
+        self._held: set[str] = set()  # queued task ids waiting for their step's release hour (not on a heap)
+        self._releases: dict[float, list[Task]] = {}  # release time -> tasks held for it
 
         for r in resources:
             t = 0.0
@@ -122,6 +127,14 @@ class Engine:
     def resume(self) -> None:
         self._paused = False
 
+    def _rng(self, kind: str, key: str) -> random.Random:
+        if not self.config.crn:
+            return self.rng
+        if (r := self._streams.get((kind, key))) is None:
+            h = hashlib.sha256(f"{self.config.seed}:{kind}:{key}".encode()).digest()[:8]
+            r = self._streams[kind, key] = random.Random(int.from_bytes(h, "big"))
+        return r
+
     # --- callbacks ---
 
     def _shift(self, r: Resource, on: bool) -> None:
@@ -140,16 +153,17 @@ class Engine:
         rate = wf.arrival.rate_per_hour * peak / 60
         if rate <= 0:
             return
+        rng = self._rng("arrival", wf.id)
         while True:
-            t2 = t + self.rng.expovariate(rate)
+            t2 = t + rng.expovariate(rate)
             while t2 < self.horizon and not wf.arrival.window.is_on(t2):
                 if (t2 := wf.arrival.window.next_on(t2)) is None:
                     return
-                t2 += self.rng.expovariate(rate)
+                t2 += rng.expovariate(rate)
             if t2 >= self.horizon:
                 return
             # non-homogeneous Poisson by thinning; the extra draw happens only for a profile or windowed multiplier
-            if not thin or self.rng.random() * peak < (
+            if not thin or rng.random() * peak < (
                     math.prod(f for a, b, f in windows if a <= t2 < b) * (profile.mult(t2) if profile else 1.0)):
                 self.schedule(t2, partial(self._arrive, wf))
                 return
@@ -180,7 +194,8 @@ class Engine:
             return
         self.events.append(Event(self.now, K.SYSTEM_OUTAGE_STARTED, system_id=system_id))
         freed = set()
-        queued = [t for q in self.queues.values() for t in q.values() if self._step(t).system_id == system_id]
+        queued = [t for q in self.queues.values() for t in q.values()
+                  if self._step(t).system_id == system_id and t.id not in self._held]
         running = [self.tasks_by_id[i] for i in self.in_progress[system_id]]
         for task in sorted(running + queued, key=lambda t: t.seq):  # creation order
             if task.state == S.IN_PROGRESS:
@@ -229,7 +244,8 @@ class Engine:
             self.busy_minutes[r.id] += self.now - task.started_at
             self.free_slots[r.id] += 1
         inst = self.instances[task.instance_id]
-        if self.rng.random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
+        key = f"{task.workflow_id}/{step.id}"
+        if self._rng("failure", key).random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
             transition(task, S.FAILED, self.now, self.events)
             retry = not inst.cancelled and inst.retries < step.max_retries
             if not retry:
@@ -277,7 +293,7 @@ class Engine:
             return
         if step.branches and step.id not in inst.branched:  # draw once; a reworked branching step keeps its path
             inst.branched.add(step.id)
-            u, acc = self.rng.random(), 0.0
+            u, acc = self._rng("branch", key).random(), 0.0
             for to, p in step.branches:
                 if acc <= u < acc + p:
                     inst.skipped.discard(to)
@@ -306,6 +322,7 @@ class Engine:
             step = self.steps[inst.workflow.id, step_id]
             task = self.queues[step.department_id, step.required_skill].pop(task_id)
             del self._queue_keys[task_id]
+            self._held.discard(task_id)
             transition(task, S.CANCELLED, self.now, self.events)
             del inst.active[step_id]
 
@@ -356,31 +373,71 @@ class Engine:
     def _try_dispatch_task(self, task: Task, rework: bool = False) -> None:
         """Queue the task (logging why it waits, or None) and start it if a resource is free."""
         if self._step(task).required_skill is None:  # wait step: starts at once, no queue, no resource
-            d = self._step(task).duration.sample(self.rng)
+            d = self._step(task).duration.sample(self._rng("duration", f"{task.workflow_id}/{task.step_id}"))
             transition(task, S.IN_PROGRESS, self.now, self.events, rework=rework, payload={"duration": d})
             task.run_token += 1
             task.ends_at = self.now + d
             self.schedule(task.ends_at, partial(self._finish, task, task.run_token))
             return
-        eligible = self._eligible(task)
-        reason = None if eligible else self._wait_reason(task)
-        system_id = self._down(task)
+        step = self._step(task)
+        fresh = task.state == S.CREATED  # retries, rework and resumes are neither held nor abandoned
+        hold = bool(step.release_hours) and fresh
+        patience = step.patience.sample(self._rng("patience", f"{task.workflow_id}/{step.id}")) if step.patience is not None and fresh else None
+        eligible = [] if hold else self._eligible(task)
+        reason = Reason.BATCH_HOLD if hold else None if eligible else self._wait_reason(task)
+        system_id = None if hold else self._down(task)
         transition(task, S.QUEUED, self.now, self.events, reason=reason, system_id=system_id, rework=rework)
         task.last_reason = reason
         if eligible:
             self._start(task, self.policy.choose_resource(task, eligible, self.busy_minutes))
-        else:
-            step = self._step(task)
-            qkey = (task.department_id, step.required_skill)
-            self.queues.setdefault(qkey, {})[task.id] = task
-            k = self._queue_keys[task.id] = self.policy.order_key(task, step)
+            return
+        if patience is not None:
+            self.schedule(self.now + patience, partial(self._abandon, task))
+        qkey = (task.department_id, step.required_skill)
+        self.queues.setdefault(qkey, {})[task.id] = task
+        k = self._queue_keys[task.id] = self.policy.order_key(task, step)
+        if not hold:
             heapq.heappush(self._heaps.setdefault(qkey, {}).setdefault(step.system_id, []), (k, task.id))
+            return
+        day = self.now // MINUTES_PER_DAY * MINUTES_PER_DAY
+        t = min(day + d + h * 60 for d in (0, MINUTES_PER_DAY) for h in step.release_hours if day + d + h * 60 >= self.now)
+        self._held.add(task.id)
+        if t not in self._releases:
+            self._releases[t] = []
+            self.schedule(t, partial(self._release, t))
+        self._releases[t].append(task)
+
+    def _abandon(self, task: Task) -> None:
+        if task.id not in self._queue_keys or task.started_at is not None:
+            return  # started (or cancelled) before its patience ran out
+        self.events.append(Event(self.now, K.TASK_ABANDONED, task.id, task.instance_id, task.workflow_id, task.step_id,
+                                 task.department_id))
+        inst = self.instances[task.instance_id]
+        inst.cancelled = True
+        self._cancel_queued(inst)
+        if not inst.active:
+            del self.instances[inst.id]
+
+    def _release(self, t: float) -> None:
+        """Put the tasks held for this release time on their heaps, dispatch, then retag what still waits."""
+        tasks = [x for x in self._releases.pop(t) if x.id in self._held]  # cancelled ones are gone
+        for task in tasks:
+            self._held.discard(task.id)
+            step = self._step(task)
+            heapq.heappush(self._heaps.setdefault((task.department_id, step.required_skill), {})
+                           .setdefault(step.system_id, []), (self._queue_keys[task.id], task.id))
+        for r in {r.id: r for x in tasks for r in self._skilled(x)}.values():
+            self._dispatch_resource(r)
+        for key in dict.fromkeys((x.department_id, self._step(x).required_skill) for x in tasks):
+            self._retag_queue(*key)
 
     def _retag_queue(self, department_id: str, skill: str) -> None:
         """Log a retag TASK_QUEUED for each queued task whose wait reason changed."""
         reasons: dict[str | None, Reason] = {}  # within one queue the reason depends only on the step's system
         down: dict[str | None, str | None] = {}
         for task in self.queues.get((department_id, skill), {}).values():
+            if task.id in self._held:
+                continue
             system_id = self.steps[task.workflow_id, task.step_id].system_id
             if (reason := reasons.get(system_id)) is None:
                 reason = reasons[system_id] = self._wait_reason(task)
@@ -416,7 +473,8 @@ class Engine:
     def _start(self, task: Task, r: Resource) -> None:
         transition(task, S.ASSIGNED, self.now, self.events, resource_id=r.id)
         step = self._step(task)
-        d = task.remaining if task.remaining is not None else step.duration.sample(self.rng) / r.speed_factor
+        d = (task.remaining if task.remaining is not None
+             else step.duration.sample(self._rng("duration", f"{task.workflow_id}/{step.id}")) / r.speed_factor)
         task.remaining = None
         overrun = max(0.0, self.now + d - r.schedule.next_off(self.now))
         transition(task, S.IN_PROGRESS, self.now, self.events, payload={"duration": d, "overrun": overrun})

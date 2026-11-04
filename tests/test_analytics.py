@@ -184,3 +184,32 @@ def test_utilization_at_most_one_under_overload():
     m = compute_metrics(e.events, c, 30 * DAY)
     assert all(r.utilization <= 1 for r in m.resources.values())
     assert all(d.utilization <= 1 for d in m.departments.values())
+
+
+def test_batch_hold_ledger_row_kept_by_top_ledger():
+    from flock_of_pain.dist import const
+    from flock_of_pain.experiment import ExperimentResult, RunResult, top_ledger
+    from flock_of_pain.model import Step
+    e = Engine(tiny_company(pool_headcount=1, steps=[Step("a", "A", "cs", "support", const(10), release_hours=[12])]),
+               RunConfig(seed=1, horizon_minutes=DAY))
+    e.run_until(600)
+    e._arrive(e.company.workflows[0])
+    e.run()
+    m = compute_metrics(e.events, e.company, DAY)
+    row = LedgerRow("cs", Reason.BATCH_HOLD, None, 120, 1)
+    assert m.ledger == [row] and m.workflows["w"].wait_p50 == 120
+    assert top_ledger(ExperimentResult("x", [RunResult(1, [], m)], {})) == [row]
+
+
+def test_overtime_premium_and_kpi():
+    from flock_of_pain.experiment import kpis
+    c = tiny_company()
+    c.resource("e1").cost_per_hour = 30.0
+    c.resource("cs_pool").overtime_rate = 2.0  # carved e1 inherits it
+    events = [ev(16 * 60, K.TASK_STARTED, "e1"), ev(18 * 60, K.TASK_COMPLETED, "e1")]
+    m = compute_metrics(events, c, DAY)
+    assert m.resources["e1"].overtime_minutes == m.departments["cs"].overtime_minutes == m.overtime_minutes == 60
+    assert m.resources["e1"].labor_cost == m.labor_cost == 60 + 30 * (2 - 1)
+    assert kpis(m)["overtime_hours_per_day"] == 1.0
+    c.resource("e1").overtime_rate = 1.0  # own value beats the pool's
+    assert compute_metrics(events, c, DAY).labor_cost == 60
