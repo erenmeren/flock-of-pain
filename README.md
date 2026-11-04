@@ -56,6 +56,7 @@ cd web && NEXT_PUBLIC_API_URL=https://api.twin.example.com npm run build && npm 
 - `FLOCK_SIGNUP_CODE`: enables `POST /signup`; unset keeps tenant creation on the CLI.
 - `FLOCK_GENERATE_DAILY_LIMIT`: per-tenant cap on `POST /generate` (the one endpoint that spends Claude tokens); 0 turns it off.
 - `FLOCK_GENERATE_GLOBAL_DAILY_LIMIT`: cap on `POST /generate` for all tenants together per UTC day (default 200), so new signups cannot raise the Claude spend.
+- `FLOCK_MAX_RUN_DAYS`: cap on days × replications × scenarios per `/simulate` (default 2000, 422 above it). Replications run on all CPU cores, so raise it on a bigger machine.
 - `FLOCK_MAX_TENANTS`: `POST /signup` returns 403 once this many tenants exist (default 100; the CLI is not capped).
 - `FLOCK_MAX_COMPANIES`: saved companies per tenant (default 50).
 - `FLOCK_MAX_RUNS`: saved runs kept per tenant, oldest deleted first (default 200).

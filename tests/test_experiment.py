@@ -1,4 +1,5 @@
 import copy
+from dataclasses import replace
 
 import pytest
 
@@ -100,3 +101,12 @@ def test_keep_events_false_drops_events_keeps_metrics():
     kept, dropped = run_experiment("s", _scenario(), CFG), run_experiment("s", _scenario(), CFG, keep_events=False)
     assert all(r.events == [] for r in dropped.runs)
     assert [r.metrics for r in dropped.runs] == [r.metrics for r in kept.runs]
+
+
+def test_parallel_replications_match_sequential_runs():
+    # replications run in worker processes; each must equal the same seed run alone, in seed order
+    par = run_experiment("s", _scenario(), CFG, keep_events=False)
+    for i, run in enumerate(par.runs):
+        single = run_experiment("s", _scenario(), replace(CFG, seed=42 + i, replications=1), keep_events=False)
+        assert run.seed == 42 + i
+        assert run.metrics == single.runs[0].metrics

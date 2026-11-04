@@ -18,7 +18,8 @@ from flock_of_pain.experiment import ASSUMPTION, KPI_KEYS, off_shift_minutes, ru
 from flock_of_pain.io import SchemaError, company_to_dict, metrics_to_dict, run_config_from_dict, scenario_to_dict
 from flock_of_pain.model import ModelError
 
-MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS, MAX_RUNS = 2000, 30, 400  # ~330 s and ~38 GB at 365 x 50 x 4 without a cap
+MAX_EVENT_RUN_DAYS, MAX_RUNS = 30, 400  # ~38 GB of events at 365 x 50 x 4 without a cap
+MAX_RUN_DAYS = int(os.environ.get("FLOCK_MAX_RUN_DAYS", "2000"))  # days x replications x scenarios per /simulate; ~5 s on 8 cores
 TENANT_ID = store.TENANT_ID
 MAX_BODY_BYTES = 2 * 1024 * 1024
 # parsed at import, so a typo fails at startup instead of a 500 per request

@@ -1,6 +1,10 @@
 """Replicated experiments, KPI pooling and a plain-text comparison table."""
+import multiprocessing
+import os
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
+from itertools import repeat
 
 from flock_of_pain.analytics import LedgerRow, Metrics, compute_metrics, percentile
 from flock_of_pain.engine import Engine, RunConfig
@@ -66,14 +70,24 @@ def kpis(m: Metrics) -> dict[str, float]:
     }
 
 
+def _one_run(scenario: Scenario, config: RunConfig, keep_events: bool) -> RunResult:
+    company = scenario.materialize()
+    engine = Engine(company, config)
+    engine.run()
+    metrics = compute_metrics(engine.events, company, config.horizon_minutes)
+    return RunResult(config.seed, engine.events if keep_events else [], metrics)
+
+
 def run_experiment(name: str, scenario: Scenario, config: RunConfig, keep_events: bool = True) -> ExperimentResult:
-    runs = []
-    for i in range(config.replications):
-        company = scenario.materialize()
-        engine = Engine(company, replace(config, seed=config.seed + i))
-        engine.run()
-        metrics = compute_metrics(engine.events, company, config.horizon_minutes)
-        runs.append(RunResult(config.seed + i, engine.events if keep_events else [], metrics))
+    configs = [replace(config, seed=config.seed + i) for i in range(config.replications)]
+    workers = min(len(configs), os.cpu_count() or 1)
+    if workers > 1:  # replications are independent (own seed), so run them on all cores; order is kept
+        # forkserver, not fork: the API process is multi-threaded and fork() there can deadlock
+        ctx = multiprocessing.get_context("forkserver" if "forkserver" in multiprocessing.get_all_start_methods() else "spawn")
+        with ProcessPoolExecutor(workers, mp_context=ctx) as pool:
+            runs = list(pool.map(_one_run, repeat(scenario), configs, repeat(keep_events)))
+    else:
+        runs = [_one_run(scenario, c, keep_events) for c in configs]
     per_run = [kpis(r.metrics) for r in runs]
     keys = per_run[0].keys() if per_run else []
     return ExperimentResult(name, runs, {k: _stat([p.get(k, 0.0) for p in per_run]) for k in keys})
