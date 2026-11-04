@@ -12,6 +12,7 @@ export type Resource = {
   schedule: Schedule | null; // null on a person with pool_id = inherit the pool's schedule
   pool_id?: string;
   headcount?: number; // present = pool
+  overtime_rate?: number; // >= 1: busy minutes outside the shift cost cost_per_hour times this
 };
 export type Department = { id: string; name: string; resources: Resource[] };
 export type System = { id: string; name: string };
@@ -30,6 +31,8 @@ export type Step = {
   rework_to?: string | null;
   max_retries?: number;
   branches?: { to: string; prob: number }[]; // exactly one target (or none) runs; the rest are skipped
+  release_hours?: number[]; // batch release: tasks wait until the next of these hours of day
+  patience?: Dist; // minutes a queued task waits before the item is abandoned
 };
 export type Pos = [number, number];
 export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[]; profile?: Profile };
@@ -125,6 +128,8 @@ export function checkCompany(c: unknown): Company {
     if (!isObj(d) || !Array.isArray(d.resources)) throw new Error("each department needs a resources list");
     for (const r of d.resources) {
       if (!isObj(r) || !Array.isArray(r.skills)) throw new Error("each resource needs a skills list");
+      if (r.overtime_rate !== undefined && !(typeof r.overtime_rate === "number" && r.overtime_rate >= 1))
+        throw new Error(`resource ${r.id}: overtime_rate must be a number >= 1`);
       if (r.schedule != null && (!isObj(r.schedule) || !hoursOk(r.schedule.weekday_hours)))
         throw new Error("schedule needs weekday_hours of [start, end] pairs or lists of them");
     }
@@ -146,6 +151,9 @@ export function checkCompany(c: unknown): Company {
       const to = st.branches?.find((b) => !steps.has(b.to));
       if (to) throw new Error(`${at}: branch to unknown step ${to.to}`);
       if (st.required_skill === null && st.system_id) throw new Error(`${at}: a wait step cannot use a system`);
+      if (st.release_hours !== undefined && !(Array.isArray(st.release_hours) && st.release_hours.every((h) => typeof h === "number" && h >= 0 && h < 24)))
+        throw new Error(`${at}: release_hours must be numbers in [0, 24)`);
+      if (st.patience !== undefined && !(isObj(st.patience) && typeof st.patience.kind === "string")) throw new Error(`${at}: patience must be a duration with a kind`);
     }
   }
   const outage = out.outages?.find((o) => !systems.has(o[0]));
@@ -182,6 +190,19 @@ export function durationMean(d: Dist): number | null {
   if (d.kind === "lognormal") return Math.exp((d.a ?? 0) + (d.b ?? 0) ** 2 / 2); // the exporter writes the raw form
   if (d.kind === "const") return d.a ?? null;
   return null;
+}
+
+/** "12, 17.5" as sorted distinct hours of day; [] for an empty box, null when a value is not a number in [0, 24). */
+export function parseHoursList(text: string): number[] | null {
+  const hs = text.split(/[,;\s]+/).filter(Boolean).map(Number);
+  return hs.every((h) => Number.isFinite(h) && h >= 0 && h < 24) ? [...new Set(hs)].sort((a, b) => a - b) : null;
+}
+
+const isNumOrDate = (x: string) => (x.trim() !== "" && Number.isFinite(Number(x))) || !Number.isNaN(Date.parse(x));
+/** First cell of every non-empty CSV line (comma, semicolon or tab separated); a first row that is neither a number nor a date is a header and dropped. */
+export function firstColumn(text: string): string[] {
+  const cells = text.split(/\r?\n/).map((l) => l.split(/[,;\t]/)[0].trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+  return cells.length && !isNumOrDate(cells[0]) ? cells.slice(1) : cells;
 }
 
 // Scenario JSON contract (src/flock_of_pain/io.py: OVERLAY_TYPES).

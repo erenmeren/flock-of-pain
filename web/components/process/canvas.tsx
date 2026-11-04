@@ -3,7 +3,7 @@ import "@xyflow/react/dist/style.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BaseEdge, Controls, EdgeLabelRenderer, type Edge, type EdgeProps, Handle, MarkerType, type Node, type NodeProps, type OnSelectionChangeFunc, Position, ReactFlow, ReactFlowProvider, getBezierPath, useEdgesState, useNodesInitialized, useNodesState, useReactFlow } from "@xyflow/react";
-import { ArrowDownToLine, Hourglass, Plus, X } from "lucide-react";
+import { ArrowDownToLine, Hourglass, Plus, TimerOff, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { INLINE_INPUT, accent } from "@/components/org/parts";
 import { fmt } from "@/components/page";
@@ -51,6 +51,8 @@ function StepNode({ data }: NodeProps<Node<StepData, "step">>) {
         {wait ? <Hourglass aria-label="waiting, nobody works" className="size-3 shrink-0" /> : <span className="truncate">{deptName || "no department"}</span>}
         <span className="shrink-0">{`· ${fmt(durationMean(st.duration))} min`}</span>
         {st.system_id && <span className="shrink-0 rounded-full px-1.5 font-mono text-[10px] glass-inset">{st.system_id}</span>}
+        {!!st.release_hours?.length && <span className="shrink-0 rounded-full px-1.5 text-[10px] tabular-nums glass-inset">batch {st.release_hours.join(",")}</span>}
+        {st.patience && <TimerOff aria-label="items abandon after waiting" className="size-3 shrink-0" />}
       </div>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />

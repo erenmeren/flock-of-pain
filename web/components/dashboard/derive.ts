@@ -96,7 +96,7 @@ export function workflowMeans(s: ScenarioResult): Record<string, WorkflowMetrics
   for (const run of s.runs) {
     for (const [id, m] of Object.entries(run.metrics.workflows)) {
       const a = acc[id] ?? (acc[id] = Object.fromEntries(Object.keys(m).map((k) => [k, 0])) as WorkflowMetrics);
-      for (const k of Object.keys(m) as (keyof WorkflowMetrics)[]) a[k] += m[k] / n;
+      for (const k of Object.keys(m) as (keyof WorkflowMetrics)[]) a[k] = (a[k] ?? 0) + (m[k] ?? 0) / n; // keys come from m, so both are set
     }
   }
   return acc;

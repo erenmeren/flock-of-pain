@@ -24,6 +24,16 @@ export function NumInput({ value, onCommit, lo = 0, hi = Infinity, ...props }: {
   }} {...props} />;
 }
 
+/** Optional number committed on blur: an empty box commits undefined ("none"). */
+export function OptNumInput({ value, onCommit, lo = 0, hi = Infinity, ...props }: { value?: number; onCommit: (v: number | undefined) => void; lo?: number; hi?: number } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "onBlur" | "type">) {
+  return <Input key={value ?? "none"} type="number" step="any" placeholder="none" defaultValue={value ?? ""} onBlur={(e) => {
+    const t = e.currentTarget.value.trim();
+    const v = t === "" ? undefined : clamp(Number(t), lo, hi);
+    if (v !== value) onCommit(v);
+    e.currentTarget.value = v === undefined ? "" : String(v);
+  }} {...props} />;
+}
+
 /** Plain Select over {value: label}; base-ui may hand back null. */
 export function Pick({ label, value, items, onChange, className = "w-48", placeholder = "select…" }: { label: string; value: string; items: Record<string, string>; onChange: (v: string) => void; className?: string; placeholder?: string }) {
   return (

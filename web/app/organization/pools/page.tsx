@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Boxes, Plus } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
-import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
+import { IdTag, NumInput, OptNumInput, ScheduleEditor } from "@/components/editor-fields";
 import { DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
 import { type Loc, addResource, allResources, isPool, membersOf, removeResource, setResource } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ export default function PoolsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Pool <Hint id="pool" /></TableHead><TableHead className="text-right">Headcount <Hint id="headcount" /></TableHead><TableHead className="text-right">Members <Hint id="members" /></TableHead>
-              <TableHead>Skills (comma) <Hint id="skills" /></TableHead><TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
+              <TableHead>Skills (comma) <Hint id="skills" /></TableHead><TableHead className="text-right">Cost/h <Hint id="cost" /></TableHead><TableHead className="text-right">Overtime rate <Hint id="overtime_rate" /></TableHead><TableHead>Schedule <Hint id="schedule" /></TableHead><TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -79,6 +79,7 @@ export default function PoolsPage() {
                   <TableCell className="text-right tabular-nums">{members}</TableCell>
                   <TableCell><SkillsInput id={r.id} skills={r.skills} onCommit={(skills) => set({ ...r, skills })} /></TableCell>
                   <TableCell className="text-right"><NumInput aria-label={`cost per hour of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" value={r.cost_per_hour} onCommit={(v) => set({ ...r, cost_per_hour: v })} /></TableCell>
+                  <TableCell className="text-right"><OptNumInput aria-label={`overtime rate of ${r.id}`} className="ml-auto w-20 text-right tabular-nums" lo={1} step={0.1} value={r.overtime_rate} onCommit={(v) => set({ ...r, overtime_rate: v })} /></TableCell>
                   <TableCell>
                     {r.schedule ? <ScheduleEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
                       : <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}

@@ -22,7 +22,7 @@ const ROW = "hover:bg-white/[0.03]";
 const barColor = (i: number) => (i === 0 ? "oklch(1 0 0 / 0.28)" : `var(--chart-${(i % 5) + 1})`);
 
 /** Per-workflow metric keys the breakdown can show; completion_rate is derived from completed / started. */
-const WF_KPIS = ["throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90", "sla_breach_rate", "deadline_miss_rate", "rework_rate", "cost_per_completed"];
+const WF_KPIS = ["throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90", "sla_breach_rate", "deadline_miss_rate", "abandon_rate", "rework_rate", "cost_per_completed"];
 const wfValue = (m: WorkflowMetrics | undefined, k: string) =>
   m === undefined ? undefined : k === "completion_rate" ? (m.started ? m.completed / m.started : 0) : m[k as keyof WorkflowMetrics];
 

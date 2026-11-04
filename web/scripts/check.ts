@@ -6,7 +6,7 @@ import { deptColumns, handoffs, healthScores, mapEdges, minutes, workflowMeans }
 import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, setBranch, stepIssues, toInflows, unskilled, wouldCycle } from "@/components/process/graph";
 
 import { autoLayout, fillLayout } from "@/components/process/layout";
-import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, mergeWindows, renameDepartment, renameInScenarios, renameSystem, scenarioRefs, setMultiplier, slug, splitAt, windowsOf } from "@/lib/company";
+import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, mergeWindows, renameDepartment, renameInScenarios, renameSystem, scenarioRefs, setMultiplier, slug, splitAt, windowsOf, firstColumn, parseHoursList } from "@/lib/company";
 import type { SimEvent } from "@/lib/api";
 import { snapshot } from "@/lib/playback";
 
@@ -317,6 +317,41 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
 
   // windowed arrival multipliers pass the scenario check
   checkScenarios([{ id: "s", name: "s", overlays: [{ type: "arrival_multiplier", factor: 1.5, workflow_id: null, start: 480, end: 960 }] }]);
+}
+
+// office-floor model part 2: batch release, patience, overtime rate, CSV first column, BATCH_HOLD playback
+{
+  const withStep = (x: object) => ({ ...c, systems: [{ id: "erp", name: "ERP" }], workflows: [{ ...chain, steps: [{ ...chain.steps[0], ...x }, ...chain.steps.slice(1)] }] });
+  checkCompany(withStep({ release_hours: [0, 12, 17.5], patience: { kind: "lognormal_mean", mean: 4, sigma: 0.6 } }));
+  assert.throws(() => checkCompany(withStep({ release_hours: [24] })), /release_hours/);
+  assert.throws(() => checkCompany(withStep({ release_hours: [-1] })), /release_hours/);
+  assert.throws(() => checkCompany(withStep({ release_hours: ["12"] })), /release_hours/);
+  assert.throws(() => checkCompany(withStep({ release_hours: 12 })), /release_hours/);
+  assert.throws(() => checkCompany(withStep({ patience: 4 })), /patience/);
+  assert.throws(() => checkCompany(withStep({ patience: { mean: 4 } })), /patience/);
+  const withRes = (x: object) => ({ ...c, departments: [{ ...c.departments[0], resources: [{ ...c.departments[0].resources[2], ...x }] }] });
+  checkCompany(withRes({ overtime_rate: 1 }));
+  checkCompany(withRes({ overtime_rate: 1.5 }));
+  assert.throws(() => checkCompany(withRes({ overtime_rate: 0.9 })), /overtime_rate/);
+  assert.throws(() => checkCompany(withRes({ overtime_rate: "1.5" })), /overtime_rate/);
+
+  // release hours box: sorted, distinct, [] when empty, null when out of range or not a number
+  assert.deepEqual(parseHoursList("17, 12;12 9.5"), [9.5, 12, 17]);
+  assert.deepEqual(parseHoursList("  "), []);
+  assert.equal(parseHoursList("24"), null);
+  assert.equal(parseHoursList("noon"), null);
+
+  // firstColumn: any separator, header dropped only when it is neither a number nor a date
+  assert.deepEqual(firstColumn("minutes;who\r\n4.5;ann\n\n 6 ,bob\n7\tcid\n"), ["4.5", "6", "7"]);
+  assert.deepEqual(firstColumn("2026-10-06T09:14:00,x\n2026-10-06T10:00:00,y"), ["2026-10-06T09:14:00", "2026-10-06T10:00:00"]);
+  assert.deepEqual(firstColumn("\"created_at\"\n\"2026-10-06 09:14\""), ["2026-10-06 09:14"]);
+  assert.deepEqual(firstColumn("12\n13"), ["12", "13"]);
+  assert.deepEqual(firstColumn(""), []);
+
+  // a task held for a batch release is queued in playback
+  const held = snapshot([{ t: 0, kind: "TASK_QUEUED", task_id: "k", instance_id: null, workflow_id: null, step_id: "s", department_id: "a", resource_id: null, system_id: null, reason: "BATCH_HOLD", payload: {} }], 5);
+  assert.equal(held.tasks[0].state, "QUEUED"); assert.equal(held.tasks[0].reason, "BATCH_HOLD");
+  assert.deepEqual(held.perDept, { a: { QUEUED: 1, IN_PROGRESS: 0, BLOCKED: 0 } });
 }
 
 console.log("ok");

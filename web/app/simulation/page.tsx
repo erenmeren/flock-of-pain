@@ -50,7 +50,14 @@ export default function Simulation() {
               </Select>
             </Label>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Label className={TOGGLE}>
+              <Checkbox aria-label="common random numbers" checked={config.crn} onCheckedChange={(c) => setConfig({ ...config, crn: !!c })} />
+              <span className="flex flex-1 flex-col">
+                <span className="flex items-center gap-1">Common random numbers<Hint id="crn" /></span>
+                <span className="text-xs text-muted-foreground">Same arrivals and durations in every scenario</span>
+              </span>
+            </Label>
             <Label className={TOGGLE}>
               <Checkbox aria-label="include events" checked={config.include_events} onCheckedChange={(c) => setConfig({ ...config, include_events: !!c })} />
               <span className="flex flex-1 flex-col">

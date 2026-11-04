@@ -1,3 +1,4 @@
+import type { Dist, Profile } from "@/lib/company";
 export type Stat = { mean: number; p10: number; p50: number; p90: number };
 export type LedgerRow = {
   department_id: string;
@@ -23,7 +24,7 @@ export type SimEvent = {
 export type WorkflowMetrics = {
   started: number; completed: number; cancelled: number; throughput_per_day: number;
   cycle_p50: number; cycle_p90: number; wait_p50: number; wait_p90: number;
-  sla_breached: number; sla_breach_rate: number; deadline_missed: number; deadline_miss_rate: number; steps_completed: number; failures: number;
+  sla_breached: number; sla_breach_rate: number; deadline_missed: number; deadline_miss_rate: number; abandoned?: number; abandon_rate?: number; // absent in runs saved before abandonment steps_completed: number; failures: number;
   rework_rate: number; cost_per_completed: number;
 };
 export type RunResult = { seed: number; metrics: { workflows: Record<string, WorkflowMetrics>; [k: string]: unknown }; events?: SimEvent[] };
@@ -90,3 +91,8 @@ export const deleteCompany = (id: string) => request<{ deleted: string }>("DELET
 export const listRuns = (companyId?: string | null) =>
   request<RunMeta[]>("GET", `/runs?limit=20${companyId ? `&company_id=${enc(companyId)}` : ""}`);
 export const getRun = (id: number) => request<{ request: Bundle & { config: unknown }; result: SimulateResponse }>("GET", `/runs/${id}`);
+
+export type ArrivalFit = { rate_per_hour: number; profile: Profile; observed_days: number };
+export type DurationFit = Dist & { n: number; p50: number; p90: number };
+export const fitArrivals = (timestamps: string[]) => request<ArrivalFit>("POST", "/calibrate/arrivals", { timestamps });
+export const fitDurations = (minutes: number[]) => request<DurationFit>("POST", "/calibrate/durations", { minutes });

@@ -9,8 +9,8 @@ import { type Company, type Scenario, checkCompany, checkScenarios, slug } from 
 import { blockingIssue } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
 
-export type Config = { seed: number; days: number; replications: number; policy: string; include_events: boolean; save: boolean };
-export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", include_events: false, save: false };
+export type Config = { seed: number; days: number; replications: number; policy: string; crn: boolean; include_events: boolean; save: boolean };
+export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", crn: true, include_events: false, save: false };
 export const POLICIES = ["priority", "fifo", "least_loaded", "edd"];
 
 /** Where the shown result came from, so a page never mixes another company's numbers with this one. */
