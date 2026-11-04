@@ -66,3 +66,20 @@ def test_generate_semantic_scenario_error():
 
 def test_system_prompt_carries_example():
     assert '"id": "reynolds"' in agent.SYSTEM and "lognormal_mean" in agent.SYSTEM
+
+
+def test_client_has_timeout_and_one_retry(monkeypatch):
+    import sys, types
+    seen = {}
+
+    class Client:
+        def __init__(self, **kw):
+            seen.update(kw)
+            self.messages = self
+
+        def create(self, **kw):
+            return types.SimpleNamespace(stop_reason="end_turn", content=[types.SimpleNamespace(type="text", text="ok")])
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=Client, AnthropicError=Exception))
+    assert agent._ask([]) == "ok" and seen == {"timeout": 60, "max_retries": 1}
+

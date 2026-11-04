@@ -48,7 +48,7 @@ def _ask(messages: list[dict]) -> str:
     import anthropic
 
     try:
-        r = anthropic.Anthropic().messages.create(
+        r = anthropic.Anthropic(timeout=60, max_retries=1).messages.create(  # SDK default: 600 s x 3 tries
             model=MODEL, max_tokens=16000,
             system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
             messages=messages)
@@ -61,6 +61,28 @@ def _ask(messages: list[dict]) -> str:
     return "".join(b.text for b in r.content if b.type == "text")
 
 
+def section(prefix: str, fn, *args):
+    """Run a loader, prefixing a SchemaError path with the request section it came from."""
+    try:
+        return fn(*args)
+    except SchemaError as e:
+        raise SchemaError(f"{prefix}.{e.path}" if e.path else prefix, e.message) from e
+
+
+def load_bundle(company_d: dict, scenarios_d: list[dict], draft: bool = False):
+    """The API's loader: company, then scenarios (unique ids, each materialized). Errors are SchemaError or ModelError."""
+    company = section("company", company_from_dict, company_d, draft)
+    scenarios = [section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(scenarios_d)]
+    if len({s.id for s in scenarios}) != len(scenarios):
+        raise SchemaError("scenarios", "duplicate scenario id")
+    for i, s in enumerate(scenarios):
+        try:
+            s.materialize(draft=draft)
+        except ModelError as e:
+            raise SchemaError(f"scenarios[{i}]", str(e)) from e
+    return company, scenarios
+
+
 def _validate(text: str) -> dict:
     body = text.strip()
     if body.startswith("```"):
@@ -71,10 +93,7 @@ def _validate(text: str) -> dict:
         raise SchemaError("", f"not JSON: {e}") from e
     if not isinstance(d, dict) or not isinstance(d.get("company"), dict) or not isinstance(d.get("scenarios"), list):
         raise SchemaError("", 'expected {"company": {...}, "scenarios": [...]}')
-    try:
-        company = company_from_dict(d["company"])
-    except SchemaError as e:
-        raise SchemaError(f"company.{e.path}", e.message) from e
+    company, scenarios = load_bundle(d["company"], d["scenarios"])
     # The engine tolerates a step nobody can do (NO_ELIGIBLE_RESOURCE, a legitimate what-if via overlays),
     # but in a generated base company it is a model mistake worth a repair round.
     skills = {dep.id: {sk for r in dep.resources for sk in r.skills} for dep in company.departments}
@@ -83,17 +102,6 @@ def _validate(text: str) -> dict:
             if st.required_skill not in skills[st.department_id]:
                 raise SchemaError(f"company.workflows[{wi}].steps[{si}].required_skill",
                                   f"no resource in department {st.department_id} has skill {st.required_skill}")
-    scenarios = []
-    for i, s in enumerate(d["scenarios"]):
-        try:
-            scenarios.append(scenario_from_dict(s, company))
-            scenarios[-1].materialize()
-        except SchemaError as e:
-            raise SchemaError(f"scenarios[{i}].{e.path}".rstrip("."), e.message) from e
-        except ModelError as e:
-            raise SchemaError(f"scenarios[{i}]", str(e)) from e
-    if len({s.id for s in scenarios}) != len(scenarios):
-        raise SchemaError("scenarios", "duplicate scenario id")
     return {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]}
 
 

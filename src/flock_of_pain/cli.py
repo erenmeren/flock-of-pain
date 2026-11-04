@@ -32,14 +32,20 @@ def main(argv: list[str] | None = None) -> int:
     tc.add_argument("--name", help="display name (default: the id)")
     tsub.add_parser("rotate", help="replace a tenant's API key").add_argument("id")
     tsub.add_parser("list", help="list tenants")
+    sub.add_parser("backup", help="copy the FLOCK_DB database to PATH (safe while the API runs)").add_argument("path", type=Path)
     args = parser.parse_args(argv)
+    if args.command == "backup":
+        from flock_of_pain import store
+        store.backup(str(args.path))
+        return 0
     if args.command == "tenant":
         from flock_of_pain import store
         if args.tenant_command == "create":
             import re
             import sqlite3
-            if not re.fullmatch(r"[\w.-]+", args.id):
-                print("error: tenant id: use letters, digits, '_', '.' or '-'", file=sys.stderr)
+            if len(args.id) > store.TENANT_ID_MAX or not re.fullmatch(store.TENANT_ID, args.id):
+                print(f"error: tenant id: use letters, digits, '_', '.' or '-', at most {store.TENANT_ID_MAX} characters",
+                      file=sys.stderr)
                 return 1
             try:
                 print(store.create_tenant(args.id, args.name or args.id))

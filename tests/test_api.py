@@ -1,6 +1,7 @@
 import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+from flock_of_pain import api
 from flock_of_pain.api import app
 from flock_of_pain.experiment import KPI_KEYS
 
@@ -212,7 +213,7 @@ def test_generate_daily_quota_429(monkeypatch):
     from flock_of_pain import agent
     ex = client.get("/example").json()
     monkeypatch.setattr(agent, "_ask", lambda messages: json.dumps(ex))
-    monkeypatch.setenv("FLOCK_GENERATE_DAILY_LIMIT", "2")
+    monkeypatch.setattr(api, "GENERATE_DAILY_LIMIT", 2)
     assert [client.post("/generate", json={"prompt": "x"}).status_code for _ in range(3)] == [200, 200, 429]
     r = client.post("/generate", json={"prompt": "x"})
     assert r.json()["path"] is None and "limit of 2" in r.json()["message"]
@@ -220,6 +221,10 @@ def test_generate_daily_quota_429(monkeypatch):
     from flock_of_pain import store
     r = client.post("/generate", json={"prompt": "x"}, headers={"X-API-Key": store.create_tenant("t2", "t2")})
     assert r.status_code == 200
+    # the all-tenant cap ('*' row) stops everyone
+    monkeypatch.setattr(api, "GENERATE_GLOBAL_DAILY_LIMIT", 3)
+    r = client.post("/generate", json={"prompt": "x"}, headers={"X-API-Key": store.create_tenant("t3", "t3")})
+    assert r.status_code == 429
 
 
 def test_signup(monkeypatch):
@@ -233,5 +238,36 @@ def test_signup(monkeypatch):
         assert r.status_code == 200 and r.json()["id"] == "new" and r.json()["key"].startswith("fop_")
         assert client.get("/companies", headers={"X-API-Key": r.json()["key"]}).status_code == 200
         assert client.post("/signup", json={"id": "new", "invite": "open-sesame"}).status_code == 409
+        assert client.post("/signup", json={"id": "x2", "invite": "\u00e9"}).status_code == 401  # non-ASCII, not a 500
+        monkeypatch.setattr(api, "MAX_TENANTS", 2)  # t1 and new exist
+        r = client.post("/signup", json={"id": "x3", "invite": "open-sesame"})
+        assert r.status_code == 403 and "tenant limit" in r.json()["message"]
     finally:
         client.headers["X-API-Key"] = "x"  # the fixture deletes it on teardown
+
+
+def test_body_too_large_413():
+    r = client.post("/simulate", content=b"x" * (2 * 1024 * 1024 + 1), headers={"Content-Type": "application/json"})
+    assert r.status_code == 413
+
+
+def test_company_cap_409(monkeypatch):
+    from flock_of_pain import store
+    monkeypatch.setattr(store, "MAX_COMPANIES", 1)
+    ex = client.get("/example").json()
+    assert client.put("/companies/reynolds", json=ex).status_code == 200
+    assert client.put("/companies/reynolds", json=ex).status_code == 200  # update always allowed
+    other = {**ex, "company": {**ex["company"], "id": "other"}}
+    r = client.put("/companies/other", json=other)
+    assert r.status_code == 409 and "1 companies" in r.json()["message"]
+
+
+def test_delete_run_endpoint():
+    ex = client.get("/example").json()
+    body = {"company": ex["company"], "scenarios": ex["scenarios"][:1], "config": {"seed": 1, "days": 1}, "save": True}
+    rid = client.post("/simulate", json=body).json()["run_id"]
+    from flock_of_pain import store
+    other = store.create_tenant("t2", "t2")
+    assert client.delete(f"/runs/{rid}", headers={"X-API-Key": other}).status_code == 404
+    assert client.delete(f"/runs/{rid}").json() == {"deleted": rid}
+    assert client.delete(f"/runs/{rid}").status_code == 404

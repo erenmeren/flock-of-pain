@@ -12,18 +12,34 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from flock_of_pain import agent, store
+from flock_of_pain.agent import load_bundle, section
 from flock_of_pain.examples import reynolds
 from flock_of_pain.experiment import ASSUMPTION, KPI_KEYS, off_shift_minutes, run_experiment, top_ledger
-from flock_of_pain.io import (SchemaError, company_from_dict, company_to_dict, metrics_to_dict, run_config_from_dict,
-                              scenario_from_dict, scenario_to_dict)
+from flock_of_pain.io import SchemaError, company_to_dict, metrics_to_dict, run_config_from_dict, scenario_to_dict
 from flock_of_pain.model import ModelError
 
 MAX_RUN_DAYS, MAX_EVENT_RUN_DAYS, MAX_RUNS = 2000, 30, 400  # ~330 s and ~38 GB at 365 x 50 x 4 without a cap
-TENANT_ID = r"[\w.-]+"
+TENANT_ID = store.TENANT_ID
+MAX_BODY_BYTES = 2 * 1024 * 1024
+# parsed at import, so a typo fails at startup instead of a 500 per request
+GENERATE_DAILY_LIMIT = int(os.environ.get("FLOCK_GENERATE_DAILY_LIMIT", "20"))  # per tenant
+GENERATE_GLOBAL_DAILY_LIMIT = int(os.environ.get("FLOCK_GENERATE_GLOBAL_DAILY_LIMIT", "200"))  # all tenants together
+MAX_TENANTS = int(os.environ.get("FLOCK_MAX_TENANTS", "100"))  # /signup refuses past this
 
 app = FastAPI(title="Flock of Pain")
+
+
+@app.middleware("http")  # registered before CORS, so CORS wraps it and a 413 still carries CORS headers
+async def _limit_body(request: Request, call_next):
+    size = request.headers.get("content-length", "")
+    if size.isdigit() and int(size) > MAX_BODY_BYTES:
+        return JSONResponse({"path": None, "message": f"request body over {MAX_BODY_BYTES} bytes"}, status_code=413)
+    return await call_next(request)
+
+
 app.add_middleware(CORSMiddleware, allow_methods=["*"], allow_headers=["*"],
-                   allow_origins=os.environ.get("FLOCK_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
+                   allow_origins=[o.strip() for o in os.environ.get("FLOCK_CORS_ORIGINS",
+                                                                    "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()])
 
 _api_key = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -67,7 +83,7 @@ class GenerateRequest(BaseModel):
 
 
 class SignupRequest(BaseModel):
-    id: str = Field(pattern=rf"^{TENANT_ID}$", max_length=64)
+    id: str = Field(pattern=rf"^{TENANT_ID}$", max_length=store.TENANT_ID_MAX)
     name: str | None = Field(default=None, max_length=200)
     invite: str = Field(max_length=200)
 
@@ -88,6 +104,11 @@ async def _quota_error(_: Request, e: QuotaError):
     return JSONResponse({"path": None, "message": str(e)}, status_code=429)
 
 
+@app.exception_handler(store.LimitError)
+async def _limit_error(_: Request, e: store.LimitError):
+    return JSONResponse({"path": None, "message": str(e)}, status_code=409)
+
+
 @app.exception_handler(agent.AgentError)
 async def _agent_error(_: Request, e: agent.AgentError):
     return JSONResponse({"path": None, "message": str(e)}, status_code=502)
@@ -99,34 +120,14 @@ def example():
     return {"company": company_to_dict(base), "scenarios": [scenario_to_dict(s) for s in reynolds.scenarios(base)]}
 
 
-def _section(prefix: str, fn, *args):
-    try:
-        return fn(*args)
-    except SchemaError as e:
-        raise SchemaError(f"{prefix}.{e.path}" if e.path else prefix, e.message) from e
-
-
-def _load(company_d: dict, scenarios_d: list[dict], draft: bool = False):
-    company = _section("company", company_from_dict, company_d, draft)
-    scenarios = [_section(f"scenarios[{i}]", scenario_from_dict, s, company) for i, s in enumerate(scenarios_d)]
-    if len({s.id for s in scenarios}) != len(scenarios):
-        raise SchemaError("scenarios", "duplicate scenario id")
-    for i, s in enumerate(scenarios):
-        try:
-            s.materialize(draft=draft)
-        except ModelError as e:
-            raise SchemaError(f"scenarios[{i}]", str(e)) from e
-    return company, scenarios
-
-
 def _not_found():
     return JSONResponse({"path": None, "message": "not found"}, status_code=404)
 
 
 @app.post("/simulate")
 def simulate(req: SimulateRequest, tenant: str = Tenant):
-    company, scenarios = _load(req.company, req.scenarios)
-    config = _section("config", run_config_from_dict, req.config)
+    company, scenarios = load_bundle(req.company, req.scenarios)
+    config = section("config", run_config_from_dict, req.config)
     budget = config.horizon_minutes / 1440 * config.replications * max(1, len(scenarios))  # run-days
     limit = MAX_EVENT_RUN_DAYS if req.include_events else MAX_RUN_DAYS
     if config.replications * max(1, len(scenarios)) > MAX_RUNS:  # per-run setup cost is not covered by run-days
@@ -171,7 +172,7 @@ def companies(tenant: str = Tenant):
 
 @app.put("/companies/{cid}")
 def put_company(cid: str, body: Bundle, tenant: str = Tenant):
-    company, scenarios = _load(body.company, body.scenarios, draft=True)
+    company, scenarios = load_bundle(body.company, body.scenarios, draft=True)
     if company.id != cid:
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
     if not re.fullmatch(TENANT_ID, cid):
@@ -199,11 +200,16 @@ def get_run(rid: int, tenant: str = Tenant):
     return store.get_run(tenant, rid) or _not_found()
 
 
+@app.delete("/runs/{rid}")
+def delete_run(rid: int, tenant: str = Tenant):
+    return {"deleted": rid} if store.delete_run(tenant, rid) else _not_found()
+
+
 @app.post("/generate")
 def generate(req: GenerateRequest, tenant: str = Tenant):
-    limit = int(os.environ.get("FLOCK_GENERATE_DAILY_LIMIT", "20"))
-    if not store.take_generate(tenant, limit):  # counted before the call: a failed call still spends one
-        raise QuotaError(f"daily /generate limit of {limit} reached; try again tomorrow (UTC)")
+    if not store.take_generate(tenant, GENERATE_DAILY_LIMIT, GENERATE_GLOBAL_DAILY_LIMIT):  # counted before the call: a failed call still spends one
+        raise QuotaError(f"daily /generate limit of {GENERATE_DAILY_LIMIT} per tenant or {GENERATE_GLOBAL_DAILY_LIMIT} "
+                         "for all tenants reached; try again tomorrow (UTC)")
     return agent.generate(req.prompt)
 
 
@@ -213,8 +219,10 @@ def signup(req: SignupRequest):
     code = os.environ.get("FLOCK_SIGNUP_CODE")
     if not code:
         return _not_found()
-    if not secrets.compare_digest(req.invite, code):
+    if not secrets.compare_digest(req.invite.encode(), code.encode()):  # str form raises TypeError on non-ASCII
         raise AuthError("wrong invite code")
+    if len(store.list_tenants()) >= MAX_TENANTS:
+        return JSONResponse({"path": None, "message": f"tenant limit of {MAX_TENANTS} reached; signup is closed"}, status_code=403)
     try:
         key = store.create_tenant(req.id, req.name or req.id)
     except sqlite3.IntegrityError:

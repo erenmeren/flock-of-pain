@@ -41,4 +41,14 @@ def test_tenant_commands(tmp_path, capsys, monkeypatch):
     assert main(["tenant", "rotate", "ghost"]) == 1 and "no tenant" in capsys.readouterr().err
     assert main(["tenant", "create", "acme"]) == 1 and "exists" in capsys.readouterr().err
     assert main(["tenant", "create", "bad id"]) == 1 and "tenant id" in capsys.readouterr().err
+    assert main(["tenant", "create", "x" * 65]) == 1 and "tenant id" in capsys.readouterr().err
     assert main(["tenant", "list"]) == 0 and capsys.readouterr().out.startswith("acme | Acme Inc | ")
+
+
+def test_backup_command(tmp_path, monkeypatch):
+    import sqlite3
+    from flock_of_pain import store
+    monkeypatch.setenv("FLOCK_DB", str(tmp_path / "t.db"))
+    store.create_tenant("acme", "Acme")
+    assert main(["backup", str(tmp_path / "b.db")]) == 0
+    assert sqlite3.connect(tmp_path / "b.db").execute("SELECT id FROM tenants").fetchall() == [("acme",)]

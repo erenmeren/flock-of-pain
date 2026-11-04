@@ -8,8 +8,18 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 from contextlib import closing
 from datetime import datetime, timezone
+
+TENANT_ID, TENANT_ID_MAX = r"[\w.-]+", 64  # shared by the API and the CLI
+MAX_COMPANIES = int(os.environ.get("FLOCK_MAX_COMPANIES", "50"))  # per tenant; parsed at import so a typo fails at startup
+MAX_SAVED_RUNS = int(os.environ.get("FLOCK_MAX_RUNS", "200"))  # per tenant; older runs are deleted
+
+
+class LimitError(Exception):
+    """A per-tenant storage cap was reached."""
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tenants (
@@ -44,12 +54,22 @@ def _needs_v1(con: sqlite3.Connection) -> bool:
     return bool(cols) and "tenant_id" not in cols
 
 
+_ready: set[str] = set()  # db paths already migrated and in WAL mode in this process
+_ready_lock = threading.Lock()  # switching to WAL fails at once (no busy wait) while another connection reads
+
+
 def _connect() -> sqlite3.Connection:
-    con = sqlite3.connect(os.environ.get("FLOCK_DB", "flock.db"))
+    path = os.environ.get("FLOCK_DB", "flock.db")
+    con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
-    if _needs_v1(con):
-        _migrate(con)
-    con.executescript(SCHEMA)
+    if path not in _ready:
+        with _ready_lock:
+            if path not in _ready:
+                if _needs_v1(con):
+                    _migrate(con)
+                con.executescript(SCHEMA)
+                con.execute("PRAGMA journal_mode=WAL")
+                _ready.add(path)
     return con
 
 
@@ -98,13 +118,20 @@ def tenant_for_key(key: str) -> str | None:
     return None if row is None else row["id"]
 
 
-def take_generate(tenant: str, limit: int) -> bool:
-    """Count one /generate call against today's (UTC) quota; False when the tenant already used `limit` today."""
+def take_generate(tenant: str, limit: int, global_limit: int) -> bool:
+    """Count one /generate call against today's (UTC) quota; False when the tenant already used `limit` today
+    or all tenants together (the '*' row) used `global_limit`. Nothing is counted on False."""
+    if limit <= 0 or global_limit <= 0:  # the upsert below would let the first call through
+        return False
     day = _now()[:10]
     with closing(_connect()) as con, con:
-        n = con.execute("INSERT INTO usage VALUES (?, ?, 1) ON CONFLICT(tenant_id, day) DO UPDATE SET generates = generates + 1 "
-                        "WHERE generates < ?", (tenant, day, limit)).rowcount
-    return n > 0
+        for tid, cap in ((tenant, limit), ("*", global_limit)):
+            n = con.execute("INSERT INTO usage VALUES (?, ?, 1) ON CONFLICT(tenant_id, day) DO UPDATE SET generates = generates + 1 "
+                            "WHERE generates < ?", (tid, day, cap)).rowcount
+            if n == 0:
+                con.rollback()
+                return False
+    return True
 
 
 def list_tenants() -> list[dict]:
@@ -117,6 +144,9 @@ def list_tenants() -> list[dict]:
 def save_company(tenant: str, bundle: dict) -> dict:
     cid, name, at = bundle["company"]["id"], bundle["company"]["name"], _now()
     with closing(_connect()) as con, con:
+        exists = con.execute("SELECT 1 FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).fetchone()
+        if not exists and con.execute("SELECT count(*) FROM companies WHERE tenant_id = ?", (tenant,)).fetchone()[0] >= MAX_COMPANIES:
+            raise LimitError(f"limit of {MAX_COMPANIES} companies reached; delete one first")
         con.execute("INSERT INTO companies VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id, id) DO UPDATE SET "
                     "name = excluded.name, bundle = excluded.bundle, updated_at = excluded.updated_at",
                     (tenant, cid, name, json.dumps(bundle), at))
@@ -138,6 +168,7 @@ def get_company(tenant: str, cid: str) -> dict | None:
 
 def delete_company(tenant: str, cid: str) -> bool:
     with closing(_connect()) as con, con:
+        con.execute("DELETE FROM runs WHERE tenant_id = ? AND company_id = ?", (tenant, cid))
         return con.execute("DELETE FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).rowcount > 0
 
 
@@ -147,6 +178,8 @@ def save_run(tenant: str, company_id: str | None, name: str, request: dict, resu
     with closing(_connect()) as con, con:
         cur = con.execute("INSERT INTO runs (tenant_id, company_id, name, request, result, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                           (tenant, company_id, name, json.dumps(request), json.dumps(result), _now()))
+        con.execute("DELETE FROM runs WHERE tenant_id = ? AND id NOT IN "
+                    "(SELECT id FROM runs WHERE tenant_id = ? ORDER BY id DESC LIMIT ?)", (tenant, tenant, MAX_SAVED_RUNS))
         return cur.lastrowid
 
 
@@ -166,3 +199,14 @@ def get_run(tenant: str, rid: int) -> dict | None:
     out = {**dict(row), "request": json.loads(row["request"]), "result": json.loads(row["result"])}
     del out["tenant_id"]
     return out
+
+
+def delete_run(tenant: str, rid: int) -> bool:
+    with closing(_connect()) as con, con:
+        return con.execute("DELETE FROM runs WHERE tenant_id = ? AND id = ?", (tenant, rid)).rowcount > 0
+
+
+def backup(dest: str) -> None:
+    """Online copy of the FLOCK_DB database to `dest` (safe while the API is running)."""
+    with closing(_connect()) as src, closing(sqlite3.connect(dest)) as dst:
+        src.backup(dst)

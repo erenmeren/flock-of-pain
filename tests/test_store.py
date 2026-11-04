@@ -36,7 +36,8 @@ def test_company_roundtrip_upsert_delete_per_tenant():
     store.save_company("t1", bundle(name="Acme 2"))
     assert [c["name"] for c in store.list_companies("t1")] == ["Acme 2"]
     assert [c["name"] for c in store.list_companies("t2")] == ["Acme of t2"]
-    assert store.delete_company("t2", "acme") is False or store.get_company("t1", "acme") is not None
+    assert store.delete_company("t2", "acme") is True
+    assert store.get_company("t1", "acme") is not None
     assert store.delete_company("t1", "acme") is True
     assert store.delete_company("t1", "acme") is False
 
@@ -124,3 +125,48 @@ def test_concurrent_opens_migrate_once(tmp_path, monkeypatch):
     for t in threads: t.join()
     assert errors == []
     assert [c["id"] for c in store.list_companies("default")] == ["acme"]
+
+
+def test_generate_quota_zero_and_global():
+    assert store.take_generate("t1", 0, 10) is False  # 0 means off, not one call
+    assert store.take_generate("t1", 5, 0) is False
+    assert [store.take_generate(t, 5, 2) for t in ("t1", "t2", "t3")] == [True, True, False]
+    assert store.take_generate("t1", 1, 10) is False  # t1 used one; the failed t3 call spent nothing
+    assert store.take_generate("t3", 1, 3) is True  # t3's rolled-back call did not count against t3
+
+
+def test_company_cap_new_ids_only(monkeypatch):
+    monkeypatch.setattr(store, "MAX_COMPANIES", 1)
+    store.save_company("t1", bundle())
+    store.save_company("t1", bundle(name="renamed"))  # update allowed
+    with pytest.raises(store.LimitError):
+        store.save_company("t1", bundle(cid="b"))
+    store.save_company("t2", bundle(cid="b"))  # per tenant
+
+
+def test_runs_pruned_beyond_cap(monkeypatch):
+    monkeypatch.setattr(store, "MAX_SAVED_RUNS", 2)
+    ids = [store.save_run("t1", None, str(i), {}, {}) for i in range(3)]
+    other = store.save_run("t2", None, "x", {}, {})
+    assert [r["id"] for r in store.list_runs("t1")] == ids[:0:-1]
+    assert [r["id"] for r in store.list_runs("t2")] == [other]
+
+
+def test_delete_company_deletes_its_runs_and_delete_run():
+    store.save_company("t1", bundle())
+    a = store.save_run("t1", "acme", "a", {}, {})
+    b = store.save_run("t1", None, "b", {}, {})
+    c = store.save_run("t2", "acme", "c", {}, {})
+    assert store.delete_company("t1", "acme") is True
+    assert [r["id"] for r in store.list_runs("t1")] == [b] and store.get_run("t2", c) is not None
+    assert store.get_run("t1", a) is None
+    assert store.delete_run("t2", b) is False and store.delete_run("t1", b) is True and store.delete_run("t1", b) is False
+
+
+def test_backup(tmp_path):
+    store.create_tenant("t1", "T")
+    dest = tmp_path / "copy.db"
+    store.backup(str(dest))
+    con = sqlite3.connect(dest)
+    assert con.execute("SELECT id FROM tenants").fetchall() == [("t1",)]
+    con.close()
