@@ -17,12 +17,20 @@ def _find(c: Company, id: str) -> Resource:
 class ArrivalMultiplier:
     factor: float
     workflow_id: str | None = None
+    start: float | None = None
+    end: float | None = None
 
     def apply(self, c: Company) -> None:
         if self.workflow_id is not None:
             c.workflow(self.workflow_id)  # raises ModelError if unknown
+        windowed = self.start is not None or self.end is not None
+        if windowed and (self.start is None or self.end is None or self.end <= self.start):
+            raise ModelError(f"arrival_multiplier: give start and end together, end after start ({self.start}, {self.end})")
         for w in c.workflows:
             if self.workflow_id is None or w.id == self.workflow_id:
+                if windowed:  # time-dependent: the engine thins arrivals against it
+                    w.arrival_windows.append((self.start, self.end, self.factor))
+                    continue
                 if w.arrival is not None:
                     w.arrival.rate_per_hour *= self.factor
                 for i in w.inflows:
@@ -121,7 +129,8 @@ def expand_inflows(c: Company) -> None:
             single = len(w.inflows) == 1
             out.append(Workflow(w.id if single else f"{w.id}.{i.id}",
                                 w.name if single else f"{w.name} · {i.name}",
-                                steps, ArrivalSpec(i.rate_per_hour, i.window)))
+                                steps, ArrivalSpec(i.rate_per_hour, i.window, i.profile),
+                                cutoff_hour=w.cutoff_hour, arrival_windows=list(w.arrival_windows)))
     c.workflows = out
 
 

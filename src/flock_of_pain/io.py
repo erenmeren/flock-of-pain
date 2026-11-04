@@ -6,8 +6,8 @@ import types
 
 from flock_of_pain.analytics import Metrics
 from flock_of_pain.dist import Dist, lognormal_mean
-from flock_of_pain.model import (ArrivalSpec, BusinessSystem, Company, Department, Inflow, ModelError, Resource, Step,
-                                 Workflow)
+from flock_of_pain.model import (ArrivalSpec, BusinessSystem, Company, Department, Inflow, ModelError, Profile, Resource,
+                                 Step, Workflow)
 from flock_of_pain.engine import RunConfig
 from flock_of_pain.scenario import (Absence, AddEmployee, ArrivalMultiplier, RemoveResource, Scenario, SetPoolHeadcount,
                                     SystemOutage)
@@ -125,9 +125,17 @@ def schedule_from_dict(d: dict | None, path: str) -> Schedule | None:
     for k, v in _get(d, "weekday_hours", path, dict).items():
         if k not in {str(i) for i in range(7)}:
             raise SchemaError(_join(hp, k), "weekday key must be '0'..'6'")
-        start, end = hours[int(k)] = _pair(v, _join(hp, k))
-        _check(hp, (k, 0 <= start < 24 and start < end <= start + 24,
-                    "expected 0 <= start < 24 and start < end <= start + 24; write an overnight shift as e.g. [22, 30]"))
+        kp = _join(hp, k)
+        split = isinstance(v, list) and v and all(isinstance(w, list) for w in v)
+        windows = hours[int(k)] = [_pair(w, f"{kp}[{i}]") for i, w in enumerate(v)] if split else [_pair(v, kp)]
+        for i, (start, end) in enumerate(windows):
+            _check(hp, (k, 0 <= start < 24 and start < end <= start + 24,
+                        "expected 0 <= start < 24 and start < end <= start + 24; write an overnight shift as e.g. [22, 30]"),
+                   (k, i == 0 or windows[i - 1][1] <= start, "windows must be sorted and must not overlap"))
+    for k, windows in hours.items():
+        nxt = hours.get((k + 1) % 7)
+        _check(hp, (str(k), nxt is None or windows[-1][1] <= 24 + nxt[0][0],
+                    "a window past midnight overlaps the next day's first window"))
     ap = _join(path, "absences")
     absences = [_pair(a, f"{ap}[{i}]") for i, a in enumerate(_get(d, "absences", path, list, []))]
     for i, (start, end) in enumerate(absences):
@@ -139,10 +147,42 @@ def schedule_from_dict(d: dict | None, path: str) -> Schedule | None:
 def schedule_to_dict(s: Schedule | None) -> dict | None:
     if s is None:
         return None
-    out = {"weekday_hours": {str(k): list(v) for k, v in sorted(s.weekday_hours.items())}}
+    out = {"weekday_hours": {str(k): list(v[0]) if len(v) == 1 else [list(w) for w in v]
+                                for k, v in sorted(s.weekday_hours.items())}}
     if s.absences:
         out["absences"] = [list(a) for a in s.absences]
     return out
+
+
+def _profile_from_dict(d: dict | None, path: str) -> Profile | None:
+    if d is None:
+        return None
+    d = _obj(d, path)
+    maps = []
+    for key, n in (("hours", 24), ("weekdays", 7)):
+        kp, m = _join(path, key), {}
+        for k, v in _get(d, key, path, dict, {}).items():
+            if k not in {str(i) for i in range(n)}:
+                raise SchemaError(_join(kp, k), f"key must be '0'..'{n - 1}'")
+            m[int(k)] = _get({k: v}, k, kp, float)
+            _check(kp, (k, v >= 0, "must be >= 0"))
+        maps.append(m)
+    _done(d, path)
+    p = Profile(*maps)
+    if p.peak == 0:
+        raise SchemaError(path, "every multiplier is 0")
+    return p
+
+
+def _profile_to_dict(p: Profile) -> dict:
+    return {k: {str(i): v for i, v in m.items()} for k, m in (("hours", p.hours), ("weekdays", p.weekdays)) if m}
+
+
+def _rate_check(path: str, x) -> None:
+    peak = x.profile.peak if x.profile else 1.0
+    _check(path, ("rate_per_hour", x.rate_per_hour >= 0, "must be >= 0"),
+           ("rate_per_hour", x.rate_per_hour * peak <= MAX_RATE_PER_HOUR,
+            f"must be <= {MAX_RATE_PER_HOUR}" + (" at the profile's peak" if x.profile else "")))
 
 
 def resource_from_dict(d: dict, department_id: str, path: str) -> Resource:
@@ -175,14 +215,23 @@ def resource_to_dict(r: Resource, pool: Resource | None = None) -> dict:
     return out
 
 
+def _branch_from_dict(d: dict, path: str) -> tuple[str, float]:
+    b = _get(d, "to", path, str), _get(d, "prob", path, float)
+    _done(d, path)
+    _check(path, ("prob", 0 <= b[1] <= 1, "must be in [0, 1]"))
+    return b
+
+
 def _step_from_dict(d: dict, path: str) -> Step:
+    # the key is required; null makes a wait step
+    skill = d.pop("required_skill") if d.get("required_skill", 0) is None else _get(d, "required_skill", path, str)
     s = Step(id=_get(d, "id", path, str), name=_get(d, "name", path, str),
-             department_id=_get(d, "department_id", path, str), required_skill=_get(d, "required_skill", path, str),
+             department_id=_get(d, "department_id", path, str), required_skill=skill,
              duration=dist_from_dict(_get(d, "duration", path, dict), _join(path, "duration")),
              depends_on=list(_strs(d, "depends_on", path, [])), system_id=_get(d, "system_id", path, str, None),
              priority=_get(d, "priority", path, int, 0), sla_minutes=_get(d, "sla_minutes", path, float, None),
              failure_prob=_get(d, "failure_prob", path, float, 0.0), rework_to=_get(d, "rework_to", path, str, None),
-             max_retries=_get(d, "max_retries", path, int, 0))
+             max_retries=_get(d, "max_retries", path, int, 0), branches=_items(d, "branches", path, _branch_from_dict, []))
     _done(d, path)
     _check(path, ("max_retries", s.max_retries <= MAX_RETRIES, f"must be <= {MAX_RETRIES}"))
     return s
@@ -192,14 +241,16 @@ def _step_to_dict(s: Step) -> dict:
     out = {"id": s.id, "name": s.name, "department_id": s.department_id, "required_skill": s.required_skill,
            "duration": dist_to_dict(s.duration)}
     out.update({k: getattr(s, k) for k, v in _STEP_DEFAULTS.items() if getattr(s, k) != v})
+    if s.branches:
+        out["branches"] = [{"to": to, "prob": p} for to, p in s.branches]
     return out
 
 
 def _inflow_from_dict(d: dict, path: str) -> Inflow:
     f = Inflow(_get(d, "id", path, str), _get(d, "name", path, str), _get(d, "rate_per_hour", path, float),
-               schedule_from_dict(_get(d, "window", path, dict), _join(path, "window")), _strs(d, "entry", path))
-    _check(path, ("rate_per_hour", f.rate_per_hour >= 0, "must be >= 0"),
-           ("rate_per_hour", f.rate_per_hour <= MAX_RATE_PER_HOUR, f"must be <= {MAX_RATE_PER_HOUR}"))
+               schedule_from_dict(_get(d, "window", path, dict), _join(path, "window")), _strs(d, "entry", path),
+               _profile_from_dict(_get(d, "profile", path, dict, None), _join(path, "profile")))
+    _rate_check(path, f)
     _done(d, path)
     return f
 
@@ -210,10 +261,10 @@ def _workflow_from_dict(d: dict, path: str) -> Workflow:
     arrival = None
     if a is not None:
         a = _obj(a, ap)
-        arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")))
+        arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")),
+                              _profile_from_dict(_get(a, "profile", ap, dict, None), _join(ap, "profile")))
         _done(a, ap)
-        _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"),
-               ("rate_per_hour", arrival.rate_per_hour <= MAX_RATE_PER_HOUR, f"must be <= {MAX_RATE_PER_HOUR}"))
+        _rate_check(ap, arrival)
     inflows = _items(d, "inflows", path, _inflow_from_dict, [])
     lp = _join(path, "layout")
     raw = _get(d, "layout", path, dict, {})
@@ -223,8 +274,10 @@ def _workflow_from_dict(d: dict, path: str) -> Workflow:
     steps = _items(d, "steps", path, _step_from_dict)
     known = {s.id for s in steps} | {f.id for f in inflows}
     layout = {k: _pair(v, _join(lp, k)) for k, v in raw.items() if k in known}
-    w = Workflow(_get(d, "id", path, str), _get(d, "name", path, str), steps, arrival, inflows, layout)
+    w = Workflow(_get(d, "id", path, str), _get(d, "name", path, str), steps, arrival, inflows, layout,
+                 _get(d, "cutoff_hour", path, float, None))
     _done(d, path)
+    _check(path, ("cutoff_hour", w.cutoff_hour is None or 0 <= w.cutoff_hour < 24, "expected 0 <= cutoff_hour < 24"))
     return w
 
 
@@ -260,11 +313,17 @@ def company_from_dict(d: dict, draft: bool = False) -> Company:
 
 def _workflow_to_dict(w: Workflow) -> dict:
     out = {"id": w.id, "name": w.name}
+    if w.cutoff_hour is not None:
+        out["cutoff_hour"] = w.cutoff_hour
     if w.arrival is not None:
         out["arrival"] = {"rate_per_hour": w.arrival.rate_per_hour, "window": schedule_to_dict(w.arrival.window)}
+        if w.arrival.profile is not None:
+            out["arrival"]["profile"] = _profile_to_dict(w.arrival.profile)
     else:
         out["inflows"] = [{"id": f.id, "name": f.name, "rate_per_hour": f.rate_per_hour,
-                           "window": schedule_to_dict(f.window), "entry": list(f.entry)} for f in w.inflows]
+                           "window": schedule_to_dict(f.window), "entry": list(f.entry),
+                           **({"profile": _profile_to_dict(f.profile)} if f.profile is not None else {})}
+                          for f in w.inflows]
     if w.layout:
         out["layout"] = {k: list(v) for k, v in w.layout.items()}
     out["steps"] = [_step_to_dict(s) for s in w.steps]
@@ -304,7 +363,7 @@ def _overlay_from_dict(d: dict, path: str):
     for f in dataclasses.fields(cls):
         if f.name == "employee":
             continue
-        typ = str if isinstance(f.type, types.UnionType) else f.type
+        typ = f.type.__args__[0] if isinstance(f.type, types.UnionType) else f.type  # X | None -> X
         kw[f.name] = _get(d, f.name, path, typ, _REQUIRED if f.default is dataclasses.MISSING else f.default)
     if cls is AddEmployee:
         kw["employee"] = resource_from_dict(_get(d, "employee", path, dict), kw["department_id"], _join(path, "employee"))
@@ -325,6 +384,8 @@ def scenario_to_dict(s: Scenario) -> dict:
         item = {"type": _OVERLAY_NAMES[type(o)]}
         for f in dataclasses.fields(o):
             v = getattr(o, f.name)
+            if v is None and f.name in ("start", "end"):  # unwindowed arrival_multiplier
+                continue
             item[f.name] = resource_to_dict(v) if f.name == "employee" else v
         overlays.append(item)
     return {"id": s.id, "name": s.name, "overlays": overlays}

@@ -33,6 +33,8 @@ class WorkflowMetrics:
     wait_p90: float = 0.0
     sla_breached: int = 0
     sla_breach_rate: float = 0.0
+    deadline_missed: int = 0
+    deadline_miss_rate: float = 0.0
     steps_completed: int = 0
     failures: int = 0
     rework_rate: float = 0.0
@@ -151,6 +153,8 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
                 cycles[e.workflow_id].append(e.t - wf_started[e.instance_id])
         elif e.kind == K.SLA_BREACHED:
             breached[e.workflow_id].add(e.instance_id)
+        elif e.kind == K.DEADLINE_MISSED:
+            w.deadline_missed += 1
         if e.task_id is None:
             continue
         tr = tracks[e.task_id]
@@ -169,14 +173,14 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
                 waits_wf[e.workflow_id].append(e.t - tr.wait_from)
                 waits_dept[e.department_id].append(e.t - tr.wait_from)
                 tr.wait_from = None
-            tr.run = (e.t, e.resource_id)
+            tr.run = None if e.resource_id is None else (e.t, e.resource_id)  # None: wait step, nobody works
         elif e.kind in (K.TASK_COMPLETED, K.TASK_FAILED, K.TASK_BLOCKED):
             close_run(e, tr, e.t)
             if e.kind == K.TASK_COMPLETED:
                 w.steps_completed += 1
                 if e.resource_id in rm:
                     rm[e.resource_id].tasks_completed += 1
-                if e.department_id in dm:
+                if e.department_id in dm and e.resource_id is not None:
                     dm[e.department_id].tasks_completed += 1
             elif e.kind == K.TASK_FAILED:
                 w.failures += 1
@@ -223,6 +227,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         w.wait_p50, w.wait_p90 = percentile(waits_wf[w_id], 50), percentile(waits_wf[w_id], 90)
         w.sla_breached = len(breached[w_id] & done[w_id])
         w.sla_breach_rate = _div(w.sla_breached, w.completed)
+        w.deadline_miss_rate = _div(w.deadline_missed, w.started)
         w.rework_rate = _div(w.failures, w.failures + w.steps_completed)
         w.cost_per_completed = _div(wf_cost[w_id], w.completed)
 

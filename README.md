@@ -73,6 +73,21 @@ cd web && NEXT_PUBLIC_API_URL=https://api.twin.example.com npm run build && npm 
 - Phase-1 (JSON I/O and API) spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-io-api-design.md`
 - Phase-1 plan: `docs/superpowers/plans/2026-10-24-flock-of-pain-io-api.md`
 - Phase-2a (AI agent) spec: `docs/superpowers/specs/2026-10-24-flock-of-pain-agent-design.md`
+- Office-floor model spec: `docs/superpowers/specs/2026-11-04-office-floor-model.md`
+
+## Model features
+
+Optional Company JSON additions; a file without them runs exactly as before.
+
+- Demand profile: hour-of-day and weekday rate multipliers on `arrival` or an inflow, default 1.0 per missing key:
+  `"profile": {"hours": {"16": 1.6, "17": 2.0}, "weekdays": {"4": 0.7}}`.
+- Seasonal surge: an `arrival_multiplier` overlay with a window in minutes from time zero:
+  `{"type": "arrival_multiplier", "factor": 1.5, "workflow_id": null, "start": 28800, "end": 57600}`.
+- Daily cut-off: `"cutoff_hour": 22` on a workflow; an instance not done by the next 22:00 logs `DEADLINE_MISSED`
+  (KPI `deadline_miss_rate`). Run policy `"edd"` serves the earliest due date first.
+- Branching: `"branches": [{"to": "credit_check", "prob": 0.15}]` on a step; each target depends on the step, and targets not drawn are skipped.
+- Wait step: `"required_skill": null` waits for its duration (a customer reply, say) with nobody working.
+- Split shifts: `"weekday_hours": {"0": [[9, 13], [14, 17.5]], "1": [9, 17]}`.
 
 ## Web
 

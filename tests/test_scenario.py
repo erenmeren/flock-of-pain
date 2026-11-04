@@ -155,3 +155,36 @@ def test_materialize_draft_tolerates_incomplete_company():
 def test_absence_end_must_be_after_start(start, end):
     with pytest.raises(ModelError, match="end"):
         Scenario("s", "S", tiny_company(employees=1), [Absence("e1", start, end)]).materialize()
+
+
+def test_inflow_profile_survives_expand():
+    from flock_of_pain.model import Profile
+    c = _canvas_company()
+    c.workflow("w").inflows[0].profile = Profile({9: 2.0})
+    expand_inflows(c)
+    assert c.workflows[0].arrival.profile == Profile({9: 2.0}) and c.workflows[1].arrival.profile is None
+
+
+def test_windowed_arrival_multiplier_fills_windows_not_rate():
+    c = Scenario("s", "S", _canvas_company(), [ArrivalMultiplier(1.5, "w", 600, 900)]).materialize()
+    assert [(w.arrival.rate_per_hour, w.arrival_windows) for w in c.workflows] == [(3, [(600, 900, 1.5)]),
+                                                                                   (10, [(600, 900, 1.5)])]
+    for start, end in ((900, 600), (600, 600), (600, None), (None, 600)):
+        with pytest.raises(ModelError, match="end"):
+            Scenario("s", "S", tiny_company(), [ArrivalMultiplier(2, None, start, end)]).materialize()
+
+
+def _windowed_run(factor):
+    c = tiny_company(rate_per_hour=10, steps=[Step("a", "A", "cs", "support", const(1))])
+    c.workflows[0].arrival.window = business_hours(0, 24, days=range(7))
+    c = Scenario("s", "S", c, [ArrivalMultiplier(factor, None, 1440, 2880)]).materialize()
+    e = Engine(c, RunConfig(seed=5, horizon_minutes=3 * 1440))
+    e.run()
+    days = [int(x.t // 1440) for x in e.events if x.kind == "WORKFLOW_STARTED"]
+    return [days.count(d) for d in range(3)]
+
+
+def test_windowed_arrival_multiplier_only_affects_its_window():
+    zero, triple = _windowed_run(0), _windowed_run(3)
+    assert zero[1] == 0 and zero[0] > 150 and zero[2] > 150
+    assert triple[1] > 2 * max(triple[0], triple[2])

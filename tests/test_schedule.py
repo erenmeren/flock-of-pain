@@ -98,3 +98,24 @@ def test_overnight_shift_early_morning_part():
     assert s.next_off(t) == D + 6 * 60
     assert s.next_on(t) == t
     assert s.next_on(D + 6 * 60) == D + 22 * 60
+
+
+def test_split_shift_windows():
+    s = Schedule({0: [(9, 13), (14, 17.5)]})
+    assert s.weekday_hours[0] == [(9, 13), (14, 17.5)]
+    assert s.is_on(12 * 60) and not s.is_on(13 * 60 + 30) and s.is_on(14 * 60)
+    assert s.next_off(9 * 60) == 13 * 60
+    assert s.next_on(13 * 60) == 14 * 60
+    assert s.next_off(14 * 60) == 17.5 * 60
+    assert s.on_minutes(0, D) == 7.5 * 60
+
+
+def test_pair_normalised_to_one_window():
+    assert Schedule({0: (9, 17)}).weekday_hours == {0: [(9, 17)]}
+    assert business_hours(9, 17).weekday_hours[0] == [(9, 17)]
+
+
+def test_split_shift_with_overnight_previous_day():
+    s = Schedule({0: [(9, 12), (20, 26)], 1: [(3, 5)]})
+    assert s.is_on(D + 60) and not s.is_on(D + 2 * 60 + 30) and s.is_on(D + 4 * 60)
+    assert s.on_minutes(0, 2 * D) == (3 + 6 + 2) * 60

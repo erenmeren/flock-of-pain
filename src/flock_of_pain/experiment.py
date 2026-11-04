@@ -13,7 +13,7 @@ from flock_of_pain.scenario import Scenario
 
 KPI_KEYS = [
     "throughput_per_day", "completion_rate", "cycle_p50", "cycle_p90", "wait_p90",
-    "sla_breach_rate", "rework_rate", "mean_dept_utilization", "labor_cost",
+    "sla_breach_rate", "deadline_miss_rate", "rework_rate", "mean_dept_utilization", "labor_cost",
 ]
 ASSUMPTION = "All parameters are assumed values; results are simulation estimates, not measurements."
 
@@ -63,6 +63,7 @@ def kpis(m: Metrics) -> dict[str, float]:
         "cycle_p90": wmean("cycle_p90"),
         "wait_p90": wmean("wait_p90"),
         "sla_breach_rate": sum(w.sla_breached for w in ws) / n if n else 0.0,
+        "deadline_miss_rate": sum(w.deadline_missed for w in ws) / started if started else 0.0,
         "rework_rate": failures / attempts if attempts else 0.0,
         "mean_dept_utilization": sum(utils.values()) / len(utils) if utils else 0.0,
         "labor_cost": m.labor_cost,

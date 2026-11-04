@@ -1,3 +1,4 @@
+import math
 from typing import Protocol
 
 from flock_of_pain.events import Task
@@ -34,8 +35,14 @@ class LeastLoaded(Priority):
         return min(eligible, key=lambda r: busy_minutes.get(r.id, 0.0) / r.capacity)
 
 
+class Edd(Priority):
+    def order_key(self, task: Task, step: Step) -> tuple:
+        return (math.inf if task.due_at is None else task.due_at, -step.priority, task.queued_at, task.id)
+
+
 POLICIES: dict[str, type[SchedulingPolicy]] = {
     "fifo": Fifo,
     "priority": Priority,
     "least_loaded": LeastLoaded,
+    "edd": Edd,
 }

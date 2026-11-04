@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from flock_of_pain.dist import Dist
-from flock_of_pain.schedule import Schedule
+from flock_of_pain.schedule import Schedule, weekday
 
 
 class ModelError(ValueError):
@@ -40,9 +40,24 @@ class BusinessSystem:
 
 
 @dataclass
+class Profile:
+    """Arrival-rate multipliers by hour of day and weekday; a missing key is 1.0."""
+    hours: dict[int, float] = field(default_factory=dict)
+    weekdays: dict[int, float] = field(default_factory=dict)
+
+    def mult(self, t: float) -> float:
+        return self.hours.get(int(t // 60) % 24, 1.0) * self.weekdays.get(weekday(t), 1.0)
+
+    @property
+    def peak(self) -> float:
+        return max(self.hours.get(h, 1.0) for h in range(24)) * max(self.weekdays.get(d, 1.0) for d in range(7))
+
+
+@dataclass
 class ArrivalSpec:
     rate_per_hour: float
     window: Schedule
+    profile: Profile | None = None
 
 
 @dataclass
@@ -50,7 +65,7 @@ class Step:
     id: str
     name: str
     department_id: str
-    required_skill: str
+    required_skill: str | None  # None: a wait step, nobody works
     duration: Dist
     depends_on: list[str] = field(default_factory=list)
     system_id: str | None = None
@@ -59,6 +74,7 @@ class Step:
     failure_prob: float = 0.0
     rework_to: str | None = None
     max_retries: int = 0
+    branches: list[tuple[str, float]] = field(default_factory=list)  # (target step id, probability)
 
 
 @dataclass
@@ -68,6 +84,7 @@ class Inflow:
     rate_per_hour: float
     window: Schedule
     entry: list[str]
+    profile: Profile | None = None
 
 
 @dataclass
@@ -78,6 +95,8 @@ class Workflow:
     arrival: ArrivalSpec | None = None
     inflows: list[Inflow] = field(default_factory=list)
     layout: dict[str, tuple[float, float]] = field(default_factory=dict)
+    cutoff_hour: float | None = None
+    arrival_windows: list[tuple[float, float, float]] = field(default_factory=list)  # (start, end, factor), from overlays
 
 
 @dataclass
@@ -159,6 +178,8 @@ class Company:
         system_ids = {s.id for s in self.systems}
         for w in self.workflows:
             ids = {s.id for s in w.steps}
+            by_step = {s.id: s for s in w.steps}
+            parents: dict[str, str] = {}  # branch target -> branching step
             if w.arrival is not None and w.inflows:
                 raise ModelError(f"workflow {w.id}: give arrival or inflows, not both")
             if not draft and w.arrival is None and not w.inflows:
@@ -176,8 +197,13 @@ class Company:
             for s in w.steps:
                 if not (draft and s.department_id == "") and s.department_id not in dept_ids:
                     raise ModelError(f"step {s.id}: unknown department_id {s.department_id}")
-                if not draft and not s.required_skill:
+                if not draft and s.required_skill == "":
                     raise ModelError(f"step {s.id}: empty required_skill")
+                if not draft and s.required_skill is None:
+                    for bad, what in ((s.system_id is not None, "system_id"), (s.failure_prob != 0, "failure_prob"),
+                                      (s.rework_to is not None, "rework_to")):
+                        if bad:
+                            raise ModelError(f"step {s.id}: a wait step (required_skill null) takes no {what}")
                 if s.system_id is not None and s.system_id not in system_ids:
                     raise ModelError(f"step {s.id}: unknown system_id {s.system_id}")
                 if not 0 <= s.failure_prob <= 1:
@@ -187,6 +213,17 @@ class Company:
                         raise ModelError(f"step {s.id}: unknown dependency {d}")
                 if s.rework_to is not None and s.rework_to != s.id and s.rework_to not in s.depends_on:
                     raise ModelError(f"step {s.id}: rework_to {s.rework_to} is not self or a dependency")
+                for to, _ in s.branches:
+                    if to in parents:
+                        raise ModelError(f"step {to}: target of more than one branch ({parents[to]}, {s.id})")
+                    parents[to] = s.id
+                    if to not in by_step:
+                        if not draft:
+                            raise ModelError(f"step {s.id}: unknown branch target {to}")
+                    elif s.id not in by_step[to].depends_on:
+                        raise ModelError(f"step {s.id}: branch target {to} must depend on {s.id}")
+                if not draft and sum(p for _, p in s.branches) > 1 + 1e-9:
+                    raise ModelError(f"step {s.id}: branch probabilities sum to more than 1")
             self._check_acyclic(w)
 
     @staticmethod

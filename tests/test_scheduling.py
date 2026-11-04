@@ -48,4 +48,16 @@ def test_least_loaded_tie_first_in_list():
 
 
 def test_registry():
-    assert POLICIES == {"fifo": Fifo, "priority": Priority, "least_loaded": LeastLoaded}
+    from flock_of_pain.scheduling import Edd
+    assert POLICIES == {"fifo": Fifo, "priority": Priority, "least_loaded": LeastLoaded, "edd": Edd}
+
+
+def test_edd_orders_by_due_date_then_priority():
+    from flock_of_pain.scheduling import Edd
+    soon, later, none = task("a", 5.0), task("b", 1.0), task("c", 0.0)
+    soon.due_at, later.due_at = 100.0, 200.0
+    p = Edd()
+    assert p.order_key(soon, step(0)) < p.order_key(later, step(9)) < p.order_key(none, step(9))
+    other = task("d", 9.0)
+    other.due_at = 100.0
+    assert p.order_key(other, step(1)) < p.order_key(soon, step(0))

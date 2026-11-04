@@ -188,3 +188,140 @@ def test_overnight_shift_runs_without_error():
     e.run()
     started = [ev for ev in e.events if ev.kind == K.TASK_STARTED]
     assert started and all(night.is_on(ev.t) for ev in started)
+
+
+def test_split_shift_on_off_events():
+    from flock_of_pain.schedule import Schedule
+    c = tiny_company(pool_headcount=1, steps=one_step())
+    c.resource("e1").schedule = Schedule({0: [(9, 13), (14, 17.5)]})
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
+    e.run()
+    shifts = [(x.t, x.kind) for x in e.events if x.resource_id == "e1"]
+    assert shifts == [(540, K.RESOURCE_AVAILABLE), (780, K.RESOURCE_UNAVAILABLE),
+                      (840, K.RESOURCE_AVAILABLE), (1050, K.RESOURCE_UNAVAILABLE)]
+
+
+def _profile_run(seed=3):
+    from flock_of_pain.model import Profile
+    from flock_of_pain.schedule import Schedule
+    c = tiny_company(rate_per_hour=30, steps=one_step())
+    c.workflows[0].arrival.window = Schedule({d: (0, 24) for d in range(7)})
+    c.workflows[0].arrival.profile = Profile({h: 2.0 if h < 12 else 0.5 for h in range(24)})
+    e = Engine(c, RunConfig(seed=seed, horizon_minutes=3 * DAY))
+    e.run()
+    return e
+
+
+def test_profile_thins_arrivals_by_hour():
+    e = _profile_run()
+    hours = [int(x.t // 60) % 24 for x in e.events if x.kind == K.WORKFLOW_STARTED]
+    am, pm = sum(h < 12 for h in hours), sum(h >= 12 for h in hours)
+    assert am > 3 * pm > 0  # expected ratio 4
+    assert [x.to_json() for x in e.events] == [x.to_json() for x in _profile_run().events]
+
+
+def _cutoff_run():
+    c = tiny_company(pool_headcount=1, steps=one_step(30))
+    c.workflows[0].cutoff_hour = 9.75
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 9 * 60, n=3)
+    assert sorted(t.due_at for q in e.queues.values() for t in q.values()) == [585, 585]
+    arrive_at(e, 10 * 60)
+    assert e.instances["w-000004"].due_at == DAY + 585
+    e.run()
+    return e
+
+
+def test_deadline_missed_once_per_late_instance():
+    e = _cutoff_run()
+    missed = [(x.t, x.instance_id, x.workflow_id) for x in e.events if x.kind == K.DEADLINE_MISSED]
+    assert missed == [(585, "w-000002", "w"), (585, "w-000003", "w")]
+    assert all(x.to_json() for x in e.events)
+
+
+def test_deadline_miss_rate_metric():
+    from flock_of_pain.analytics import compute_metrics
+    e = _cutoff_run()
+    w = compute_metrics(e.events, e.company, DAY).workflows["w"]
+    assert (w.started, w.deadline_missed, w.deadline_miss_rate) == (4, 2, 0.5)
+
+
+def _always_on(c):
+    from flock_of_pain.schedule import Schedule
+    for r in c.resources():
+        r.schedule = Schedule({d: (0, 24) for d in range(7)})
+    c.workflows[0].arrival.window = Schedule({d: (0, 24) for d in range(7)})
+    return c
+
+
+def _created(e, step_id):
+    return {x.instance_id for x in e.events if x.kind == K.TASK_CREATED and x.step_id == step_id}
+
+
+def test_branch_chosen_at_its_probability():
+    steps = [Step("a", "A", "cs", "support", const(1), branches=[("b", 0.3)]),
+             Step("b", "B", "cs", "support", const(1), depends_on=["a"])]
+    e = Engine(_always_on(tiny_company(rate_per_hour=30, steps=steps)), RunConfig(seed=7, horizon_minutes=2 * DAY))
+    e.run()
+    a_done = {x.instance_id for x in e.events if x.kind == K.TASK_COMPLETED and x.step_id == "a"}
+    completed = {x.instance_id for x in e.events if x.kind == K.WORKFLOW_COMPLETED}
+    assert len(a_done) > 1000
+    assert 0.25 < len(_created(e, "b") & a_done) / len(a_done) < 0.35
+    assert a_done - _created(e, "b") <= completed  # unchosen branch skipped, instance still completes
+
+
+def test_skipped_branching_step_skips_its_targets():
+    steps = [Step("a", "A", "cs", "support", const(1), branches=[("b", 0.0)]),
+             Step("b", "B", "cs", "support", const(1), depends_on=["a"], branches=[("c", 1.0)]),
+             Step("c", "C", "cs", "support", const(1), depends_on=["b"]),
+             Step("d", "D", "cs", "support", const(1), depends_on=["c"])]
+    e = Engine(_always_on(tiny_company(rate_per_hour=2, steps=steps)), RunConfig(seed=1, horizon_minutes=DAY))
+    e.run()
+    assert not _created(e, "b") and not _created(e, "c")
+    started = {x.instance_id for x in e.events if x.kind == K.WORKFLOW_STARTED}
+    assert started and _created(e, "d") == started
+    assert {x.instance_id for x in e.events if x.kind == K.WORKFLOW_COMPLETED} >= started - set(e.instances)
+
+
+def test_rework_into_skipped_conditional_step_activates_it():
+    steps = [Step("a", "A", "cs", "support", const(1), branches=[("c", 0.0)]),
+             Step("c", "C", "cs", "support", const(1), depends_on=["a"]),
+             Step("f", "F", "cs", "support", const(1), depends_on=["c"], failure_prob=1.0, max_retries=1,
+                  rework_to="c")]
+    e = Engine(_always_on(tiny_company(steps=steps)), RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 60)
+    e.run()
+    kinds = [x.kind for x in e.events if x.step_id == "c"]
+    assert kinds[0] == K.TASK_CREATED and K.TASK_COMPLETED in kinds
+    assert [x.kind for x in e.events if x.step_id == "f"].count(K.TASK_FAILED) == 2
+
+
+def _wait_steps(**c_kw):
+    return [Step("a", "A", "cs", "support", const(10)),
+            Step("w", "Await", "cs", None, const(240), depends_on=["a"], sla_minutes=1),
+            Step("c", "C", "cs", "support", const(5), depends_on=["w"], **c_kw)]
+
+
+def test_wait_step_runs_with_no_resource():
+    from flock_of_pain.analytics import compute_metrics
+    e = Engine(tiny_company(pool_headcount=1, steps=_wait_steps()), RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 9 * 60)
+    e.run()
+    evs = task_events(e, "w-000001:w:0")
+    assert [(x.t, x.kind, x.resource_id) for x in evs] == [
+        (550, K.TASK_CREATED, None), (550, K.TASK_STARTED, None), (790, K.TASK_COMPLETED, None)]
+    assert first(e, K.TASK_STARTED, "w-000001:c:0").t == 790
+    kinds = [x.kind for x in e.events]
+    assert K.WORKFLOW_COMPLETED in kinds and K.SLA_BREACHED not in kinds
+    m = compute_metrics(e.events, e.company, DAY)
+    assert m.resources["e1"].busy_minutes == 15 and m.departments["cs"].tasks_completed == 2
+    assert m.workflows["w"].wait_p90 == 0 and m.workflows["w"].steps_completed == 3
+    assert m.ledger == []
+
+
+def test_rework_into_wait_step():
+    e = Engine(tiny_company(pool_headcount=1, steps=_wait_steps(failure_prob=1.0, max_retries=1, rework_to="w")),
+               RunConfig(seed=1, horizon_minutes=DAY))
+    arrive_at(e, 9 * 60)
+    e.run()
+    assert [x.t for x in task_events(e, "w-000001:w:0") if x.kind == K.TASK_STARTED] == [550, 795]

@@ -18,6 +18,7 @@ class EventKind(StrEnum):
     SYSTEM_OUTAGE_STARTED = "SYSTEM_OUTAGE_STARTED"
     SYSTEM_OUTAGE_ENDED = "SYSTEM_OUTAGE_ENDED"
     SLA_BREACHED = "SLA_BREACHED"
+    DEADLINE_MISSED = "DEADLINE_MISSED"
     WORKFLOW_STARTED = "WORKFLOW_STARTED"
     WORKFLOW_COMPLETED = "WORKFLOW_COMPLETED"
 
@@ -75,17 +76,18 @@ class Task:
     run_token: int = 0
     last_reason: Reason | None = None  # reason on the latest TASK_QUEUED / retag
     seq: int = 0  # engine creation order
+    due_at: float | None = None  # the instance's cut-off deadline
 
 
 S = TaskState
 LEGAL: dict[TaskState, frozenset[TaskState]] = {
-    S.CREATED: frozenset({S.QUEUED}),
+    S.CREATED: frozenset({S.QUEUED, S.IN_PROGRESS}),  # IN_PROGRESS: a wait step starts at once
     S.QUEUED: frozenset({S.ASSIGNED, S.CANCELLED}),
     S.ASSIGNED: frozenset({S.IN_PROGRESS}),
     S.IN_PROGRESS: frozenset({S.COMPLETED, S.FAILED, S.BLOCKED}),
     S.BLOCKED: frozenset({S.QUEUED}),
     S.FAILED: frozenset({S.QUEUED, S.CANCELLED}),
-    S.COMPLETED: frozenset({S.QUEUED}),  # only with rework=True
+    S.COMPLETED: frozenset({S.QUEUED, S.IN_PROGRESS}),  # only with rework=True
     S.CANCELLED: frozenset(),
 }
 

@@ -33,11 +33,14 @@ Format rules (units are the engine's; time zero is Monday 00:00):
 - ids are unique snake_case strings. Every department_id, system_id, resource_id, workflow_id and step id you reference must exist.
 - resources: a pool has "headcount"; a named employee has "pool_id" (carved out of that pool) or stands alone. Never write "capacity".
 - "skills" is a list; a step's "required_skill" must be a skill of a resource in the step's department.
-- schedule.weekday_hours keys are "0".."6" (0 = Monday), values [start_hour, end_hour]; an overnight shift ends past 24, e.g. [22, 30]. schedule.absences are [start_minute, end_minute] from time zero; company.outages are [system_id, start_minute, end_minute]; sla_minutes in minutes.
-- arrival: {{"rate_per_hour": x, "window": {{"weekday_hours": ...}}}}.
+- schedule.weekday_hours keys are "0".."6" (0 = Monday), values [start_hour, end_hour]; an overnight shift ends past 24, e.g. [22, 30]; a split shift or lunch break is a sorted list of pairs, e.g. [[9, 13], [14, 17.5]]. schedule.absences are [start_minute, end_minute] from time zero; company.outages are [system_id, start_minute, end_minute]; sla_minutes in minutes.
+- arrival: {{"rate_per_hour": x, "window": {{"weekday_hours": ...}}}}; optional "profile": {{"hours": {{"17": 2.0}}, "weekdays": {{"4": 0.7}}}} multiplies the rate by hour of day ("0".."23") and weekday (missing keys are 1.0). Inflows take the same "profile".
+- workflow "cutoff_hour" (0 <= h < 24, optional): work started is due by the next h:00; run policy "edd" serves the earliest due date first.
 - duration: prefer {{"kind": "lognormal_mean", "mean": minutes, "sigma": 0.4}}; other kinds: const (a), uniform (a, b), triangular (a=low, b=mode, c=high), exponential (a=mean).
 - depends_on lists step ids in the same workflow, no cycles; rework_to is null, the step's own id, or one of its depends_on.
-- scenario overlays, by "type": arrival_multiplier (factor, workflow_id|null), system_outage (system_id, start, end), add_employee (department_id, employee), remove_resource (resource_id), set_pool_headcount (pool_id, headcount), absence (resource_id, start, end).
+- step "branches": [{{"to": step_id, "prob": p}}] picks at most one target when the step completes (probabilities sum to <= 1); each target lists the step in its depends_on and has one branching parent; targets not picked are skipped.
+- "required_skill": null makes a wait step (waiting on a customer or supplier; nobody works): no system_id, failure_prob 0, rework_to null.
+- scenario overlays, by "type": arrival_multiplier (factor, workflow_id|null, optional start and end minutes for a seasonal window), system_outage (system_id, start, end), add_employee (department_id, employee), remove_resource (resource_id), set_pool_headcount (pool_id, headcount), absence (resource_id, start, end).
 - Keep it proportionate to the description: a handful of departments and workflows, 3-4 scenarios that test the question the user is asking. Invent plausible numbers for anything unspecified; the first scenario is the baseline with no overlays.
 
 Worked example:
@@ -99,7 +102,7 @@ def _validate(text: str) -> dict:
     skills = {dep.id: {sk for r in dep.resources for sk in r.skills} for dep in company.departments}
     for wi, w in enumerate(company.workflows):
         for si, st in enumerate(w.steps):
-            if st.required_skill not in skills[st.department_id]:
+            if st.required_skill is not None and st.required_skill not in skills[st.department_id]:
                 raise SchemaError(f"company.workflows[{wi}].steps[{si}].required_skill",
                                   f"no resource in department {st.department_id} has skill {st.required_skill}")
     return {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]}

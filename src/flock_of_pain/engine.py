@@ -1,4 +1,5 @@
 import heapq
+import math
 import random
 from collections import defaultdict
 from collections.abc import Callable
@@ -7,7 +8,7 @@ from functools import partial
 
 from flock_of_pain.events import Event, EventKind, Reason, Task, TaskState, transition
 from flock_of_pain.model import Company, ModelError, Resource, Step, Workflow
-from flock_of_pain.schedule import MINUTES_PER_WEEK
+from flock_of_pain.schedule import MINUTES_PER_DAY, MINUTES_PER_WEEK
 from flock_of_pain.scheduling import POLICIES
 
 K = EventKind
@@ -31,6 +32,9 @@ class Instance:
     retries: int = 0
     done_tasks: dict[str, Task] = field(default_factory=dict)  # step id -> completed task (for rework)
     cancelled: bool = False
+    due_at: float | None = None
+    skipped: set[str] = field(default_factory=set)  # conditional steps not taken (count as done)
+    branched: set[str] = field(default_factory=set)  # branching steps whose draw is made
 
 
 class Engine:
@@ -130,26 +134,45 @@ class Engine:
             self._retag_queue(r.department_id, skill)
 
     def _next_arrival(self, wf: Workflow, t: float) -> None:
-        rate = wf.arrival.rate_per_hour / 60
+        profile, windows = wf.arrival.profile, wf.arrival_windows
+        thin = profile is not None or windows
+        peak = (profile.peak if profile else 1.0) * math.prod(max(f, 1.0) for _, _, f in windows)
+        rate = wf.arrival.rate_per_hour * peak / 60
         if rate <= 0:
             return
-        t2 = t + self.rng.expovariate(rate)
-        while t2 < self.horizon and not wf.arrival.window.is_on(t2):
-            if (t2 := wf.arrival.window.next_on(t2)) is None:
+        while True:
+            t2 = t + self.rng.expovariate(rate)
+            while t2 < self.horizon and not wf.arrival.window.is_on(t2):
+                if (t2 := wf.arrival.window.next_on(t2)) is None:
+                    return
+                t2 += self.rng.expovariate(rate)
+            if t2 >= self.horizon:
                 return
-            t2 += self.rng.expovariate(rate)
-        if t2 < self.horizon:
-            self.schedule(t2, partial(self._arrive, wf))
+            # non-homogeneous Poisson by thinning; the extra draw happens only for a profile or windowed multiplier
+            if not thin or self.rng.random() * peak < (
+                    math.prod(f for a, b, f in windows if a <= t2 < b) * (profile.mult(t2) if profile else 1.0)):
+                self.schedule(t2, partial(self._arrive, wf))
+                return
+            t = t2
 
     def _arrive(self, wf: Workflow) -> None:
         self._arrivals[wf.id] += 1
         inst = Instance(f"{wf.id}-{self._arrivals[wf.id]:06d}", wf)
         self.instances[inst.id] = inst
         self.events.append(Event(self.now, K.WORKFLOW_STARTED, instance_id=inst.id, workflow_id=wf.id))
+        if wf.cutoff_hour is not None:  # due at the next cutoff_hour:00 strictly after now
+            due = self.now // MINUTES_PER_DAY * MINUTES_PER_DAY + wf.cutoff_hour * 60
+            inst.due_at = due if due > self.now else due + MINUTES_PER_DAY
+            self.schedule(inst.due_at, partial(self._deadline, inst))
         for s in wf.steps:
             if not s.depends_on:
                 self._create_task(inst, s)
         self._next_arrival(wf, self.now)
+
+    def _deadline(self, inst: Instance) -> None:
+        # completed instances are gone from self.instances; cancelled ones are failures, not late
+        if self.instances.get(inst.id) is inst and not inst.cancelled:
+            self.events.append(Event(self.now, K.DEADLINE_MISSED, instance_id=inst.id, workflow_id=inst.workflow.id))
 
     def _outage_start(self, system_id: str) -> None:
         self.system_down[system_id] += 1
@@ -197,13 +220,14 @@ class Engine:
     def _finish(self, task: Task, token: int) -> None:
         if task.run_token != token or task.state != S.IN_PROGRESS:
             return
-        r = self.company.resource(task.resource_id)
+        r = None if task.resource_id is None else self.company.resource(task.resource_id)  # None: wait step
         step = self._step(task)
         if step.system_id is not None:
             self.in_progress[step.system_id].discard(task.id)
             del self.tasks_by_id[task.id]
-        self.busy_minutes[r.id] += self.now - task.started_at
-        self.free_slots[r.id] += 1
+        if r is not None:
+            self.busy_minutes[r.id] += self.now - task.started_at
+            self.free_slots[r.id] += 1
         inst = self.instances[task.instance_id]
         if self.rng.random() < step.failure_prob:  # drawn even at 0 so logs stay comparable
             transition(task, S.FAILED, self.now, self.events)
@@ -211,7 +235,8 @@ class Engine:
             if not retry:
                 inst.cancelled = True
                 self._cancel_queued(inst)  # before dispatch, so the freed slot cannot start a sibling
-            self._dispatch_resource(r)  # older queued work goes before the retry
+            if r is not None:
+                self._dispatch_resource(r)  # older queued work goes before the retry
             if retry:
                 inst.retries += 1
                 if step.rework_to is None or step.rework_to == step.id:
@@ -220,8 +245,11 @@ class Engine:
                     # failed step is re-created by the dependency rule once rework_to completes again
                     inst.completed.discard(step.id)
                     inst.active.pop(step.id, None)
-                    redo = inst.done_tasks[step.rework_to]
-                    if redo.state == S.COMPLETED:  # else already re-queued by another failed step
+                    redo = inst.done_tasks.get(step.rework_to)
+                    if step.rework_to in inst.skipped:  # rework activates a conditional step that was skipped
+                        inst.skipped.discard(step.rework_to)
+                        self._create_task(inst, self.steps[inst.workflow.id, step.rework_to])
+                    elif redo.state == S.COMPLETED:  # else already re-queued by another failed step
                         inst.completed.discard(step.rework_to)
                         inst.active[step.rework_to] = redo.id
                         self._try_dispatch_task(redo, rework=True)
@@ -232,7 +260,7 @@ class Engine:
                     del self.instances[inst.id]
             return
         transition(task, S.COMPLETED, self.now, self.events)
-        if step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
+        if r is not None and step.sla_minutes is not None and self.now - task.queued_at > step.sla_minutes:
             self.events.append(Event(
                 self.now, K.SLA_BREACHED, task.id, task.instance_id, task.workflow_id, step.id,
                 task.department_id, r.id,
@@ -241,19 +269,35 @@ class Engine:
         inst.active.pop(step.id, None)
         inst.done_tasks[step.id] = task
         # freed slot serves already-queued work before this instance's successors
-        self._dispatch_resource(r)
+        if r is not None:
+            self._dispatch_resource(r)
         if inst.cancelled:
             if not inst.active:
                 del self.instances[inst.id]
             return
+        if step.branches and step.id not in inst.branched:  # draw once; a reworked branching step keeps its path
+            inst.branched.add(step.id)
+            u, acc = self.rng.random(), 0.0
+            for to, p in step.branches:
+                if acc <= u < acc + p:
+                    inst.skipped.discard(to)
+                else:
+                    self._skip(inst, to)
+                acc += p
+        done = inst.completed | inst.skipped if inst.skipped else inst.completed
         for s in inst.workflow.steps:
-            if s.id not in inst.completed and s.id not in inst.active and set(s.depends_on) <= inst.completed:
+            if s.id not in done and s.id not in inst.active and set(s.depends_on) <= done:
                 self._create_task(inst, s)
-        if len(inst.completed) == len(inst.workflow.steps):
+        if len(done) == len(inst.workflow.steps):
             self.events.append(Event(
                 self.now, K.WORKFLOW_COMPLETED, instance_id=inst.id, workflow_id=inst.workflow.id,
             ))
             del self.instances[inst.id]
+
+    def _skip(self, inst: Instance, step_id: str) -> None:
+        inst.skipped.add(step_id)
+        for to, _ in self.steps[inst.workflow.id, step_id].branches:
+            self._skip(inst, to)
 
     def _cancel_queued(self, inst: Instance) -> None:
         for step_id, task_id in list(inst.active.items()):
@@ -273,7 +317,7 @@ class Engine:
     def _create_task(self, inst: Instance, step: Step) -> None:
         task = Task(
             f"{inst.id}:{step.id}:{inst.retries}", inst.id, inst.workflow.id, step.id,
-            step.department_id, created_at=self.now, seq=self._created,
+            step.department_id, created_at=self.now, seq=self._created, due_at=inst.due_at,
         )
         self._created += 1
         inst.active[step.id] = task.id
@@ -311,6 +355,13 @@ class Engine:
 
     def _try_dispatch_task(self, task: Task, rework: bool = False) -> None:
         """Queue the task (logging why it waits, or None) and start it if a resource is free."""
+        if self._step(task).required_skill is None:  # wait step: starts at once, no queue, no resource
+            d = self._step(task).duration.sample(self.rng)
+            transition(task, S.IN_PROGRESS, self.now, self.events, rework=rework, payload={"duration": d})
+            task.run_token += 1
+            task.ends_at = self.now + d
+            self.schedule(task.ends_at, partial(self._finish, task, task.run_token))
+            return
         eligible = self._eligible(task)
         reason = None if eligible else self._wait_reason(task)
         system_id = self._down(task)

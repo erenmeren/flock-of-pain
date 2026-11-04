@@ -73,14 +73,14 @@ def test_kpis_hand_built():
     from flock_of_pain.experiment import kpis
     m = Metrics(1440, {
         "a": WorkflowMetrics(started=4, completed=2, throughput_per_day=2, sla_breached=1, failures=1,
-                             steps_completed=4, wait_p90=10),
+                             steps_completed=4, wait_p90=10, deadline_missed=2),
         "b": WorkflowMetrics(started=4, completed=2, throughput_per_day=3, sla_breached=0, failures=1,
                              steps_completed=4, wait_p90=30),
     }, {"cs": DeptMetrics(utilization=0.5), "it": DeptMetrics(utilization=0.25)}, labor_cost=7.0)
     k = kpis(m)
     assert (k["throughput_per_day"], k["sla_breach_rate"], k["rework_rate"], k["labor_cost"]) == (5, 0.25, 0.2, 7.0)
     assert k["util_cs"] == 0.5 and k["mean_dept_utilization"] == 0.375
-    assert (k["completion_rate"], k["wait_p90"]) == (0.5, 20)
+    assert (k["completion_rate"], k["wait_p90"], k["deadline_miss_rate"]) == (0.5, 20, 0.25)
 
 
 def test_top_ledger_excludes_off_shift_by_default():

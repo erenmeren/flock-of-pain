@@ -307,3 +307,176 @@ def test_schedule_absence_end_after_start(absence):
     with pytest.raises(SchemaError) as e:
         company_from_dict(d)
     assert e.value.path == "departments[0].resources[0].schedule.absences[0]"
+
+
+def _with_hours(hours):
+    d = company_to_dict(reynolds.build())
+    d["departments"][0]["resources"][0]["schedule"] = {"weekday_hours": hours}
+    return d
+
+
+def test_split_shift_round_trip_and_bare_pair():
+    d = _with_hours({"0": [[9, 13], [14, 17.5]], "1": [9, 17]})
+    c = company_from_dict(d)
+    assert c.resource("cs_pool").schedule.weekday_hours == {0: [(9, 13), (14, 17.5)], 1: [(9, 17)]}
+    assert company_to_dict(c) == d
+    one = _with_hours({"0": [[9, 17]]})
+    assert company_to_dict(company_from_dict(one))["departments"][0]["resources"][0]["schedule"] == {
+        "weekday_hours": {"0": [9, 17]}}
+
+
+@pytest.mark.parametrize("hours", [
+    {"0": [[14, 17], [9, 13]]}, {"0": [[9, 14], [13, 17]]}, {"0": []}, {"0": [[9, 13], [14]]},
+    {"0": [[20, 30]], "1": [[5, 9]]}, {"6": [22, 30], "0": [5, 9]},
+])
+def test_split_shift_invalid(hours):
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(_with_hours(hours))
+    assert e.value.path.startswith("departments[0].resources[0].schedule.weekday_hours")
+
+
+PROFILE = {"hours": {"8": 0.4, "9": 0.8, "16": 1.6, "17": 2.0}, "weekdays": {"0": 1.3, "4": 0.7}}
+
+
+def test_profile_round_trip_arrival_and_inflow():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["arrival"]["profile"] = PROFILE
+    c = company_from_dict(d)
+    assert c.workflows[0].arrival.profile.mult(16 * 60) == pytest.approx(1.6 * 1.3)
+    assert company_to_dict(c) == d
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][0]["profile"] = {"weekdays": {"6": 0}}
+    assert company_to_dict(company_from_dict(d)) == d
+
+
+@pytest.mark.parametrize("profile,path", [
+    ({"bogus": {}}, "profile.bogus"), ({"hours": {"24": 1}}, "profile.hours.24"),
+    ({"weekdays": {"7": 1}}, "profile.weekdays.7"), ({"hours": {"3": -1}}, "profile.hours.3"),
+    ({"hours": {"3": "x"}}, "profile.hours.3"), ({"hours": {str(h): 0 for h in range(24)}}, "profile"),
+    ({"hours": {"9": 2}}, "rate_per_hour"),
+])
+def test_profile_invalid(profile, path):
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["arrival"].update(profile=profile, rate_per_hour=6000)
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == f"workflows[0].arrival.{path}"
+
+
+def test_windowed_arrival_multiplier_round_trip():
+    base = reynolds.build()
+    d = {"id": "s", "name": "S", "overlays": [
+        {"type": "arrival_multiplier", "factor": 1.5, "workflow_id": None, "start": 28800, "end": 57600},
+        {"type": "arrival_multiplier", "factor": 2, "workflow_id": None}]}
+    assert scenario_to_dict(scenario_from_dict(d, base)) == d
+    d["overlays"][0]["start"] = "x"
+    with pytest.raises(SchemaError) as e:
+        scenario_from_dict(d, base)
+    assert e.value.path == "overlays[0].start"
+
+
+def test_cutoff_hour_round_trip_and_range():
+    d = company_to_dict(reynolds.build())
+    assert "cutoff_hour" not in d["workflows"][0]
+    d["workflows"][0]["cutoff_hour"] = 22
+    assert company_to_dict(company_from_dict(d)) == d
+    for bad in (24, -1):
+        d["workflows"][0]["cutoff_hour"] = bad
+        with pytest.raises(SchemaError) as e:
+            company_from_dict(d)
+        assert e.value.path == "workflows[0].cutoff_hour"
+    assert run_config_from_dict({"seed": 1, "days": 1, "policy": "edd"}).policy == "edd"
+
+
+def test_cutoff_hour_survives_expand():
+    from flock_of_pain.scenario import Scenario
+    d = _inflow_company()
+    d["workflows"][0]["cutoff_hour"] = 16
+    c = Scenario("s", "S", company_from_dict(d)).materialize()
+    assert [w.cutoff_hour for w in c.workflows[:2]] == [16, 16]
+
+
+def _branch_company(branches, deps=("intake",)):
+    d = _inflow_company()
+    steps = d["workflows"][0]["steps"]
+    steps[:] = [{"id": "intake", "name": "I", "department_id": "cs", "required_skill": "order_review",
+                 "duration": {"kind": "const", "a": 1, "b": 0, "c": 0}, "branches": branches},
+                *({"id": t, "name": t, "department_id": "cs", "required_skill": "order_review",
+                   "duration": {"kind": "const", "a": 1, "b": 0, "c": 0}, "depends_on": list(deps)}
+                  for t in ("credit", "stock"))]
+    for f in d["workflows"][0]["inflows"]:
+        f["entry"] = ["intake"]
+    del d["workflows"][0]["layout"]
+    return d
+
+
+def test_branches_round_trip():
+    d = _branch_company([{"to": "credit", "prob": 0.15}, {"to": "stock", "prob": 0.05}])
+    c = company_from_dict(d)
+    assert c.workflows[0].steps[0].branches == [("credit", 0.15), ("stock", 0.05)]
+    assert company_to_dict(c) == d
+    assert "branches" not in company_to_dict(c)["workflows"][0]["steps"][1]
+
+
+@pytest.mark.parametrize("branches,deps,match", [
+    ([{"to": "nope", "prob": 0.1}], ("intake",), "unknown branch target"),
+    ([{"to": "credit", "prob": 0.7}, {"to": "stock", "prob": 0.7}], ("intake",), "sum"),
+    ([{"to": "credit", "prob": 0.1}, {"to": "credit", "prob": 0.1}], ("intake",), "more than one"),
+    ([{"to": "credit", "prob": 0.1}], (), "depend"),
+    ([{"to": "credit", "prob": 1.5}], ("intake",), r"\[0, 1\]"),
+    ([{"to": "credit"}], ("intake",), "missing"),
+])
+def test_branches_invalid(branches, deps, match):
+    with pytest.raises(ModelError, match=match):
+        company_from_dict(_branch_company(branches, deps))
+
+
+def test_branches_draft_tolerates_missing_target_and_bad_sum():
+    for b in ([{"to": "nope", "prob": 0.1}], [{"to": "credit", "prob": 0.7}, {"to": "stock", "prob": 0.7}]):
+        d = _branch_company(b)
+        assert company_to_dict(company_from_dict(d, draft=True)) == d
+
+
+def test_branch_target_of_two_parents_rejected():
+    d = _branch_company([{"to": "stock", "prob": 0.5}])
+    d["workflows"][0]["steps"][1]["branches"] = [{"to": "stock", "prob": 0.5}]
+    d["workflows"][0]["steps"][2]["depends_on"] = ["intake", "credit"]
+    with pytest.raises(ModelError, match="more than one"):
+        company_from_dict(d)
+
+
+def _wait_company(**patch):
+    d = company_to_dict(reynolds.build())
+    s = d["workflows"][0]["steps"][0]
+    s["required_skill"] = None
+    for k in ("system_id", "failure_prob", "rework_to"):
+        s.pop(k, None)
+    s.update(patch)
+    if s.get("rework_to") == "self":
+        s["rework_to"] = s["id"]
+    return d
+
+
+def test_wait_step_round_trip():
+    d = _wait_company()
+    c = company_from_dict(d)
+    assert c.workflows[0].steps[0].required_skill is None
+    assert company_to_dict(c) == d
+    from flock_of_pain.agent import _validate
+    _validate(json.dumps({"company": d, "scenarios": []}))
+
+
+@pytest.mark.parametrize("patch,match", [({"system_id": "erp"}, "system"), ({"failure_prob": 0.1}, "failure_prob"),
+                                         ({"rework_to": "self"}, "rework_to")])
+def test_wait_step_rules(patch, match):
+    d = _wait_company(**patch)
+    with pytest.raises(ModelError, match=match):
+        company_from_dict(d)
+    company_from_dict(d, draft=True)
+
+
+def test_required_skill_key_still_required():
+    d = _wait_company()
+    del d["workflows"][0]["steps"][0]["required_skill"]
+    with pytest.raises(SchemaError, match="missing"):
+        company_from_dict(d)
