@@ -163,6 +163,8 @@ class Company:
                 raise ModelError(f"workflow {w.id}: give arrival or inflows, not both")
             if not draft and w.arrival is None and not w.inflows:
                 raise ModelError(f"workflow {w.id}: needs arrival or inflows")
+            if not draft and not w.steps:
+                raise ModelError(f"workflow {w.id}: no steps")
             for i in w.inflows:
                 if i.id in ids:
                     raise ModelError(f"workflow {w.id}: inflow id {i.id} clashes with a step id")

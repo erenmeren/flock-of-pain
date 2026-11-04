@@ -89,3 +89,12 @@ def test_absence_half_open_edges():
     assert not s.is_on(a)
     assert not s.is_on(b - 1)
     assert s.is_on(b)
+
+
+def test_overnight_shift_early_morning_part():
+    s = Schedule({d: (22, 30) for d in range(7)})
+    t = D + 2 * 60  # 02:00 on day 1, inside the shift that began at 22:00 on day 0
+    assert s.is_on(t)
+    assert s.next_off(t) == D + 6 * 60
+    assert s.next_on(t) == t
+    assert s.next_on(D + 6 * 60) == D + 22 * 60

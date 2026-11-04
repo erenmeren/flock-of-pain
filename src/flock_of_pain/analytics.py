@@ -96,6 +96,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     waits_wf: dict[str, list[float]] = defaultdict(list)
     waits_dept: dict[str, list[float]] = defaultdict(list)
     wf_cost: dict[str, float] = defaultdict(float)
+    overrun: dict[str, float] = defaultdict(float)  # resource -> busy minutes outside its shift
     wf_started: dict[str, float] = {}
     cycles: dict[str, list[float]] = defaultdict(list)
     cancelled: dict[str, set[str]] = defaultdict(set)
@@ -114,8 +115,10 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     def close_run(e: Event, tr: _TaskTrack, t: float) -> None:
         if tr.run is not None:
             minutes = t - tr.run[0]
-            rm[tr.run[1]].busy_minutes += minutes
-            wf_cost[e.workflow_id] += minutes / 60 * company.resource(tr.run[1]).cost_per_hour
+            r = company.resource(tr.run[1])
+            rm[r.id].busy_minutes += minutes
+            overrun[r.id] += minutes - r.schedule.on_minutes(tr.run[0], t)
+            wf_cost[e.workflow_id] += minutes / 60 * r.cost_per_hour
         tr.run = None
 
     def close_block(e: Event, tr: _TaskTrack, t: float) -> None:
@@ -190,17 +193,22 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         if e.task_id is not None and e.task_id in tracks:
             tr = tracks.pop(e.task_id)
             t = max(horizon_minutes, e.t)
+            if tr.wait_from is not None:  # still queued: its wait so far counts
+                waits_wf[e.workflow_id].append(t - tr.wait_from)
+                waits_dept[e.department_id].append(t - tr.wait_from)
             close_segment(e, tr, t)
             close_run(e, tr, t)
             close_block(e, tr, t)
 
-    by_dept: dict[str, list] = defaultdict(lambda: [0.0, 0.0])  # busy, on-shift slot-minutes
+    by_dept: dict[str, list] = defaultdict(lambda: [0.0, 0.0])  # busy, available slot-minutes
     for r in resources:
         m = rm[r.id]
-        m.utilization = _div(m.busy_minutes, m.on_shift_minutes * r.capacity)
+        # a task may run past shift end; those minutes count as available too, so utilization stays <= 1
+        available = m.on_shift_minutes * r.capacity + overrun[r.id]
+        m.utilization = _div(m.busy_minutes, available)
         m.labor_cost = m.busy_minutes / 60 * r.cost_per_hour
         by_dept[r.department_id][0] += m.busy_minutes
-        by_dept[r.department_id][1] += m.on_shift_minutes * r.capacity
+        by_dept[r.department_id][1] += available
         if r.department_id in dm:
             dm[r.department_id].labor_cost += m.labor_cost
     for d_id, d in dm.items():
@@ -215,7 +223,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         w.wait_p50, w.wait_p90 = percentile(waits_wf[w_id], 50), percentile(waits_wf[w_id], 90)
         w.sla_breached = len(breached[w_id] & done[w_id])
         w.sla_breach_rate = _div(w.sla_breached, w.completed)
-        w.rework_rate = _div(w.failures, w.steps_completed)
+        w.rework_rate = _div(w.failures, w.failures + w.steps_completed)
         w.cost_per_completed = _div(wf_cost[w_id], w.completed)
 
     rows = [LedgerRow(d, reason, blocker, minutes, n) for (d, reason, blocker), (minutes, n) in ledger.items()]

@@ -276,3 +276,34 @@ def test_empty_required_skill_rejected_in_arrival_form():
     with pytest.raises(ModelError, match="required_skill"):
         company_from_dict(d)
     company_from_dict(d, draft=True)
+
+
+def test_rate_and_retry_upper_bounds():
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["arrival"]["rate_per_hour"] = 10001
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].arrival.rate_per_hour"
+    d = _inflow_company()
+    d["workflows"][0]["inflows"][0]["rate_per_hour"] = 10001
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].inflows[0].rate_per_hour"
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["steps"][0]["max_retries"] = 101
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "workflows[0].steps[0].max_retries"
+    d = company_to_dict(reynolds.build())
+    d["workflows"][0]["arrival"]["rate_per_hour"] = 10000
+    d["workflows"][0]["steps"][0]["max_retries"] = 100
+    company_from_dict(d)
+
+
+@pytest.mark.parametrize("absence", [[600, 600], [600, 500]])
+def test_schedule_absence_end_after_start(absence):
+    d = company_to_dict(reynolds.build())
+    d["departments"][0]["resources"][0]["schedule"] = {"weekday_hours": {"0": [9, 17]}, "absences": [absence]}
+    with pytest.raises(SchemaError) as e:
+        company_from_dict(d)
+    assert e.value.path == "departments[0].resources[0].schedule.absences[0]"

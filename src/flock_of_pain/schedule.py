@@ -16,7 +16,8 @@ class Schedule:
 
     def _segments(self, lo: float, hi: float) -> Iterator[tuple[float, float]]:
         """On-shift segments (windows minus absences) overlapping [lo, hi), in order."""
-        for day in range(int(lo // MINUTES_PER_DAY), int(hi // MINUTES_PER_DAY) + 1):
+        # start a day early: an overnight shift (e.g. 22-30) from the previous day may still be running at lo
+        for day in range(int(lo // MINUTES_PER_DAY) - 1, int(hi // MINUTES_PER_DAY) + 1):
             if (h := self.weekday_hours.get(day % 7)) is None:
                 continue
             start = max(lo, day * MINUTES_PER_DAY + h[0] * 60)

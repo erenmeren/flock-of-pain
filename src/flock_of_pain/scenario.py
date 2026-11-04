@@ -84,6 +84,8 @@ class Absence:
     end: float
 
     def apply(self, c: Company) -> None:
+        if self.end <= self.start:
+            raise ModelError(f"absence on {self.resource_id}: end {self.end} must be after start {self.start}")
         r = _find(c, self.resource_id)
         # resolve() shares the pool's schedule with carved employees; detach first.
         r.schedule = copy.deepcopy(r.schedule)

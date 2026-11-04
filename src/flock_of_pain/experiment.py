@@ -45,7 +45,8 @@ def kpis(m: Metrics) -> dict[str, float]:
     # means of per-workflow values, not true pooled percentiles.
     ws = list(m.workflows.values())
     n = sum(w.completed for w in ws)
-    steps = sum(w.steps_completed for w in ws)
+    failures = sum(w.failures for w in ws)
+    attempts = failures + sum(w.steps_completed for w in ws)
 
     def wmean(attr: str) -> float:
         return sum(getattr(w, attr) * w.completed for w in ws) / n if n else 0.0
@@ -58,7 +59,7 @@ def kpis(m: Metrics) -> dict[str, float]:
         "cycle_p90": wmean("cycle_p90"),
         "wait_p90": wmean("wait_p90"),
         "sla_breach_rate": sum(w.sla_breached for w in ws) / n if n else 0.0,
-        "rework_rate": sum(w.failures for w in ws) / steps if steps else 0.0,
+        "rework_rate": failures / attempts if attempts else 0.0,
         "mean_dept_utilization": sum(utils.values()) / len(utils) if utils else 0.0,
         "labor_cost": m.labor_cost,
         **utils,

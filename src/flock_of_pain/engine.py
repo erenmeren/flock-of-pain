@@ -50,7 +50,10 @@ class Engine:
         self.steps = {(w.id, s.id): s for w in company.workflows for s in w.steps}
         self.instances: dict[str, Instance] = {}
         self._arrivals = {w.id: 0 for w in company.workflows}
-        self.queues: dict[tuple[str, str], list[Task]] = {}
+        self.queues: dict[tuple[str, str], dict[str, Task]] = {}  # (dept, skill) -> task id -> task, in enqueue order
+        # (dept, skill) -> system id -> heap of (order_key, task id); stale entries are skipped on read
+        self._heaps: dict[tuple[str, str], dict[str | None, list[tuple[tuple, str]]]] = {}
+        self._skilled_cache: dict[tuple[str, str], list[Resource]] = {}
         resources = company.resources()
         self.free_slots = {r.id: r.capacity for r in resources}
         self.busy_minutes = {r.id: 0.0 for r in resources}
@@ -154,7 +157,7 @@ class Engine:
             return
         self.events.append(Event(self.now, K.SYSTEM_OUTAGE_STARTED, system_id=system_id))
         freed = set()
-        queued = [t for q in self.queues.values() for t in q if self._step(t).system_id == system_id]
+        queued = [t for q in self.queues.values() for t in q.values() if self._step(t).system_id == system_id]
         running = [self.tasks_by_id[i] for i in self.in_progress[system_id]]
         for task in sorted(running + queued, key=lambda t: t.seq):  # creation order
             if task.state == S.IN_PROGRESS:
@@ -188,7 +191,7 @@ class Engine:
         for r in self.company.resources():
             self._dispatch_resource(r)
         for key, q in list(self.queues.items()):
-            if any(self._step(t).system_id == system_id for t in q):
+            if any(self._step(t).system_id == system_id for t in q.values()):
                 self._retag_queue(*key)
 
     def _finish(self, task: Task, token: int) -> None:
@@ -257,9 +260,7 @@ class Engine:
             if task_id not in self._queue_keys:
                 continue  # running or blocked: finishes normally and spawns nothing
             step = self.steps[inst.workflow.id, step_id]
-            q = self.queues[step.department_id, step.required_skill]
-            task = next(t for t in q if t.id == task_id)
-            q.remove(task)
+            task = self.queues[step.department_id, step.required_skill].pop(task_id)
             del self._queue_keys[task_id]
             transition(task, S.CANCELLED, self.now, self.events)
             del inst.active[step_id]
@@ -269,7 +270,7 @@ class Engine:
     def _step(self, task: Task) -> Step:
         return self.steps[task.workflow_id, task.step_id]
 
-    def _create_task(self, inst: Instance, step: Step) -> Task:
+    def _create_task(self, inst: Instance, step: Step) -> None:
         task = Task(
             f"{inst.id}:{step.id}:{inst.retries}", inst.id, inst.workflow.id, step.id,
             step.department_id, created_at=self.now, seq=self._created,
@@ -280,11 +281,13 @@ class Engine:
             self.now, K.TASK_CREATED, task.id, inst.id, inst.workflow.id, step.id, step.department_id,
         ))
         self._try_dispatch_task(task)
-        return task
 
     def _skilled(self, task: Task) -> list[Resource]:
-        skill = self._step(task).required_skill
-        return [r for r in self.company.department(task.department_id).resources if skill in r.skills and r.capacity > 0]
+        key = (task.department_id, self._step(task).required_skill)
+        if (rs := self._skilled_cache.get(key)) is None:  # resources do not change during a run
+            rs = self._skilled_cache[key] = [
+                r for r in self.company.department(key[0]).resources if key[1] in r.skills and r.capacity > 0]
+        return rs
 
     def _down(self, task: Task) -> str | None:
         system_id = self._step(task).system_id
@@ -306,7 +309,7 @@ class Engine:
             return Reason.OFF_SHIFT
         return Reason.ALL_RESOURCES_BUSY
 
-    def _try_dispatch_task(self, task: Task, rework: bool = False) -> Reason | None:
+    def _try_dispatch_task(self, task: Task, rework: bool = False) -> None:
         """Queue the task (logging why it waits, or None) and start it if a resource is free."""
         eligible = self._eligible(task)
         reason = None if eligible else self._wait_reason(task)
@@ -316,42 +319,47 @@ class Engine:
         if eligible:
             self._start(task, self.policy.choose_resource(task, eligible, self.busy_minutes))
         else:
-            self.queues.setdefault((task.department_id, self._step(task).required_skill), []).append(task)
-            self._queue_keys[task.id] = self.policy.order_key(task, self._step(task))
-        return reason
+            step = self._step(task)
+            qkey = (task.department_id, step.required_skill)
+            self.queues.setdefault(qkey, {})[task.id] = task
+            k = self._queue_keys[task.id] = self.policy.order_key(task, step)
+            heapq.heappush(self._heaps.setdefault(qkey, {}).setdefault(step.system_id, []), (k, task.id))
 
     def _retag_queue(self, department_id: str, skill: str) -> None:
         """Log a retag TASK_QUEUED for each queued task whose wait reason changed."""
         reasons: dict[str | None, Reason] = {}  # within one queue the reason depends only on the step's system
-        for task in self.queues.get((department_id, skill), []):
+        down: dict[str | None, str | None] = {}
+        for task in self.queues.get((department_id, skill), {}).values():
             system_id = self.steps[task.workflow_id, task.step_id].system_id
             if (reason := reasons.get(system_id)) is None:
                 reason = reasons[system_id] = self._wait_reason(task)
+                down[system_id] = self._down(task)
             if reason != task.last_reason:
                 self.events.append(Event(
                     self.now, K.TASK_QUEUED, task.id, task.instance_id, task.workflow_id, task.step_id,
-                    task.department_id, system_id=self._down(task), reason=reason, payload={"retag": True},
+                    task.department_id, system_id=down[system_id], reason=reason, payload={"retag": True},
                 ))
                 task.last_reason = reason
 
     def _dispatch_resource(self, r: Resource) -> None:
         # on_shift check: a task finishing as overrun after shift end must not pull new work
+        keys = self._queue_keys
         while self.on_shift[r.id] and self.free_slots[r.id] > 0:
-            best = best_q = best_i = None
-            keys = self._queue_keys
-            any_down = any(self.system_down.values())
+            best = best_h = best_q = None
             for s in sorted(r.skills):
-                q = self.queues.get((r.department_id, s), ())
-                for i, t in enumerate(q):
-                    if any_down and self._down(t):
+                qkey = (r.department_id, s)
+                for system_id, h in self._heaps.get(qkey, {}).items():
+                    if system_id is not None and self.system_down[system_id] > 0:
                         continue
-                    k = keys[t.id]
-                    if best is None or k < best:  # strict: first minimum wins, as min() did
-                        best, best_q, best_i = k, q, i
+                    while h and keys.get(h[0][1]) != h[0][0]:
+                        heapq.heappop(h)  # stale: started or cancelled since it was pushed
+                    # order keys end in the task id, so they are unique and the minimum is unambiguous
+                    if h and (best is None or h[0][0] < best):
+                        best, best_h, best_q = h[0][0], h, qkey
             if best is None:
                 return
-            task = best_q.pop(best_i)
-            del self._queue_keys[task.id]
+            task = self.queues[best_q].pop(heapq.heappop(best_h)[1])
+            del keys[task.id]
             self._start(task, r)
 
     def _start(self, task: Task, r: Resource) -> None:

@@ -108,7 +108,7 @@ def test_failure_rework_cycle():
     ]
     m = compute_metrics(events, tiny_company(), DAY)
     w = m.workflows["w"]
-    assert (w.failures, w.rework_rate, w.wait_p90) == (1, 1.0, 10)
+    assert (w.failures, w.rework_rate, w.wait_p90) == (1, 0.5, 10)
     assert m.resources["e1"].busy_minutes == 20
 
 
@@ -145,3 +145,42 @@ def test_sla_counts_instances_not_steps():
     ]
     w = compute_metrics(evs, c, DAY).workflows["w"]
     assert (w.completed, w.sla_breached, w.sla_breach_rate) == (1, 1, 1.0)
+
+
+def test_rework_rate_is_one_when_every_attempt_fails():
+    from flock_of_pain.dist import const
+    from flock_of_pain.model import Step
+    c = tiny_company(rate_per_hour=4, steps=[Step("a", "A", "cs", "support", const(10), failure_prob=1, max_retries=2)])
+    e = Engine(c, RunConfig(seed=7, horizon_minutes=DAY))
+    e.run()
+    w = compute_metrics(e.events, c, DAY).workflows["w"]
+    assert w.failures > 0 and w.steps_completed == 0
+    assert w.rework_rate == 1.0
+
+
+def test_wait_still_queued_at_horizon_counts():
+    events = [wf(0, K.WORKFLOW_STARTED), ev(0, K.TASK_CREATED), ev(100, K.TASK_QUEUED, reason=Reason.OFF_SHIFT)]
+    m = compute_metrics(events, tiny_company(), DAY)
+    assert m.workflows["w"].wait_p90 == DAY - 100
+    assert m.departments["cs"].wait_p50 == DAY - 100
+
+
+def test_utilization_counts_overrun_past_shift_end():
+    # e1 works 9:00-17:00 day 0 only in this window; a run 16:00-20:00 overruns 3h
+    events = [ev(0, K.TASK_QUEUED), ev(16 * 60, K.TASK_STARTED, "e1"), ev(20 * 60, K.TASK_COMPLETED, "e1")]
+    m = compute_metrics(events, tiny_company(), DAY)
+    r = m.resources["e1"]
+    assert r.busy_minutes == 240 and r.on_shift_minutes == 480
+    assert r.utilization == 240 / (480 + 180)
+    assert m.departments["cs"].utilization <= 1
+
+
+def test_utilization_at_most_one_under_overload():
+    from flock_of_pain.examples import reynolds
+    from flock_of_pain.scenario import ArrivalMultiplier, Scenario
+    c = Scenario("x3", "x3", reynolds.build(), [ArrivalMultiplier(3.0)]).materialize()
+    e = Engine(c, RunConfig(seed=42, horizon_minutes=30 * DAY))
+    e.run()
+    m = compute_metrics(e.events, c, 30 * DAY)
+    assert all(r.utilization <= 1 for r in m.resources.values())
+    assert all(d.utilization <= 1 for d in m.departments.values())

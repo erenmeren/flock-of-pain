@@ -214,3 +214,11 @@ def test_workflow_defaults_and_inflow_checks():
     w.inflows.append(Inflow("phone", "Again", 1, business_hours(9, 17), ["a"]))
     with pytest.raises(ModelError, match="duplicate inflow"):
         c.resolve()
+
+
+def test_workflow_without_steps_rejected_unless_draft():
+    c = tiny_company()
+    c.workflows[0].steps = []
+    with pytest.raises(ModelError, match="no steps"):
+        c.resolve()
+    c.resolve(draft=True)

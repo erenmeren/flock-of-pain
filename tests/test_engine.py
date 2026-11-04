@@ -162,7 +162,7 @@ def test_cancel_removes_queued_sibling():
     first = next(ev.instance_id for ev in e.events if ev.kind == K.WORKFLOW_STARTED)
     kinds = [ev.kind for ev in e.events if ev.instance_id == first and ev.step_id == "b"]
     assert K.TASK_QUEUED in kinds and K.TASK_CANCELLED in kinds and K.TASK_STARTED not in kinds
-    assert all(t.state == S.QUEUED for q in e.queues.values() for t in q)
+    assert all(t.state == S.QUEUED for q in e.queues.values() for t in q.values())
     assert len(e._queue_keys) == sum(len(q) for q in e.queues.values())
 
 
@@ -175,3 +175,16 @@ def test_bounded_tracking_after_reynolds_run(i):
     assert not e.tasks_by_id
     assert not any(e.in_progress.values())
     assert len(e._queue_keys) == sum(len(q) for q in e.queues.values())
+
+
+def test_overnight_shift_runs_without_error():
+    from flock_of_pain.schedule import Schedule
+    c = tiny_company(rate_per_hour=2, pool_headcount=1)
+    night = Schedule({d: (22, 30) for d in range(7)})
+    for r in c.resources():
+        r.schedule = night
+    c.workflows[0].arrival.window = Schedule({d: (0, 24) for d in range(7)})
+    e = Engine(c, RunConfig(seed=1, horizon_minutes=3 * DAY))
+    e.run()
+    started = [ev for ev in e.events if ev.kind == K.TASK_STARTED]
+    assert started and all(night.is_on(ev.t) for ev in started)

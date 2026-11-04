@@ -149,3 +149,9 @@ def test_materialize_draft_tolerates_incomplete_company():
     with pytest.raises(ModelError):
         Scenario("s", "S", base, []).materialize()
     Scenario("s", "S", base, []).materialize(draft=True)
+
+
+@pytest.mark.parametrize("start,end", [(200, 200), (200, 100)])
+def test_absence_end_must_be_after_start(start, end):
+    with pytest.raises(ModelError, match="end"):
+        Scenario("s", "S", tiny_company(employees=1), [Absence("e1", start, end)]).materialize()

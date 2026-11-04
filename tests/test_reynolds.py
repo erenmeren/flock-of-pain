@@ -54,4 +54,4 @@ def test_three_x_load_90_days_under_budget():
     c = Scenario("x3", "x3", reynolds.build(), [ArrivalMultiplier(3.0)]).materialize()
     t = time.perf_counter()
     Engine(c, RunConfig(seed=42, horizon_minutes=90 * 1440)).run()
-    assert time.perf_counter() - t < 8.0
+    assert time.perf_counter() - t < 6.0  # ~2s locally; headroom for CI runners

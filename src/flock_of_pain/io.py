@@ -18,6 +18,9 @@ _REQUIRED = object()
 _KINDS = {"const", "uniform", "triangular", "lognormal", "exponential"}
 _STEP_DEFAULTS = {"depends_on": [], "system_id": None, "priority": 0, "sla_minutes": None, "failure_prob": 0.0,
                   "rework_to": None, "max_retries": 0}
+# caps keep one /simulate call bounded: event count grows with arrival rate and with retries per instant
+MAX_RATE_PER_HOUR = 10000
+MAX_RETRIES = 100
 
 
 class SchemaError(ModelError):
@@ -127,6 +130,8 @@ def schedule_from_dict(d: dict | None, path: str) -> Schedule | None:
                     "expected 0 <= start < 24 and start < end <= start + 24; write an overnight shift as e.g. [22, 30]"))
     ap = _join(path, "absences")
     absences = [_pair(a, f"{ap}[{i}]") for i, a in enumerate(_get(d, "absences", path, list, []))]
+    for i, (start, end) in enumerate(absences):
+        _check(path, (f"absences[{i}]", start < end, "end must be after start"))
     _done(d, path)
     return Schedule(hours, absences)
 
@@ -179,6 +184,7 @@ def _step_from_dict(d: dict, path: str) -> Step:
              failure_prob=_get(d, "failure_prob", path, float, 0.0), rework_to=_get(d, "rework_to", path, str, None),
              max_retries=_get(d, "max_retries", path, int, 0))
     _done(d, path)
+    _check(path, ("max_retries", s.max_retries <= MAX_RETRIES, f"must be <= {MAX_RETRIES}"))
     return s
 
 
@@ -192,7 +198,8 @@ def _step_to_dict(s: Step) -> dict:
 def _inflow_from_dict(d: dict, path: str) -> Inflow:
     f = Inflow(_get(d, "id", path, str), _get(d, "name", path, str), _get(d, "rate_per_hour", path, float),
                schedule_from_dict(_get(d, "window", path, dict), _join(path, "window")), _strs(d, "entry", path))
-    _check(path, ("rate_per_hour", f.rate_per_hour >= 0, "must be >= 0"))
+    _check(path, ("rate_per_hour", f.rate_per_hour >= 0, "must be >= 0"),
+           ("rate_per_hour", f.rate_per_hour <= MAX_RATE_PER_HOUR, f"must be <= {MAX_RATE_PER_HOUR}"))
     _done(d, path)
     return f
 
@@ -205,7 +212,8 @@ def _workflow_from_dict(d: dict, path: str) -> Workflow:
         a = _obj(a, ap)
         arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")))
         _done(a, ap)
-        _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"))
+        _check(ap, ("rate_per_hour", arrival.rate_per_hour >= 0, "must be >= 0"),
+               ("rate_per_hour", arrival.rate_per_hour <= MAX_RATE_PER_HOUR, f"must be <= {MAX_RATE_PER_HOUR}"))
     inflows = _items(d, "inflows", path, _inflow_from_dict, [])
     lp = _join(path, "layout")
     raw = _get(d, "layout", path, dict, {})
