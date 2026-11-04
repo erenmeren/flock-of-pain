@@ -1,0 +1,577 @@
+{
+  "id": "order_office",
+  "name": "Reynolds Order Office",
+  "systems": [
+    {
+      "id": "erp",
+      "name": "ERP"
+    },
+    {
+      "id": "phone",
+      "name": "Phone system"
+    }
+  ],
+  "departments": [
+    {
+      "id": "order_desk",
+      "name": "Order desk",
+      "resources": [
+        {
+          "id": "desk_team",
+          "skills": [
+            "phone",
+            "order_entry"
+          ],
+          "cost_per_hour": 18,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ]
+            }
+          },
+          "headcount": 6,
+          "overtime_rate": 1.5
+        }
+      ]
+    },
+    {
+      "id": "credit",
+      "name": "Credit control",
+      "resources": [
+        {
+          "id": "credit_team",
+          "skills": [
+            "credit_check"
+          ],
+          "cost_per_hour": 22,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ]
+            }
+          },
+          "headcount": 3
+        }
+      ]
+    },
+    {
+      "id": "finance",
+      "name": "Finance",
+      "resources": [
+        {
+          "id": "finance_team",
+          "skills": [
+            "invoicing"
+          ],
+          "cost_per_hour": 22,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  18
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  18
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  18
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  18
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  18
+                ]
+              ]
+            }
+          },
+          "headcount": 3
+        }
+      ]
+    },
+    {
+      "id": "complaints",
+      "name": "Customer care",
+      "resources": [
+        {
+          "id": "care_team",
+          "skills": [
+            "phone",
+            "complaint"
+          ],
+          "cost_per_hour": 19,
+          "schedule": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  13
+                ],
+                [
+                  14,
+                  17.5
+                ]
+              ]
+            }
+          },
+          "headcount": 3
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "order_to_invoice",
+      "name": "Order to invoice",
+      "cutoff_hour": 18,
+      "inflows": [
+        {
+          "id": "phone_orders",
+          "name": "Phone orders",
+          "rate_per_hour": 14,
+          "window": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  17.5
+                ]
+              ]
+            }
+          },
+          "entry": [
+            "answer_call"
+          ],
+          "profile": {
+            "hours": {
+              "8": 0.6,
+              "9": 0.9,
+              "15": 1.4,
+              "16": 2.0,
+              "17": 2.4
+            }
+          }
+        },
+        {
+          "id": "email_orders",
+          "name": "E-mail orders",
+          "rate_per_hour": 6,
+          "window": {
+            "weekday_hours": {
+              "0": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "1": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "2": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "3": [
+                [
+                  8,
+                  17.5
+                ]
+              ],
+              "4": [
+                [
+                  8,
+                  17.5
+                ]
+              ]
+            }
+          },
+          "entry": [
+            "key_in_order"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "answer_call",
+          "name": "Answer call",
+          "department_id": "order_desk",
+          "required_skill": "phone",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 4,
+            "sigma": 0.4
+          },
+          "system_id": "phone",
+          "patience": {
+            "kind": "lognormal_mean",
+            "mean": 3,
+            "sigma": 0.6
+          }
+        },
+        {
+          "id": "key_in_order",
+          "name": "Key in order",
+          "department_id": "order_desk",
+          "required_skill": "order_entry",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 6,
+            "sigma": 0.4
+          },
+          "system_id": "erp",
+          "depends_on": [
+            "answer_call"
+          ],
+          "branches": [
+            {
+              "to": "credit_check",
+              "prob": 0.2
+            }
+          ]
+        },
+        {
+          "id": "credit_check",
+          "name": "Credit check",
+          "department_id": "credit",
+          "required_skill": "credit_check",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 12,
+            "sigma": 0.5
+          },
+          "depends_on": [
+            "key_in_order"
+          ]
+        },
+        {
+          "id": "await_customer",
+          "name": "Await customer",
+          "department_id": "credit",
+          "required_skill": null,
+          "duration": {
+            "kind": "const",
+            "a": 30
+          },
+          "depends_on": [
+            "credit_check"
+          ]
+        },
+        {
+          "id": "confirm_order",
+          "name": "Confirm order",
+          "department_id": "order_desk",
+          "required_skill": "order_entry",
+          "duration": {
+            "kind": "const",
+            "a": 3
+          },
+          "depends_on": [
+            "key_in_order",
+            "await_customer"
+          ]
+        },
+        {
+          "id": "invoice",
+          "name": "Invoice",
+          "department_id": "finance",
+          "required_skill": "invoicing",
+          "duration": {
+            "kind": "const",
+            "a": 1
+          },
+          "depends_on": [
+            "confirm_order"
+          ],
+          "release_hours": [
+            12,
+            17.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "complaint",
+      "name": "Complaint handling",
+      "arrival": {
+        "rate_per_hour": 3,
+        "window": {
+          "weekday_hours": {
+            "0": [
+              [
+                9,
+                17
+              ]
+            ],
+            "1": [
+              [
+                9,
+                17
+              ]
+            ],
+            "2": [
+              [
+                9,
+                17
+              ]
+            ],
+            "3": [
+              [
+                9,
+                17
+              ]
+            ],
+            "4": [
+              [
+                9,
+                17
+              ]
+            ]
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "log_complaint",
+          "name": "Log complaint",
+          "department_id": "complaints",
+          "required_skill": "phone",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 8,
+            "sigma": 0.5
+          },
+          "system_id": "phone"
+        },
+        {
+          "id": "investigate",
+          "name": "Investigate",
+          "department_id": "complaints",
+          "required_skill": "complaint",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 25,
+            "sigma": 0.6
+          },
+          "depends_on": [
+            "log_complaint"
+          ],
+          "failure_prob": 0.1,
+          "rework_to": "investigate",
+          "max_retries": 1
+        },
+        {
+          "id": "resolve",
+          "name": "Resolve",
+          "department_id": "complaints",
+          "required_skill": "phone",
+          "duration": {
+            "kind": "lognormal_mean",
+            "mean": 5,
+            "sigma": 0.4
+          },
+          "depends_on": [
+            "investigate"
+          ]
+        }
+      ]
+    }
+  ]
+}
