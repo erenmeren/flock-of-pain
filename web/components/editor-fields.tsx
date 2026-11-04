@@ -79,9 +79,9 @@ export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedul
         const which = i ? "second shift" : "shift";
         return (
           <div key={i} className="flex items-center gap-1">
-            <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`${which} start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : at(i, 0, Number(e.target.value)))} />
+            <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`${which} start hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : at(i, 0, Number(e.target.value)))} />
             to
-            <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`${which} end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : at(i, 1, Number(e.target.value)))} />
+            <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`${which} end hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : at(i, 1, Number(e.target.value)))} />
             {i ? "h after the break" : "h (overnight: end past 24)"}
           </div>
         );

@@ -152,7 +152,7 @@ function ProfileEditor({ id, profile, onChange, fit }: { id: string; profile?: P
     <div className={`grid gap-1 ${cols}`}>
       {labels.map((l, k) => (
         <label key={k} className="flex flex-col text-[10px] text-muted-foreground">{l}
-          <NumInput aria-label={`${key === "hours" ? "hour" : "weekday"} ${l} multiplier of ${id}`} className="h-7 px-1 text-xs tabular-nums" value={Math.round((profile?.[key]?.[String(k)] ?? 1) * 100)}
+          <NumInput aria-label={`${key === "hours" ? "hour" : "weekday"} ${l} multiplier of ${id}`} className="h-7 px-0 text-center text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" value={Math.round((profile?.[key]?.[String(k)] ?? 1) * 100)}
             onCommit={(v) => onChange(setMultiplier(profile, key, String(k), v / 100))} />
         </label>
       ))}
