@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Schedule, DAYS } from "@/lib/company";
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
@@ -21,6 +22,16 @@ export function NumInput({ value, onCommit, lo = 0, hi = Infinity, ...props }: {
     if (v !== value) onCommit(v);
     e.currentTarget.value = String(v); // show what was stored: the clamped value, or the old one when rejected
   }} {...props} />;
+}
+
+/** Plain Select over {value: label}; base-ui may hand back null. */
+export function Pick({ label, value, items, onChange, className = "w-48", placeholder = "select…" }: { label: string; value: string; items: Record<string, string>; onChange: (v: string) => void; className?: string; placeholder?: string }) {
+  return (
+    <Select value={value || null} items={items} onValueChange={(v) => v !== null && onChange(v)}>
+      <SelectTrigger aria-label={label} className={className}><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+    </Select>
+  );
 }
 
 // shortcut: one [start, end] for every working day; per-day hours and absences are edited in the JSON tab
@@ -47,9 +58,9 @@ export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedul
         ))}
       </div>
       <div className="flex items-center gap-1">
-        <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`shift start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => rebuild(days, Number(e.target.value), end)} />
+        <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`shift start hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : rebuild(days, Number(e.target.value), end))} />
         to
-        <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`shift end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => rebuild(days, start, Number(e.target.value))} />
+        <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`shift end hour of ${id}`} className="h-7 w-14 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : rebuild(days, start, Number(e.target.value)))} />
         h (overnight: end past 24)
       </div>
     </div>

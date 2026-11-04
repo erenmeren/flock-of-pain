@@ -73,6 +73,7 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 /** Shape checks the editor relies on to render; the API does the full validation. */
 export function checkCompany(c: unknown): Company {
   if (!isObj(c) || !Array.isArray(c.departments)) throw new Error("expected a company object with departments");
+  if (typeof c.id !== "string" || !c.id || typeof c.name !== "string") throw new Error("company needs a non-empty string id and a string name");
   const out = { systems: [], workflows: [], ...c } as unknown as Company;
   if (!Array.isArray(out.systems) || !out.systems.every((s) => isObj(s))) throw new Error("systems must be a list of objects");
   const hoursOk = (h: unknown) => isObj(h) && Object.values(h).every((v) => Array.isArray(v) && v.length === 2);
@@ -94,6 +95,19 @@ export function checkCompany(c: unknown): Company {
         throw new Error("schedule needs weekday_hours of [start, end] pairs");
     }
   }
+  const depts = new Set(out.departments.map((d) => d.id)), systems = new Set(out.systems.map((s) => s.id));
+  for (const w of out.workflows) {
+    const steps = new Set(w.steps.map((s) => s.id));
+    for (const st of w.steps) {
+      const at = `step ${st.id} in workflow ${w.id}`;
+      if (st.department_id && !depts.has(st.department_id)) throw new Error(`${at}: unknown department ${st.department_id}`); // "" = not picked yet
+      if (st.system_id && !systems.has(st.system_id)) throw new Error(`${at}: unknown system ${st.system_id}`);
+      const dep = st.depends_on?.find((d) => !steps.has(d));
+      if (dep !== undefined) throw new Error(`${at}: depends on unknown step ${dep}`);
+    }
+  }
+  const outage = out.outages?.find((o) => !systems.has(o[0]));
+  if (outage) throw new Error(`outage on unknown system ${outage[0]}`);
   return out;
 }
 
@@ -169,13 +183,13 @@ export function renameInScenarios(scenarios: Scenario[], field: IdField, from: s
 }
 
 /** Ids scenario overlays point at; the editor blocks deleting these. */
-export function scenarioRefs(scenarios: Scenario[]): { departments: Set<string>; systems: Set<string>; resources: Set<string> } {
+export function scenarioRefs(scenarios: Scenario[]): { departments: Set<string>; systems: Set<string>; resources: Set<string>; workflows: Set<string> } {
   const refs = scenarios.flatMap((s) => s.overlays).map((o) => {
     const f = ID_FIELD.get(o.type);
     return { f, id: f && (o as Record<string, unknown>)[f] };
   });
   const ids = (...fields: IdField[]) => new Set(refs.flatMap(({ f, id }) => (f && fields.includes(f) && typeof id === "string" ? [id] : [])));
-  return { departments: ids("department_id"), systems: ids("system_id"), resources: ids("resource_id", "pool_id") };
+  return { departments: ids("department_id"), systems: ids("system_id"), resources: ids("resource_id", "pool_id"), workflows: ids("workflow_id") };
 }
 
 /** Everyone the company employs: pool headcount counts the carved members already. */

@@ -4,8 +4,7 @@ import { Trash2 } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { IdTag, NumInput, ScheduleEditor } from "@/components/editor-fields";
+import { IdTag, NumInput, Pick, ScheduleEditor } from "@/components/editor-fields";
 import { type Company, type Overlay, DAYS, OVERLAY_TYPES, idFor, weekdays9to5 } from "@/lib/company";
 
 export const DAY = 1440;
@@ -18,16 +17,6 @@ export function minuteLabel(m: number): string {
   const hh = String(Math.floor(rest / 60)).padStart(2, "0");
   const mm = String(Math.floor(rest % 60)).padStart(2, "0");
   return `${DAYS[day % 7]}${day >= 7 ? ` (wk ${Math.floor(day / 7) + 1})` : ""} ${hh}:${mm}`;
-}
-
-/** Plain Select over {value: label}; base-ui may hand back null. */
-export function Pick({ label, value, items, onChange, className = "w-48", placeholder = "select…" }: { label: string; value: string; items: Record<string, string>; onChange: (v: string) => void; className?: string; placeholder?: string }) {
-  return (
-    <Select value={value || null} items={items} onValueChange={(v) => v !== null && onChange(v)}>
-      <SelectTrigger aria-label={label} className={className}><SelectValue placeholder={placeholder} /></SelectTrigger>
-      <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-    </Select>
-  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -51,15 +40,15 @@ export function MinuteRange({ label, start, end, onChange }: { label: string; st
 const resources = (c: Company) => c.departments.flatMap((d) => d.resources.map((r) => ({ r, d })));
 export const systemItems = (c: Company) => Object.fromEntries(c.systems.map((s) => [s.id, s.name ? `${s.id} · ${s.name}` : s.id]));
 
-/** A fresh overlay of `type` filled from the first matching company entity. */
-export function newOverlay(type: (typeof OVERLAY_TYPES)[number], c: Company): Overlay {
+/** A fresh overlay of `type` filled from the first matching company entity; `taken` = employee ids other overlays already add. */
+export function newOverlay(type: (typeof OVERLAY_TYPES)[number], c: Company, taken: string[] = []): Overlay {
   const all = resources(c);
   switch (type) {
     case "arrival_multiplier": return { type, factor: 1.5, workflow_id: null };
     case "system_outage": return { type, system_id: c.systems[0]?.id ?? "", start: 2 * DAY + 600, end: 2 * DAY + 720 };
     case "add_employee": {
       const d = c.departments[0];
-      return { type, department_id: d?.id ?? "", employee: { id: idFor("New employee", c.departments.flatMap((x) => x.resources).map((r) => r.id), "emp"), name: "New employee", skills: d?.resources[0]?.skills ?? [], cost_per_hour: 30, speed_factor: 1, schedule: weekdays9to5() } };
+      return { type, department_id: d?.id ?? "", employee: { id: idFor("New employee", [...c.departments.flatMap((x) => x.resources).map((r) => r.id), ...taken], "emp"), name: "New employee", skills: d?.resources[0]?.skills ?? [], cost_per_hour: 30, speed_factor: 1, schedule: weekdays9to5() } };
     }
     case "remove_resource": return { type, resource_id: all[0]?.r.id ?? "" };
     case "set_pool_headcount": {
@@ -70,7 +59,7 @@ export function newOverlay(type: (typeof OVERLAY_TYPES)[number], c: Company): Ov
   }
 }
 
-export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overlay; company: Company; onChange: (o: Overlay) => void; onRemove: () => void }) {
+export function OverlayEditor({ o, company: c, taken = [], onChange, onRemove }: { o: Overlay; company: Company; taken?: string[]; onChange: (o: Overlay) => void; onRemove: () => void }) {
   const resItems = Object.fromEntries(resources(c).map(({ r, d }) => [r.id, `${r.id} (${d.id})${r.headcount !== undefined ? ` ×${r.headcount}` : ""}`]));
   let body: React.ReactNode;
   switch (o.type) {
@@ -95,7 +84,7 @@ export function OverlayEditor({ o, company: c, onChange, onRemove }: { o: Overla
       body = <>
         <Field label="Department"><Pick label="new employee department" className="w-36" value={o.department_id} items={Object.fromEntries(c.departments.map((d) => [d.id, d.name || d.id]))} onChange={(department_id) => onChange({ ...o, department_id })} /></Field>
         <Field label="Name"><Input aria-label="new employee name" className="w-36" value={e.name ?? ""}
-          onChange={(ev) => setE({ ...e, name: ev.target.value, id: idFor(ev.target.value, c.departments.flatMap((x) => x.resources).map((r) => r.id), "emp", e.id) })} /></Field>
+          onChange={(ev) => setE({ ...e, name: ev.target.value, id: idFor(ev.target.value, [...c.departments.flatMap((x) => x.resources).map((r) => r.id), ...taken], "emp", e.id) })} /></Field>
         <Field label="Id"><IdTag id={e.id} className="px-0 leading-9" /></Field>
         <Field label="Skills (comma)">
           <Input key={e.skills.join(",")} aria-label="new employee skills" className="w-44" defaultValue={e.skills.join(", ")}

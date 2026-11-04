@@ -8,11 +8,12 @@ import { Panel } from "@/components/dashboard/kpi";
 import { PageHeader, fmt } from "@/components/page";
 import { StepChain, cycleMean, unskilled } from "@/components/process/step-chain";
 import { inflowsOf, newWorkflow, rateOf } from "@/components/process/graph";
+import { scenarioRefs } from "@/lib/company";
 import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
 
 export default function ProcessesPage() {
-  const { company, setCompany } = useTwin();
+  const { company, setCompany, scenarios } = useTwin();
   const confirm = useConfirm();
   const router = useRouter();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -22,6 +23,7 @@ export default function ProcessesPage() {
     setCompany({ ...company, workflows: [...company.workflows, wf] });
     router.push(`/processes/${encodeURIComponent(wf.id)}`);
   };
+  const inScenarios = scenarioRefs(scenarios).workflows;
   const remove = async (i: number) => {
     if (await confirm(`"${company.workflows[i].name}" and its steps are removed.`, { title: "Remove this workflow?", action: "Remove", destructive: true })) setCompany({ ...company, workflows: company.workflows.filter((_, j) => j !== i) });
   };
@@ -37,7 +39,7 @@ export default function ProcessesPage() {
         return (
           <Panel key={i} icon={Workflow}
             title={<Link href={href} className="hover:text-primary">{wf.name} <span className="ml-1 font-mono text-xs font-normal text-muted-foreground">{wf.id}</span></Link>}
-            subtitle={<span className="tabular-nums">{inflowsOf(wf).length} inflow{inflowsOf(wf).length === 1 ? "" : "s"} · {fmt(rateOf(wf), 2)}/h · {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"} · mean cycle {fmt(cycleMean(wf))} min</span>}
+            subtitle={<span className="tabular-nums">{inflowsOf(wf).length} inflow{inflowsOf(wf).length === 1 ? "" : "s"} · {fmt(rateOf(wf), 2)}/h · {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"} · total work {fmt(cycleMean(wf))} min</span>}
             action={
               <div className="flex items-center gap-1">
                 {warn > 0 && (
@@ -46,7 +48,7 @@ export default function ProcessesPage() {
                   </span>
                 )}
                 <Button variant="outline" size="sm" className="rounded-full" render={<Link href={href} />} nativeButton={false}>Edit <ArrowRight className="size-3.5" /></Button>
-                <Button variant="destructive" size="sm" aria-label={`remove workflow ${wf.id}`} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
+                <Button variant="destructive" size="sm" aria-label={`remove workflow ${wf.id}`} disabled={inScenarios.has(wf.id)} title={inScenarios.has(wf.id) ? "referenced by a scenario" : undefined} onClick={() => remove(i)}><Trash2 className="size-4" /></Button>
               </div>
             }>
             <StepChain wf={wf} company={company} />

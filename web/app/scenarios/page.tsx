@@ -9,7 +9,8 @@ import { Pill, accent } from "@/components/org/parts";
 import { Input } from "@/components/ui/input";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
-import { DAY, MinuteRange, OverlayEditor, Pick, newOverlay, systemItems } from "@/components/scenario/overlay-editor";
+import { Pick } from "@/components/editor-fields";
+import { DAY, MinuteRange, OverlayEditor, newOverlay, systemItems } from "@/components/scenario/overlay-editor";
 import { type Company, type Scenario, OVERLAY_TYPES, idFor } from "@/lib/company";
 import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
@@ -22,6 +23,7 @@ export default function ScenariosPage() {
 
   const i = Math.min(sel, scenarios.length - 1);
   const s = scenarios[i];
+  const added = s?.overlays.flatMap((o) => (o.type === "add_employee" ? [o.employee.id] : [])) ?? []; // employee ids this scenario already adds
   const setS = (x: Scenario) => setScenarios(scenarios.map((y, j) => (j === i ? x : y)));
   const add = (x: Omit<Scenario, "id">) => { setScenarios([...scenarios, { ...x, id: idFor(x.name, scenarios.map((y) => y.id), "scenario") }]); setSel(scenarios.length); };
   const remove = async (j: number) => {
@@ -56,7 +58,7 @@ export default function ScenariosPage() {
           {s && (
             <Panel title={s.name || s.id} subtitle={`${s.overlays.length} overlay${s.overlays.length === 1 ? "" : "s"} on top of the base company`} icon={FlaskConical}
               action={<Pick label="add overlay" value="" placeholder="+ Add overlay" className="w-52 rounded-full data-placeholder:text-foreground" items={Object.fromEntries(OVERLAY_TYPES.map((t) => [t, `+ ${t}`]))}
-                onChange={(t) => setS({ ...s, overlays: [...s.overlays, newOverlay(t as (typeof OVERLAY_TYPES)[number], company)] })} />}
+                onChange={(t) => setS({ ...s, overlays: [...s.overlays, newOverlay(t as (typeof OVERLAY_TYPES)[number], company, added)] })} />}
               contentClassName="flex flex-col gap-3">
               <div className="rounded-xl p-3 glass-inset">
                 <label className="flex flex-col gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">Name
@@ -65,7 +67,7 @@ export default function ScenariosPage() {
                 </label>
               </div>
               {s.overlays.map((o, k) => (
-                <OverlayEditor key={k} o={o} company={company}
+                <OverlayEditor key={k} o={o} company={company} taken={added}
                   onChange={(x) => setS({ ...s, overlays: s.overlays.map((y, m) => (m === k ? x : y)) })}
                   onRemove={() => setS({ ...s, overlays: s.overlays.filter((_, m) => m !== k) })} />
               ))}

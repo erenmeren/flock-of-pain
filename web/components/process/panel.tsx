@@ -5,8 +5,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { NumInput, ScheduleEditor, clamp } from "@/components/editor-fields";
+import { NumInput, Pick, ScheduleEditor, clamp } from "@/components/editor-fields";
 import { renameInflow, stepIssues } from "@/components/process/graph";
 import { type Company, type Dist, type Inflow, type Step, type Workflow, durationMean, idFor } from "@/lib/company";
 
@@ -21,12 +20,6 @@ export function withMean(d: Dist, mean: number): Dist {
 type Props = { wf: Workflow; company: Company; onChange: (w: Workflow) => void; onRemove: () => void };
 
 const Field = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => <div className="flex flex-col gap-1"><Label className="gap-1 text-xs text-muted-foreground">{label}{hint && <Hint id={hint} />}</Label>{children}</div>;
-const Pick = ({ label, items, value, onChange }: { label: string; items: Record<string, string>; value: string; onChange: (v: string) => void }) => (
-  <Select items={items} value={value} onValueChange={(v) => v && onChange(v)}>
-    <SelectTrigger aria-label={label} className="w-full"><SelectValue /></SelectTrigger>
-    <SelectContent>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-  </Select>
-);
 const RemoveBtn = ({ onRemove }: { onRemove: () => void }) => <Button variant="destructive" size="sm" className="self-start rounded-full" onClick={onRemove}><Trash2 className="size-3.5" /> Remove</Button>;
 
 function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }) {
@@ -44,7 +37,7 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
     <>
       {stepIssues(company, wf, st).map((i) => <p key={i.text} className="text-xs text-amber-400">{i.text.startsWith("Nobody in") ? `${i.text}. Typing a skill here does not give it to anyone; add it on the People page.` : i.text}</p>)}
       <Field label="Department" hint="step_department">
-        <Pick label={`department of step ${id}`} items={deptItems} value={st.department_id || NONE} onChange={(v) => {
+        <Pick className="w-full" label={`department of step ${id}`} items={deptItems} value={st.department_id || NONE} onChange={(v) => {
           if (v === NONE) return set({ department_id: "" });
           const ks = skillsOf(v);
           set({ department_id: v, required_skill: ks.includes(st.required_skill) ? st.required_skill : ks.length === 1 ? ks[0] : "" });
@@ -58,7 +51,7 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
         {mean === null ? <span className="text-xs text-muted-foreground">duration kind `{st.duration.kind}`: edit in the JSON tab</span>
           : <NumInput min={0.01} lo={0.01} aria-label={`mean minutes of step ${id}`} className="w-full tabular-nums" value={Number(mean.toFixed(2))} onCommit={(v) => set({ duration: withMean(st.duration, v) })} />}
       </Field>
-      <Field label="System" hint="step_system"><Pick label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
+      <Field label="System" hint="step_system"><Pick className="w-full" label={`system of step ${id}`} items={systemItems} value={st.system_id ?? NONE} onChange={(v) => set({ system_id: v === NONE ? null : v })} /></Field>
       <Field label="SLA minutes" hint="sla">
         <Input key={st.sla_minutes ?? "none"} type="number" min={0} aria-label={`sla minutes of step ${id}`} className="w-full tabular-nums" defaultValue={st.sla_minutes ?? ""} placeholder="none"
           onBlur={(e) => { const v = clamp(Number(e.target.value), 0, Infinity) || null; if (v !== (st.sla_minutes ?? null)) set({ sla_minutes: v }); }} />
@@ -69,7 +62,7 @@ function StepPanel({ wf, company, st, onChange, onRemove }: Props & { st: Step }
         <div className="flex flex-col gap-3">
           <Field label="Priority" hint="priority"><NumInput lo={-1e9} hi={1e9} aria-label={`priority of step ${id}`} className="w-full tabular-nums" value={st.priority ?? 0} onCommit={(v) => set({ priority: Math.floor(v) })} /></Field>
           <Field label="Fail %" hint="fail"><NumInput hi={100} aria-label={`failure percent of step ${id}`} className="w-full tabular-nums" value={Number(((st.failure_prob ?? 0) * 100).toFixed(2))} onCommit={(v) => set({ failure_prob: v / 100 })} /></Field>
-          <Field label="Rework to" hint="rework_to"><Pick label={`rework target of step ${id}`} items={reworkItems} value={st.rework_to ?? NONE} onChange={(v) => set({ rework_to: v === NONE ? null : v })} /></Field>
+          <Field label="Rework to" hint="rework_to"><Pick className="w-full" label={`rework target of step ${id}`} items={reworkItems} value={st.rework_to ?? NONE} onChange={(v) => set({ rework_to: v === NONE ? null : v })} /></Field>
           <Field label="Retries" hint="retries"><NumInput aria-label={`retries of step ${id}`} className="w-full tabular-nums" value={st.max_retries ?? 0} onCommit={(v) => set({ max_retries: Math.floor(v) })} /></Field>
           {st.duration.kind === "lognormal_mean" && mean !== null && (
             <Field label="Sigma" hint="sigma"><NumInput lo={0.05} hi={3} aria-label={`sigma of step ${id}`} className="w-full tabular-nums" value={st.duration.sigma ?? 0.4} onCommit={(v) => set({ duration: { kind: "lognormal_mean", mean, sigma: v } })} /></Field>

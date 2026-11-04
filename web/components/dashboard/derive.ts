@@ -1,6 +1,7 @@
 // Pure numbers behind the overview; `npm test` checks them.
 import type { ScenarioResult, Stat, WorkflowMetrics } from "@/lib/api";
 import { type Company, type Workflow } from "@/lib/company";
+import { inflowsOf } from "@/components/process/graph";
 
 export type Health = { total: number; label: string; parts: { label: string; score: number; hint: string }[] };
 
@@ -23,7 +24,18 @@ export function healthScores(summary: Record<string, Stat> | undefined): Health 
 
 export type Edge = { from: string; to: string; n: number; dept: number | null }; // dept = index of the source department, null for an inflow
 
-/** Inflow (workflow → first step's department) and hand-off (consecutive steps in different departments) edges. */
+/** Department pairs [from, to] joined by a depends_on edge between steps in different departments, once per pair. */
+function deptPairs(wf: Workflow): [string, string][] {
+  const dept = new Map(wf.steps.map((s) => [s.id, s.department_id]));
+  const out = new Map<string, [string, string]>();
+  for (const st of wf.steps) for (const p of st.depends_on ?? []) {
+    const a = dept.get(p);
+    if (a !== undefined && a !== st.department_id) out.set(`${a}>${st.department_id}`, [a, st.department_id]);
+  }
+  return [...out.values()];
+}
+
+/** Inflow (workflow → departments of its entry steps) and hand-off (depends_on across departments) edges. */
 export function mapEdges(c: Company): Edge[] {
   const di = new Map(c.departments.map((d, i) => [d.id, i]));
   const edges = new Map<string, Edge>();
@@ -33,30 +45,38 @@ export function mapEdges(c: Company): Edge[] {
     e.n++; edges.set(k, e);
   };
   for (const w of c.workflows) {
-    const first = w.steps[0];
-    if (first) add(`w:${w.id}`, `d:${first.department_id}`, null);
-    for (let i = 1; i < w.steps.length; i++) {
-      const a = w.steps[i - 1].department_id, b = w.steps[i].department_id;
-      if (a !== b) add(`d:${a}`, `d:${b}`, di.get(a) ?? 0);
-    }
+    const dept = new Map(w.steps.map((s) => [s.id, s.department_id]));
+    for (const d of new Set(inflowsOf(w).flatMap((i) => i.entry).flatMap((id) => dept.get(id) ?? []))) add(`w:${w.id}`, `d:${d}`, null);
+    for (const [a, b] of deptPairs(w)) add(`d:${a}`, `d:${b}`, di.get(a) ?? 0);
     for (const st of w.steps) if (st.system_id) add(`d:${st.department_id}`, `s:${st.system_id}`, di.get(st.department_id) ?? 0);
   }
   return [...edges.values()];
 }
 
 /** Departments in flow order, one column per hand-off depth: where work enters first comes first.
- *  Only hand-offs that point forward in first-appearance order count, so cycles cannot push a column right forever.
- *  Departments no workflow touches form the last column. */
+ *  Order is discovery from the inflows along hand-offs; only hand-offs that point forward in it count, so cycles cannot push a column right forever.
+ *  Departments no workflow touches form the last column; ids with no department are left out. */
 export function deptColumns(c: Company): string[][] {
+  const known = new Set(c.departments.map((d) => d.id));
+  const edges = mapEdges(c);
+  const hand = edges.filter((e) => e.from.startsWith("d:") && e.to.startsWith("d:")).map((e) => [e.from.slice(2), e.to.slice(2)] as const);
+  const starts = [...edges.filter((e) => e.from.startsWith("w:")).map((e) => e.to.slice(2)), ...c.workflows.flatMap((w) => w.steps.map((s) => s.department_id))];
   const seen: string[] = [];
-  for (const w of c.workflows) for (const s of w.steps) if (s.department_id && !seen.includes(s.department_id)) seen.push(s.department_id);
-  const pos = new Map(seen.map((d, i) => [d, i]));
-  const rank = new Map(seen.map((d) => [d, 0]));
-  const forward = mapEdges(c).filter((e) => e.from.startsWith("d:") && e.to.startsWith("d:"))
-    .map((e) => [e.from.slice(2), e.to.slice(2)] as const).filter(([a, b]) => (pos.get(a) ?? 0) < (pos.get(b) ?? 0));
-  for (let i = 0; i < seen.length; i++) for (const [a, b] of forward) rank.set(b, Math.max(rank.get(b)!, rank.get(a)! + 1));
+  for (const start of starts) { // breadth-first from each entry; steps no inflow reaches still get a column
+    const queue = [start];
+    for (let d = queue.shift(); d !== undefined; d = queue.shift()) {
+      if (seen.includes(d)) continue;
+      seen.push(d);
+      queue.push(...hand.filter(([a]) => a === d).map(([, b]) => b));
+    }
+  }
+  const order = seen.filter((d) => known.has(d));
+  const pos = new Map(order.map((d, i) => [d, i]));
+  const rank = new Map(order.map((d) => [d, 0]));
+  const forward = hand.filter(([a, b]) => pos.has(a) && pos.has(b) && pos.get(a)! < pos.get(b)!);
+  for (let i = 0; i < order.length; i++) for (const [a, b] of forward) rank.set(b, Math.max(rank.get(b)!, rank.get(a)! + 1));
   const cols: string[][] = [];
-  for (const d of seen) (cols[rank.get(d)!] ??= []).push(d);
+  for (const d of order) (cols[rank.get(d)!] ??= []).push(d);
   const idle = c.departments.map((d) => d.id).filter((d) => !pos.has(d));
   if (idle.length) cols.push(idle);
   return cols.filter(Boolean);
@@ -65,8 +85,8 @@ export function deptColumns(c: Company): string[][] {
 /** Minutes as "2.3 h" past two hours, else "95 min". */
 export const minutes = (m: number | null) => (m === null ? "–" : m >= 120 ? `${(m / 60).toFixed(1)} h` : `${m.toFixed(0)} min`);
 
-/** Steps whose department changes from the previous step. */
-export const handoffs = (wf: Workflow) => wf.steps.filter((st, i) => i > 0 && st.department_id !== wf.steps[i - 1].department_id).length;
+/** Distinct department pairs work is handed between along depends_on. */
+export const handoffs = (wf: Workflow) => deptPairs(wf).length;
 
 
 /** Per-workflow metrics averaged over a scenario's replications (ids as the engine ran them). */

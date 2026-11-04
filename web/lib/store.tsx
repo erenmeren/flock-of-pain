@@ -45,6 +45,7 @@ export type Twin = {
 };
 
 const DRAFT = "flock_draft"; // the working copy survives a reload; saved companies live in the API
+const BAD_DRAFT = "flock_draft_bad"; // a draft that failed checkCompany, kept so a reload does not lose it
 const Ctx = createContext<Twin | null>(null);
 
 export function TwinProvider({ children }: { children: React.ReactNode }) {
@@ -81,10 +82,15 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     Promise.resolve().then(() => {
       setKeyState(loadApiKey());
       let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string } | null = null;
+      const raw = localStorage.getItem(DRAFT);
       try {
-        draft = JSON.parse(localStorage.getItem(DRAFT) ?? "null");
+        draft = JSON.parse(raw ?? "null");
         if (draft?.company) draft = { ...draft, company: checkCompany(draft.company), scenarios: checkScenarios(draft.scenarios ?? []) };
-      } catch { draft = null; /* corrupt draft: start from the example */ }
+      } catch (e) { // corrupt or old-shape draft: start from the example, but keep the user's copy before the persist effect overwrites it
+        draft = null;
+        try { localStorage.setItem(BAD_DRAFT, raw ?? ""); } catch { /* quota: nothing more to keep */ }
+        setError({ path: "draft", message: `The saved draft was invalid (${e instanceof Error ? e.message : String(e)}); it is kept in localStorage under ${BAD_DRAFT}.` });
+      }
       if (draft?.company) {
         setCompanyState(draft.company);
         setScenariosState(draft.scenarios ?? []);
