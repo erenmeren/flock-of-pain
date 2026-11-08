@@ -92,7 +92,7 @@ export default function Simulation() {
 
       {result ? (
         <>
-          <Panel title="KPIs" subtitle={<>{sourceLabel(resultSource)} · mean, its 95% interval, p10–p90 · {result.disclaimer} <Hint id="significance" /></>} icon={BarChart3}
+          <Panel title="KPIs" subtitle={<>{sourceLabel(resultSource)} · mean and its 95% interval · {result.disclaimer} <Hint id="significance" /></>} icon={BarChart3}
             action={<ResultActions result={result} source={resultSource} />}>
             <Table>
               <TableHeader className={HEAD}>
@@ -110,7 +110,6 @@ export default function Simulation() {
                       return (
                         <TableCell key={s.id} className="text-right tabular-nums">
                           <span className="font-medium">{fmtKpi(k, st?.mean)}</span>
-                          {st && <span className="ml-1.5 text-xs text-muted-foreground">{fmtKpi(k, st.p10)}–{fmtKpi(k, st.p90)}</span>}
                           <span className="flex flex-col items-end gap-0.5">
                             <Interval k={k} st={st} />
                             {i > 0 && <span className="text-xs"><Delta k={k} value={st?.mean} base={result.scenarios[0].summary[k]?.mean} cmp={s.comparison?.[k]} /></span>}

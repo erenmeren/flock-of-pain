@@ -8,7 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Comparison, ScenarioResult } from "@/lib/api";
-import { noiseLabel } from "@/lib/results";
+import { deltaShown, noiseLabel } from "@/lib/results";
 import type { ResultSource } from "@/lib/store";
 
 /** KPIs every result carries; any other key is a per-department utilization. */
@@ -50,18 +50,18 @@ export function sourceLabel(s: ResultSource | null) {
 /** Change vs baseline: percentage points for fractions, relative % otherwise (null when the baseline is 0).
  * Coloured only when it can be trusted: `cmp` labels it significant or within noise, `untested` keeps it plain (no test exists); an old run has neither. */
 export function Delta({ k, value, base, cmp, untested }: { k: string; value?: number; base?: number; cmp?: Comparison; untested?: boolean }) {
-  const label = cmp && <span className="text-[10px] leading-tight text-muted-foreground">{noiseLabel(cmp)}</span>;
-  if (value === undefined || base === undefined) return <span className="inline-flex flex-col items-end text-muted-foreground">–{label}</span>;
   const pct = isPct(k);
-  const d = pct ? (value - base) * 100 : base === 0 ? null : ((value - base) / Math.abs(base)) * 100;
-  if (d === null) return <span className="inline-flex flex-col items-end text-muted-foreground">–{label}</span>;
-  const score = untested || (cmp && !cmp.significant) ? 0 : Math.sign(value - base) * direction(k);
+  const shown = value === undefined || base === undefined ? null : deltaShown(value, base, pct);
+  const label = cmp && <span className="text-[10px] leading-tight text-muted-foreground">{noiseLabel(cmp, shown?.negligible)}</span>;
+  if (!shown) return <span className="inline-flex flex-col items-end text-muted-foreground">–{label}</span>;
+  const d = shown.negligible ? 0 : shown.d;
+  const score = untested || (cmp && !cmp.significant) ? 0 : Math.sign(d) * direction(k);
   const Icon = d > 0 ? ArrowUpRight : d < 0 ? ArrowDownRight : ArrowRight;
   return (
     <span className="inline-flex flex-col items-end align-middle">
       <span className={cn("inline-flex items-center gap-0.5 tabular-nums", score > 0 ? "text-emerald-400" : score < 0 ? "text-rose-400" : "text-muted-foreground")}>
         <Icon className="size-3.5" />
-        {d > 0 ? "+" : ""}{d.toFixed(1)}{pct ? " pp" : "%"}
+        {shown.text}{pct ? " pp" : "%"}
       </span>
       {label}
     </span>

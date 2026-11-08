@@ -10,7 +10,7 @@ import { type Company, type Scenario, type Schedule, type Workflow, checkCompany
 import type { SimEvent } from "@/lib/api";
 import { snapshot } from "@/lib/playback";
 import { addScenario, budgetIssue, demandSweep, firstResource, jobConfig, parsePercents, staffSweep, sweepRows } from "@/lib/sweep";
-import { csvText, realityRows, resultsCsv, setActual, topWaits } from "@/lib/results";
+import { csvText, deltaShown, noiseLabel, realityRows, resultsCsv, setActual, topWaits } from "@/lib/results";
 import { applyPeople, importedRows, parseDays, parsePeopleCsv, parseTable } from "@/lib/people-csv";
 import { COALESCE_MS, HISTORY_CAP, conflictOf, emptyHistory, record, redo, saveBody, shouldAutosave, undo, undoKey } from "@/lib/history";
 
@@ -486,6 +486,20 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(rows[0].comparison?.significant, true);
   assert.equal(rows[2].comparison, undefined);
   assert.equal(sweepRows(down, res, "gone")[1].stat, undefined);
+}
+
+{ // delta text: extra decimals for a tiny change, "negligible" when it is zero even then
+  assert.equal(deltaShown(0.52, 0.5, true)?.text, "+2.0");
+  assert.equal(deltaShown(0.5004, 0.5, true)?.text, "+0.04"); // 0.04 pp would show as +0.0
+  assert.equal(deltaShown(0.49999, 0.5, true)?.text, "-0.001");
+  const tiny = deltaShown(0.4999999, 0.5, true)!;
+  assert.deepEqual([tiny.text, tiny.negligible], ["0.0", true]);
+  assert.equal(deltaShown(10.5, 10, false)?.text, "+5.0");
+  assert.equal(deltaShown(1, 0, false), null);
+  const sig = { delta: 0, ci_low: -1e-9, ci_high: -1e-10, significant: true };
+  assert.equal(noiseLabel(sig, tiny.negligible), "negligible");
+  assert.equal(noiseLabel(sig), "significant");
+  assert.equal(noiseLabel({ ...sig, significant: false }, true), "within noise");
 }
 
 { // CSV export: rows, escapes, formula prefixes in text but not in numbers

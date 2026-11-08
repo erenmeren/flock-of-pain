@@ -2,7 +2,19 @@
 import type { Comparison, LedgerRow, SimulateResponse, Stat } from "@/lib/api";
 import type { Company } from "@/lib/company";
 
-export const noiseLabel = (c: Comparison) => (c.significant ? "significant" : "within noise");
+/** `negligible`: significant, but too small to show as non-zero (see `deltaShown`). */
+export const noiseLabel = (c: Comparison, negligible = false) => (!c.significant ? "within noise" : negligible ? "negligible" : "significant");
+
+/** Change vs baseline as shown: percentage points when `pct`, relative % otherwise (null when the base is 0).
+ * A change that rounds to zero at `digits` gets up to 2 more decimals; still zero there, it is `negligible` and shown as 0. */
+export function deltaShown(value: number, base: number, pct: boolean, digits = 1): { d: number; text: string; negligible: boolean } | null {
+  const d = pct ? (value - base) * 100 : base === 0 ? null : ((value - base) / Math.abs(base)) * 100;
+  if (d === null) return null;
+  let n = digits;
+  while (n < digits + 2 && Number(d.toFixed(n)) === 0) n++;
+  const negligible = Number(d.toFixed(n)) === 0;
+  return { d, text: negligible ? (0).toFixed(digits) : `${d > 0 ? "+" : ""}${d.toFixed(n)}`, negligible };
+}
 
 /** "," for plain CSV; ";" for Excel in locales with a decimal comma (Turkish, German), which then also writes numbers with a comma. */
 export type CsvSep = "," | ";";

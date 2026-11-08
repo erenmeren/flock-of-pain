@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type ApiError, type Job, type OptimizeResult, type SimulateResponse, cancelJob, startJob, startOptimize, waitForJob } from "@/lib/api";
 import type { Company, Scenario } from "@/lib/company";
-import { noiseLabel } from "@/lib/results";
+import { deltaShown, noiseLabel } from "@/lib/results";
 import { useTwin } from "@/lib/store";
 import { type SweepPoint, addScenario, budgetIssue, demandSweep, firstResource, jobConfig, parsePercents, staffSweep, sweepRows } from "@/lib/sweep";
 
@@ -121,15 +121,16 @@ function OptimizerPanel({ company }: { company: Company }) {
 
   const fmtV = (v: number | undefined) => fmtKpi(done?.kpi ?? kpi, v);
   const path = done?.r.path ?? [];
+  const nHires = Object.values(done?.r.hires ?? {}).reduce((a, b) => a + b, 0); // a step can add a pair, so not path.length - 1
   const reason = done && !done.r.met && {
-    max_hires: `It stopped at the limit of ${path.length - 1} hires. Raise max hires to look further.`,
+    max_hires: `It stopped after ${nHires} ${nHires === 1 ? "hire" : "hires"}: one more, or the pair tried when no single hire helps, would pass the max hires limit. Raise max hires to look further.`,
     budget: "It stopped because the run budget ran out. Fewer days, replications or candidate departments leave room for more rounds.",
-    no_improvement: "No single extra hire improved the KPI, so the search stopped. This does not prove staffing cannot help: when two departments must grow together, adding one at a time shows no gain. Try adding both in a scenario by hand.",
+    no_improvement: "Neither one nor two more people improved the KPI, so the search stopped. This does not prove staffing cannot help: three or more departments may need to grow together, or the bottleneck is not staff (demand, routing, hours or rework). Try a bigger change in a scenario by hand.",
     met: "",
   }[done.r.stopped];
 
   return (
-    <Panel title={<span className="flex items-center gap-1">Staffing optimizer<Hint id="optimizer" /></span>} subtitle="Adds one employee at a time, best KPI gain per added cost first, until the target is met" icon={Target}>
+    <Panel title={<span className="flex items-center gap-1">Staffing optimizer<Hint id="optimizer" /></span>} subtitle="Adds one employee at a time, best KPI gain per added cost first, and tries pairs when no single hire helps, until the target is met" icon={Target}>
       <div className="flex flex-col gap-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Label className={FIELD}>Target KPI
@@ -168,7 +169,7 @@ function OptimizerPanel({ company }: { company: Company }) {
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <p className={done.r.met ? "font-medium text-emerald-400" : "font-medium text-amber-400"}>
                   {done.r.met
-                    ? path.length === 1 ? "The base scenario already meets the target: no hires needed." : `Target met with ${path.length - 1} ${path.length === 2 ? "hire" : "hires"}.`
+                    ? path.length === 1 ? "The base scenario already meets the target: no hires needed." : `Target met with ${nHires} ${nHires === 1 ? "hire" : "hires"}.`
                     : "Target not met."}
                   {" "}<span className="font-normal text-muted-foreground">{kpiName(company, done.kpi)} {done.op === "<=" ? "at most" : "at least"} {fmtV(done.target)}</span>
                 </p>
@@ -248,6 +249,7 @@ function SweepPanel({ company }: { company: Company }) {
 
   const rows = done ? sweepRows(done.points, done.res, kpi) : [];
   const fmtV = (v: number | undefined) => fmtKpi(kpi, v);
+  const baseMean = done?.res.scenarios[0]?.summary[kpi]?.mean;
   return (
     <Panel title={<span className="flex items-center gap-1">Parameter sweep<Hint id="sweep" /></span>} subtitle="Runs the base scenario against a range of values, with common random numbers" icon={LineChart}
       action={done && <Pick label="sweep KPI" className="w-52 rounded-full" value={kpi} items={kpiItems(company)} onChange={setKpi} />}>
@@ -284,7 +286,7 @@ function SweepPanel({ company }: { company: Company }) {
         <JobLine job={job} />
         {done && (
           <div className="flex flex-col gap-3">
-            <CiChart title={kpiName(company, kpi)} fmtV={fmtV} points={rows.map((r) => ({ label: r.label, mean: r.stat?.mean, low: r.stat?.ci_low, high: r.stat?.ci_high, muted: !r.point, note: r.comparison && noiseLabel(r.comparison) }))} />
+            <CiChart title={kpiName(company, kpi)} fmtV={fmtV} points={rows.map((r) => ({ label: r.label, mean: r.stat?.mean, low: r.stat?.ci_low, high: r.stat?.ci_high, muted: !r.point, note: r.comparison && noiseLabel(r.comparison, r.stat && baseMean !== undefined ? deltaShown(r.stat.mean, baseMean, isPct(kpi))?.negligible : false) }))} />
             <div className={`overflow-x-auto ${TABLE_STYLE}`}>
               <Table>
                 <TableHeader><TableRow><TableHead>Value</TableHead><TableHead className="text-right">Mean</TableHead><TableHead className="text-right">vs base <Hint id="significance" /></TableHead><TableHead /></TableRow></TableHeader>
@@ -293,7 +295,7 @@ function SweepPanel({ company }: { company: Company }) {
                     <TableRow key={r.label}>
                       <TableCell className="tabular-nums">{r.label}</TableCell>
                       <TableCell className="text-right tabular-nums"><span className="font-medium">{fmtV(r.stat?.mean)}</span> <Interval k={kpi} st={r.stat} /></TableCell>
-                      <TableCell className="text-right text-xs">{r.point ? <Delta k={kpi} value={r.stat?.mean} base={done.res.scenarios[0]?.summary[kpi]?.mean} cmp={r.comparison} /> : <span className="text-muted-foreground">base</span>}</TableCell>
+                      <TableCell className="text-right text-xs">{r.point ? <Delta k={kpi} value={r.stat?.mean} base={baseMean} cmp={r.comparison} /> : <span className="text-muted-foreground">base</span>}</TableCell>
                       <TableCell className="text-right">
                         {r.point && (() => {
                           const s = r.point.scenario;

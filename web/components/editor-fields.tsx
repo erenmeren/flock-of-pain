@@ -100,7 +100,7 @@ export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedul
   );
   return (
     <div className="flex flex-col gap-1.5 text-[11px] text-muted-foreground">
-      <div className="flex gap-1.5">
+      <div className="flex flex-wrap gap-x-1.5 gap-y-1">
         {DAYS.map((name, d) => (
           <Label key={d} className="flex items-center gap-1 text-[11px] font-normal">
             <Checkbox aria-label={`${name} for ${id}`} checked={days.includes(String(d))}
@@ -111,10 +111,12 @@ export function ScheduleEditor({ id, schedule, onChange }: { id: string; schedul
       {wins.map(([start, end], i) => {
         const which = i ? "second shift" : "shift";
         return (
-          <div key={i} className="flex items-center gap-1">
-            <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`${which} start hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : at(i, 0, Number(e.target.value)))} />
-            to
-            <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`${which} end hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : at(i, 1, Number(e.target.value)))} />
+          <div key={i} className="flex flex-wrap items-center gap-1">
+            <span className="flex items-center gap-1">
+              <Input key={`s${start}`} type="number" min={0} max={23} aria-label={`${which} start hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={start} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(start)) : at(i, 0, Number(e.target.value)))} />
+              to
+              <Input key={`e${end}`} type="number" min={start + 1} max={start + 24} aria-label={`${which} end hour of ${id}`} className="h-7 w-16 px-1 tabular-nums" defaultValue={end} onBlur={(e) => (e.target.value.trim() === "" ? (e.target.value = String(end)) : at(i, 1, Number(e.target.value)))} />
+            </span>
             {i ? "h after the break" : "h (overnight: end past 24)"}
           </div>
         );
