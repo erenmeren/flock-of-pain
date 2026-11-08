@@ -64,7 +64,8 @@ def _ci(xs: list[float]) -> tuple[float, float, float]:
 
 def _stat(xs: list[float]) -> Stat:
     mean, low, high = _ci(xs)
-    return Stat(mean, percentile(xs, 10), percentile(xs, 50), percentile(xs, 90), low, high)
+    # every KPI is >= 0, so a symmetric interval on a few skewed replications is cut at 0; deltas use _ci unclamped
+    return Stat(mean, percentile(xs, 10), percentile(xs, 50), percentile(xs, 90), max(0.0, low), high)
 
 
 def kpis(m: Metrics) -> dict[str, float]:

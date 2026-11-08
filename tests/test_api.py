@@ -146,7 +146,7 @@ def test_company_store_endpoints():
     r = client.put("/companies/reynolds", json=ex)
     assert r.status_code == 200 and r.json()["id"] == "reynolds"
     assert [c["id"] for c in client.get("/companies").json()] == ["reynolds"]
-    assert client.get("/companies/reynolds").json() == ex  # stored in canonical form
+    assert client.get("/companies/reynolds").json() == {**ex, "updated_at": r.json()["updated_at"]}  # stored in canonical form
     assert client.put("/companies/other", json=ex).status_code == 422
     odd = {**ex, "company": {**ex["company"], "id": "a/b"}}
     assert client.put("/companies/a%2Fb", json=odd).status_code in (404, 405, 422)  # never a stored company with a slash
@@ -156,6 +156,28 @@ def test_company_store_endpoints():
     assert client.get("/companies/nope").status_code == 404
     assert client.delete("/companies/reynolds").status_code == 200
     assert client.delete("/companies/reynolds").status_code == 404
+
+
+def test_company_edit_conflict_409():
+    ex = client.get("/example").json()
+    at = client.put("/companies/reynolds", json=ex).json()["updated_at"]
+    assert client.get("/companies/reynolds").json()["updated_at"] == at
+    renamed = {**ex, "company": {**ex["company"], "name": "Mine"}}
+    fresh = client.put("/companies/reynolds", json={**renamed, "base_updated_at": at})
+    assert fresh.status_code == 200 and fresh.json()["updated_at"] != at
+    r = client.put("/companies/reynolds", json={**ex, "base_updated_at": at})  # an editor still on the old version
+    assert r.status_code == 409
+    assert r.json() == {"path": "base_updated_at", "message": r.json()["message"], "updated_at": fresh.json()["updated_at"]}
+    got = client.get("/companies/reynolds").json()
+    assert got["company"]["name"] == "Mine" and got["updated_at"] == fresh.json()["updated_at"]
+    assert "base_updated_at" not in got
+    assert client.put("/companies/reynolds", json=ex).status_code == 200  # without a base: last write wins, as before
+
+
+def test_limits():
+    assert client.get("/limits").json() == {"max_run_days": api.MAX_RUN_DAYS, "max_event_run_days": api.MAX_EVENT_RUN_DAYS,
+                                            "max_runs": api.MAX_RUNS}
+    assert client.get("/limits", headers={"X-API-Key": "fop_wrong"}).status_code == 401
 
 
 def test_simulate_save_and_run_endpoints():

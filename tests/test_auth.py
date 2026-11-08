@@ -184,14 +184,82 @@ def test_login_limit_window_passes(key):
         login("a@x.io", "wrong password")
     assert login().status_code == 429
     sql("UPDATE login_failures SET at = '2020-01-01T00:00:00+00:00'")
+    sql("UPDATE login_ip_failures SET at = '2020-01-01T00:00:00+00:00'")
     assert login().status_code == 200
     assert sql("SELECT count(*) FROM login_failures") == [(0,)]
+    assert sql("SELECT count(*) FROM login_ip_failures") == [(0,)]
 
 
 def test_parallel_guesses_cannot_pass_the_limit():
     with ThreadPoolExecutor(8) as pool:
-        codes = list(pool.map(lambda _: store.take_login_attempt("a@x.io"), range(30)))
+        codes = list(pool.map(lambda _: store.take_login_attempt("a@x.io", "1.2.3.4"), range(30)))
     assert codes.count(True) == 10
+
+
+def test_ip_limit_blocks_spraying_many_emails_before_scrypt(key, monkeypatch):
+    monkeypatch.setattr(store, "LOGIN_IP_LIMIT", 3)
+    user(key, "a@x.io")  # its successful login leaves no failure behind
+    for i in range(3):
+        assert login(f"g{i}@x.io", "wrong password").status_code == 401
+    calls = scrypt_calls(monkeypatch)
+    r = login()
+    assert r.status_code == 429 and r.json()["path"] is None  # even the right password, from this IP
+    assert not calls
+    other = TestClient(app, client=("10.0.0.2", 1))
+    assert other.post("/auth/login", json={"email": "a@x.io", "password": PW}).status_code == 200
+    sql("UPDATE login_ip_failures SET at = '2020-01-01T00:00:00+00:00'")
+    assert login().status_code == 200
+
+
+def test_ip_limit_default_and_successes_do_not_count(key):
+    assert store.LOGIN_IP_LIMIT == 50
+    user(key, "a@x.io")
+    for _ in range(60):
+        assert login().status_code == 200
+    assert sql("SELECT count(*) FROM login_ip_failures") == [(0,)]
+
+
+# --- own password change ----------------------------------------------------
+
+def change(h, current=PW, new="a brand new password"):
+    return client.post("/auth/password", json={"current": current, "new": new}, headers=h)
+
+
+def test_own_password_change_keeps_only_the_current_session(key):
+    h = user(key, "a@x.io")
+    other = b(login().json()["token"])
+    r = change(h)
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert client.get("/auth/me", headers=h).status_code == 200
+    assert client.get("/auth/me", headers=other).status_code == 401
+    assert login().status_code == 401
+    assert login("a@x.io", "a brand new password").status_code == 200
+
+
+def test_own_password_change_wrong_current_counts_as_failed_login(key):
+    h = user(key, "a@x.io")
+    for _ in range(10):
+        r = change(h, current="wrong password")
+        assert r.status_code == 401 and r.json()["path"] == "current"
+    assert change(h).status_code == 429
+    assert login().status_code == 429
+    assert client.get("/auth/me", headers=h).status_code == 200  # a wrong guess does not end the session
+    assert sql("SELECT count(*) FROM users WHERE email = 'a@x.io'") == [(1,)]
+
+
+def test_own_password_change_bad_new_422_and_nothing_changes(key, monkeypatch):
+    h = user(key, "a@x.io")
+    calls = scrypt_calls(monkeypatch)
+    r = change(h, new="short")
+    assert r.status_code == 422 and r.json()["path"] == "new"
+    assert not calls and sql("SELECT count(*) FROM login_failures") == [(0,)]
+    assert login().status_code == 200
+
+
+def test_own_password_change_with_api_key_422(key):
+    r = change(k(key))
+    assert r.status_code == 422 and r.json() == {"path": None, "message": "an API key has no password"}
+    assert client.post("/auth/password", json={"current": PW, "new": "a brand new password"}).status_code == 401
 
 
 # --- password and email validation ------------------------------------------
