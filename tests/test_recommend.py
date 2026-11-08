@@ -111,3 +111,10 @@ def test_off_shift_does_not_hide_the_top_actionable_wait():
     assert {r["kind"] for r in recommend({}, ledger, 6000.0, company)} == {"wait_staff", "wait_off_shift"}
     assert [r["kind"] for r in recommend({}, ledger, 60.0, company)] == ["wait_staff"]  # smaller than the actionable wait
 
+
+
+def test_wait_hours_read_per_day_when_days_are_known():
+    company = tiny_company()
+    ledger = [LedgerRow(company.departments[0].id, Reason.ALL_RESOURCES_BUSY, None, 1200.0, 3)]
+    recs = recommend({}, ledger, 12000.0, company, days=10)
+    assert "2.0 hours per day" in recs[0]["message"] and "20.0 hours per day" in recs[1]["message"]

@@ -24,7 +24,7 @@ def _rate_rule(out: list[dict], summary: dict[str, Stat], key: str, high: float,
                     "message": text.format(rate=f"{rate:.0%}")})
 
 
-def _top_wait(ledger: list[LedgerRow], company: Company) -> tuple[dict | None, float]:
+def _top_wait(ledger: list[LedgerRow], company: Company, per: str, scale: float) -> tuple[dict | None, float]:
     """The largest waiting reason that is not off-shift, and its minutes."""
     totals: dict[Reason, float] = defaultdict(float)
     for row in ledger:
@@ -36,19 +36,20 @@ def _top_wait(ledger: list[LedgerRow], company: Company) -> tuple[dict | None, f
     row = max((r for r in ledger if r.reason == top), key=lambda r: (r.minutes, r.department_id, r.blocker_id or ""))
     dept = next((d.name for d in company.departments if d.id == row.department_id), row.department_id)
     system = next((s.name for s in company.systems if s.id == row.blocker_id), row.blocker_id or "a system")
-    hours = f"about {row.minutes / 60:.1f} hours per run"
+    hours = f"about {row.minutes / scale / 60:.1f} hours {per}, added up over all cases"
     message = {
-        Reason.ALL_RESOURCES_BUSY: f"The biggest wait is for free staff, most of it in {dept}: {hours}. Consider adding staff there.",
+        Reason.ALL_RESOURCES_BUSY: f"Apart from waiting for the next shift, the biggest wait is for free staff, most of it in {dept}: {hours}. Consider adding staff there.",
         Reason.NO_ELIGIBLE_RESOURCE: f"Work in {dept} waits because nobody there has the skill it needs: {hours}. "
                                      "Train someone or assign a person with that skill.",
-        Reason.SYSTEM_DOWN: f"The biggest wait is the {system} system being down, most of it in {dept}: {hours}. "
+        Reason.SYSTEM_DOWN: f"Apart from waiting for the next shift, the biggest wait is the {system} system being down, most of it in {dept}: {hours}. "
                             "Plan outages outside working hours or arrange a fallback.",
-        Reason.BATCH_HOLD: f"The biggest wait is work held for a batch release in {dept}: {hours}. Consider releasing batches more often.",
+        Reason.BATCH_HOLD: f"Apart from waiting for the next shift, the biggest wait is work held for a batch release in {dept}: {hours}. Consider releasing batches more often.",
     }[top]
     return {"severity": "medium", "kind": _WAIT_KINDS[top], "department_id": row.department_id, "message": message}, totals[top]
 
 
-def recommend(summary: dict[str, Stat], ledger: list[LedgerRow], off_shift_minutes: float, company: Company) -> list[dict]:
+def recommend(summary: dict[str, Stat], ledger: list[LedgerRow], off_shift_minutes: float, company: Company,
+              days: float | None = None) -> list[dict]:
     """[{severity, kind, department_id, message}], most severe first. ledger excludes off-shift waiting, which comes separately."""
     out: list[dict] = []
     for d in company.departments:
@@ -63,13 +64,14 @@ def recommend(summary: dict[str, Stat], ledger: list[LedgerRow], off_shift_minut
             out.append({"severity": "info", "kind": "underused", "department_id": d.id,
                         "message": f"{d.name} is busy only {util.mean:.0%} of its working time. "
                                    "It may have room to take on other work."})
-    wait, wait_minutes = _top_wait(ledger, company)
+    per, scale = ("per day", days) if days else ("per run", 1.0)  # days: the measured window, so totals read like a working day
+    wait, wait_minutes = _top_wait(ledger, company, per, scale)
     if wait:
         out.append(wait)
     # overnight waits are usually the largest, so they sit beside the top actionable wait, never in place of it
     if off_shift_minutes >= MIN_WAIT_MINUTES and off_shift_minutes > wait_minutes:
         out.append({"severity": "info", "kind": _WAIT_KINDS[Reason.OFF_SHIFT], "department_id": None,
-                    "message": f"The biggest wait is for the next shift to start: about {off_shift_minutes / 60:.1f} hours per run in total. "
+                    "message": f"Work also waits for the next shift to start: about {off_shift_minutes / scale / 60:.1f} hours {per}, added up over all cases. "
                                "Consider longer hours, or a shift that covers the time when work piles up."})
     _rate_rule(out, summary, "deadline_miss_rate", DEADLINE_HIGH, DEADLINE_MEDIUM, "deadline_miss",
                "{rate} of cases miss their daily cut-off. Consider more staff before the cut-off or an earlier start.")
