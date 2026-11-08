@@ -28,7 +28,8 @@ def test_replications_seeds_and_determinism():
 
 def test_stat_mean():
     from flock_of_pain.experiment import _stat
-    assert _stat([1, 2, 3]) == Stat(2, 1, 2, 3)
+    s = _stat([1, 2, 3])
+    assert (s.mean, s.p10, s.p50, s.p90) == (2, 1, 2, 3)
 
 
 def test_compare_and_ledger_and_base_unchanged():
@@ -50,9 +51,9 @@ def _res(name, summary, ledgers=()):
 
 
 def test_compare_two_experiments_missing_util():
-    full = {k: Stat(1, 0, 1, 2) for k in KPI_KEYS} | {"util_cs": Stat(.5, .4, .5, .6)}
+    full = {k: Stat(1, 0, 1, 2, 1, 1) for k in KPI_KEYS} | {"util_cs": Stat(.5, .4, .5, .6, .5, .5)}
     a = _res("a", full)
-    b = _res("b", {k: Stat(2, 1, 2, 3) for k in KPI_KEYS})
+    b = _res("b", {k: Stat(2, 1, 2, 3, 2, 2) for k in KPI_KEYS})
     lines = compare([a, b]).splitlines()
     assert all(len(l.split(" | ")) == 3 for l in lines[1:])
     assert lines[-1].split(" | ")[2].strip() == "-"
@@ -76,7 +77,7 @@ def test_kpis_hand_built():
                              steps_completed=4, wait_p90=10, deadline_missed=2, abandoned=2),
         "b": WorkflowMetrics(started=4, completed=2, throughput_per_day=3, sla_breached=0, failures=1,
                              steps_completed=4, wait_p90=30),
-    }, {"cs": DeptMetrics(utilization=0.5), "it": DeptMetrics(utilization=0.25)}, labor_cost=7.0)
+    }, {"cs": DeptMetrics(utilization=0.5), "it": DeptMetrics(utilization=0.25)}, labor_cost=7.0, wait_p90=20)
     k = kpis(m)
     assert (k["throughput_per_day"], k["sla_breach_rate"], k["rework_rate"], k["labor_cost"]) == (5, 0.25, 0.2, 7.0)
     assert k["util_cs"] == 0.5 and k["mean_dept_utilization"] == 0.375

@@ -1,15 +1,16 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
-  type ApiError, type CompanyMeta, type RunMeta, type SimulateResponse,
-  deleteCompany, generate as apiGenerate, getExample, getRun, listCompanies, listRuns, loadApiKey, loadCompany, saveCompany, setApiKey, simulate,
+  type ApiError, type Bundle, type CompanyMeta, type Me, type RunMeta, type SimulateResponse,
+  SESSION_EXPIRED, cancelJob, credential, deleteCompany, generate as apiGenerate, getExample, getMe, getRun, listCompanies, listRuns, loadApiKey, loadCompany, loadSession, login, logout, saveCompany, setApiKey, setOnSessionExpired, setSession, startJob, waitForJob,
 } from "@/lib/api";
 import { type Company, type Scenario, checkCompany, checkScenarios, slug } from "@/lib/company";
 import { blockingIssue } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
+import { type History, type SaveSync, emptyHistory, record, redo as redoStep, shouldAutosave, undo as undoStep } from "@/lib/history";
 
-export type Config = { seed: number; days: number; replications: number; policy: string; crn: boolean; include_events: boolean; save: boolean };
+export type Config = { seed: number; days: number; warmup_days?: number; replications: number; policy: string; crn: boolean; include_events: boolean; save: boolean };
 export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", crn: true, include_events: false, save: false };
 export const POLICIES = ["priority", "fifo", "least_loaded", "edd"];
 
@@ -26,13 +27,26 @@ export type Twin = {
   runs: RunMeta[];
   selected: string; // id of the saved company the draft came from ("" = unsaved)
   apiKey: string;
+  authed: boolean; // a session token or API key is stored (not yet proof that it is valid; `me` is)
+  me: Me | null;
+  viewer: boolean;
   busy: boolean;
+  progress: { done: number; total: number } | null; // non-null while a run's job is under way (total 0 until the first poll)
+  cancelling: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  draftStatus: { state: "unsaved" | "saved" | "saving" } | { state: "failed"; message: string };
   error: ApiError | null;
   setCompany: (c: Company) => void;
   setScenarios: (s: Scenario[]) => void;
   setConfig: (c: Config) => void;
   setError: (e: ApiError | null) => void;
   changeKey: (k: string) => void;
+  signIn: (email: string, password: string) => Promise<boolean>; // false = failed, reported through `error`
+  signOut: () => Promise<void>;
+  undo: () => void;
+  redo: () => void;
+  cancelRun: () => Promise<void>;
   loadExample: () => Promise<void>;
   create: (name: string) => Promise<boolean>; // empty company named after the input, baseline scenario only; false = kept the draft
   generate: (prompt: string) => Promise<void>;
@@ -46,6 +60,9 @@ export type Twin = {
 
 const DRAFT = "flock_draft"; // the working copy survives a reload; saved companies live in the API
 const BAD_DRAFT = "flock_draft_bad"; // a draft that failed checkCompany, kept so a reload does not lose it
+const AUTOSAVE_MS = 2000;
+const ABANDONED = new Error("run abandoned"); // thrown out of waitForJob's progress callback to stop polling
+type Draft = { company: Company; scenarios: Scenario[] };
 const Ctx = createContext<Twin | null>(null);
 
 export function TwinProvider({ children }: { children: React.ReactNode }) {
@@ -59,8 +76,51 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
   const [runs, setRuns] = useState<RunMeta[]>([]);
   const [selected, setSelected] = useState("");
   const [apiKey, setKeyState] = useState("");
+  const [token, setToken] = useState("");
+  const [me, setMe] = useState<Me | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<Twin["progress"]>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [history, setHistory] = useState<History<Draft>>(emptyHistory);
+  const [sync, setSync] = useState<SaveSync>({ rev: 0, saved: 0 });
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [saveFail, setSaveFail] = useState<{ rev: number; message: string } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const jobId = useRef<string | null>(null);
+  const alive = useRef(true);
+  const lastTenant = useRef<string | null>(null); // survives an expired session: signing back in to the same tenant keeps its state
+  const saves = useRef<Promise<unknown>>(Promise.resolve()); // PUTs run one at a time, so responses cannot race
+
+  useEffect(() => {
+    alive.current = true; // the provider lives in the layout: only its own unmount stops a run's polling
+    return () => { alive.current = false; };
+  }, []);
+
+  useEffect(() => {
+    setOnSessionExpired(() => {
+      setToken("");
+      setMe(null);
+      setError(SESSION_EXPIRED);
+    });
+    return () => setOnSessionExpired(() => {});
+  }, []);
+
+  const put = useCallback((id: string, bundle: Bundle) => {
+    const p = saves.current.then(() => saveCompany(id, bundle));
+    saves.current = p.catch(() => {});
+    return p;
+  }, []);
+
+  /** A different company became the draft: nothing to undo, nothing to autosave. */
+  const adopt = useCallback((c: Company, sc: Scenario[], id: string) => {
+    setCompanyState(c);
+    setScenariosState(sc);
+    setSelected(id);
+    setResult(null);
+    setResultSource(null);
+    setHistory(emptyHistory());
+    setSync((s) => ({ ...s, saved: s.rev }));
+  }, []);
 
   const refreshLists = useCallback((report = true) => {
     const onErr = report ? setError : () => {};
@@ -70,18 +130,26 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
 
   const loadExample = useCallback(async () => {
     const x = await getExample();
-    setCompanyState(x.company as Company);
-    setScenariosState(x.scenarios as Scenario[]);
-    setSelected("");
-    setResult(null);
-    setResultSource(null);
+    adopt(x.company as Company, x.scenarios as Scenario[], "");
+  }, [adopt]);
+
+  const refreshMe = useCallback(() => {
+    const used = credential();
+    if (!used) return;
+    getMe().then((m) => { // a slow answer about the previous credential must not label the new one
+      if (credential() !== used) return;
+      lastTenant.current = m.tenant;
+      setMe(m);
+    }).catch(() => {}); // a bad credential or a down API shows as "not verified"
   }, []);
 
   useEffect(() => {
     // localStorage exists only in the browser; the microtask keeps the first paint identical to the server's
     Promise.resolve().then(() => {
       setKeyState(loadApiKey());
-      let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string } | null = null;
+      setToken(loadSession());
+      refreshMe();
+      let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string; dirty?: boolean } | null = null;
       const raw = localStorage.getItem(DRAFT);
       try {
         draft = JSON.parse(raw ?? "null");
@@ -96,17 +164,40 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
         setScenariosState(draft.scenarios ?? []);
         setConfig({ ...DEFAULT_CONFIG, ...draft.config });
         setSelected(draft.selected ?? "");
+        if (draft.dirty) setSync({ rev: 0, saved: -1 }); // edited after its last save: shown as unsaved, written on the next edit
       } else {
         loadExample().catch(setError);
       }
       refreshLists(false);
     });
-  }, [loadExample, refreshLists]);
+  }, [loadExample, refreshLists, refreshMe]);
 
+  const dirty = sync.rev !== sync.saved;
   useEffect(() => {
     if (!company) return;
-    try { localStorage.setItem(DRAFT, JSON.stringify({ company, scenarios, config, selected })); } catch { /* quota or private window: draft lives in memory only */ }
-  }, [company, scenarios, config, selected]);
+    try { localStorage.setItem(DRAFT, JSON.stringify({ company, scenarios, config, selected, dirty })); } catch { /* quota or private window: draft lives in memory only */ }
+  }, [company, scenarios, config, selected, dirty]);
+
+  const viewer = me?.role === "viewer";
+  const canWrite = !!me && !viewer;
+  // shortcut: last write wins, a second tab or user saving the same company is overwritten silently; add a version check on PUT if that starts to matter.
+  useEffect(() => {
+    if (!company || !shouldAutosave({ companyId: company.id, selected, canWrite, sync, failedRev: saveFail?.rev ?? null, saving: autoSaving })) return;
+    const { rev } = sync;
+    const t = setTimeout(async () => {
+      setAutoSaving(true);
+      try {
+        await put(company.id, { company, scenarios });
+        setSync((s) => ({ ...s, saved: Math.max(s.saved, rev) }));
+        listCompanies().then(setSaved).catch(() => {});
+      } catch (e) {
+        setSaveFail({ rev, message: (e as ApiError).message ?? String(e) });
+      } finally {
+        setAutoSaving(false);
+      }
+    }, AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [company, scenarios, selected, canWrite, sync, saveFail?.rev, autoSaving, put]);
 
   const keepDraft = useCallback(async (c: Company | null) =>
     !!c && !(await confirm("Unsaved changes are lost.", { title: "Replace the current draft?", action: "Replace" })), [confirm]);
@@ -123,73 +214,161 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value = useMemo<Twin>(() => ({
-    company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, busy, error,
-    setCompany: setCompanyState,
-    setScenarios: setScenariosState,
+  const clearTenant = useCallback(() => {
+    setSaved([]); // the previous tenant's lists must not linger
+    setRuns([]);
+    setSelected("");
+    setResult(null);
+    setResultSource(null);
+  }, []);
+
+  /** Before credentials change: the run belongs to the old identity, its result must not land under the new one. */
+  const abandonRun = useCallback(() => {
+    if (jobId.current) cancelJob(jobId.current).catch(() => {});
+    jobId.current = null;
+  }, []);
+
+  const value = useMemo<Twin>(() => {
+    const remember = () => {
+      const now = Date.now();
+      if (company) setHistory((h) => record(h, { company, scenarios }, now));
+      setSync((s) => ({ ...s, rev: s.rev + 1 }));
+    };
+    const restore = (step: { history: History<Draft>; state: Draft } | null) => {
+      if (!step) return;
+      setHistory(step.history);
+      setCompanyState(step.state.company);
+      setScenariosState(step.state.scenarios);
+      setSync((s) => ({ ...s, rev: s.rev + 1 }));
+    };
+    const onSaved = company && selected === company.id;
+    return {
+    company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, me, viewer, busy, progress, cancelling, error,
+    authed: !!apiKey || !!token,
+    canUndo: history.past.length > 0,
+    canRedo: history.future.length > 0,
+    draftStatus: !onSaved ? { state: "unsaved" } : autoSaving ? { state: "saving" } : !dirty ? { state: "saved" }
+      : saveFail?.rev === sync.rev ? { state: "failed", message: saveFail.message } : { state: "unsaved" },
+    setCompany: (c) => {
+      if (JSON.stringify(c) === JSON.stringify(company)) return; // e.g. a drag that ends where it began: no empty undo step
+      remember();
+      setCompanyState(c);
+    },
+    setScenarios: (sc) => {
+      if (JSON.stringify(sc) === JSON.stringify(scenarios)) return;
+      remember();
+      setScenariosState(sc);
+    },
     setConfig, setError,
+    undo: () => { if (company) restore(undoStep(history, { company, scenarios })); },
+    redo: () => { if (company) restore(redoStep(history, { company, scenarios })); },
     changeKey: (k) => {
+      abandonRun();
+      if (token) logout().catch(() => {}); // one credential at a time; the header is built before the token is cleared below
+      setSession("");
+      setToken("");
+      setMe(null);
+      lastTenant.current = null;
       setApiKey(k);
       setKeyState(k);
-      setSaved([]); // the previous tenant's lists must not linger
-      setRuns([]);
-      setSelected("");
-      setResult(null);
-      setResultSource(null);
-      if (k) refreshLists();
+      clearTenant();
+      if (k) { refreshLists(); refreshMe(); }
+    },
+    signIn: async (email, password) => {
+      try {
+        const s = await login(email, password);
+        abandonRun();
+        setApiKey(""); // one credential at a time: signing out must not fall back to a key with more rights
+        setKeyState("");
+        setSession(s.token);
+        setToken(s.token);
+        if (lastTenant.current !== s.tenant) clearTenant();
+        lastTenant.current = s.tenant;
+        setMe({ tenant: s.tenant, email: s.email, role: s.role });
+        setError(null);
+        refreshLists();
+        return true;
+      } catch (e) {
+        setError(e as ApiError);
+        return false;
+      }
+    },
+    signOut: async () => {
+      abandonRun();
+      if (token) await logout().catch(() => {}); // already gone when the user changed their own account
+      setSession("");
+      setToken("");
+      setApiKey("");
+      setKeyState("");
+      setMe(null);
+      lastTenant.current = null;
+      clearTenant();
+    },
+    cancelRun: async () => {
+      if (!jobId.current) return;
+      setCancelling(true); // running replications finish first; the poll in `run` ends it
+      try { await cancelJob(jobId.current); } catch (e) { setCancelling(false); setError(e as ApiError); }
     },
     loadExample: async () => { if (await keepDraft(company)) return; await act(loadExample); },
     create: async (name) => {
       if (await keepDraft(company)) return false;
-      setCompanyState({ id: slug(name) || "company", name: name.trim(), systems: [], departments: [], workflows: [] });
-      setScenariosState([{ id: "baseline", name: "Baseline", overlays: [] }]);
-      setSelected("");
-      setResult(null);
-      setResultSource(null);
+      adopt({ id: slug(name) || "company", name: name.trim(), systems: [], departments: [], workflows: [] }, [{ id: "baseline", name: "Baseline", overlays: [] }], "");
       setError(null);
       return true;
     },
     generate: async (prompt) => { if (await keepDraft(company)) return; await act(async () => {
       const x = await apiGenerate(prompt);
-      setCompanyState(x.company as Company);
-      setScenariosState(x.scenarios as Scenario[]);
-      setSelected("");
-      setResult(null);
-      setResultSource(null);
+      adopt(x.company as Company, x.scenarios as Scenario[], "");
     }); },
     run: () => act(async () => {
       if (!company) return;
       const issue = blockingIssue(company);
       if (issue) { setError({ path: "company", message: issue.message, href: `/processes/${encodeURIComponent(issue.workflowId)}` }); return; }
-      const { include_events, save, ...cfg } = config;
-      const res = await simulate({
-        company, scenarios, config: cfg, include_events, save,
+      const { include_events, save, warmup_days, ...cfg } = config;
+      const { id } = await startJob({
+        company, scenarios, config: warmup_days ? { ...cfg, warmup_days } : cfg, include_events, save: save && !viewer,
         company_id: saved.some((c) => c.id === company.id) ? company.id : null,
       });
-      setResult(res);
-      setResultSource({ kind: "run", company_id: company.id, name: company.name });
-      if (save) refreshLists();
+      jobId.current = id;
+      setProgress({ done: 0, total: 0 });
+      try {
+        const res = await waitForJob<SimulateResponse>(id, (j) => {
+          if (!alive.current || jobId.current !== id) throw ABANDONED;
+          setProgress({ done: j.done, total: j.total });
+        });
+        if (!res) return; // cancelled: the previous result stays
+        setResult(res);
+        setResultSource({ kind: "run", company_id: company.id, name: company.name });
+        if (save && !viewer) refreshLists();
+      } catch (e) {
+        if (e === ABANDONED || jobId.current !== id) return;
+        if ((e as ApiError).status === 404) throw { path: "run", message: "This run is gone from the server, most likely because the API restarted. Run it again." } as ApiError;
+        throw e;
+      } finally {
+        jobId.current = null;
+        setProgress(null);
+        setCancelling(false);
+      }
     }),
     save: () => act(async () => {
       if (!company) return;
       if (saved.some((c) => c.id === company.id) && company.id !== selected
         && !(await confirm(`A saved company with the id "${company.id}" already exists.`, { title: "Replace the saved company?", action: "Replace" }))) return;
-      await saveCompany(company.id, { company, scenarios });
+      const { rev } = sync;
+      await put(company.id, { company, scenarios });
       setSelected(company.id);
+      setSync((s) => ({ ...s, saved: Math.max(s.saved, rev) }));
       refreshLists();
     }),
     load: async (id) => { if (await keepDraft(company)) return; await act(async () => {
       const b = await loadCompany(id);
-      setCompanyState(b.company as Company);
-      setScenariosState(b.scenarios as Scenario[]);
-      setSelected(id);
-      setResult(null);
-      setResultSource(null);
+      adopt(b.company as Company, b.scenarios as Scenario[], id);
     }); },
     remove: (id) => act(async () => {
       if (!(await confirm(`"${id}" is removed from this tenant. This cannot be undone.`, { title: "Delete the saved company?", action: "Delete", destructive: true }))) return;
-      await deleteCompany(id);
-      if (selected === id) setSelected("");
+      if (selected === id) setSelected(""); // first, so a debounced autosave cannot bring it back
+      await saves.current;
+      try { await deleteCompany(id); } catch (e) { if (selected === id) setSelected(id); throw e; }
       refreshLists();
     }),
     showRun: (id) => act(async () => {
@@ -198,7 +377,8 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setResultSource({ kind: "history", run_id: id, name: runs.find((x) => x.id === id)?.name ?? `run ${id}` });
     }),
     refreshLists: () => refreshLists(),
-  }), [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, busy, error, act, confirm, keepDraft, loadExample, refreshLists]);
+    };
+  }, [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, token, me, viewer, busy, progress, cancelling, history, sync, dirty, autoSaving, saveFail, error, act, adopt, abandonRun, clearTenant, confirm, keepDraft, loadExample, put, refreshLists, refreshMe]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

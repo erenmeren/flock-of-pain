@@ -59,6 +59,7 @@ class ArrivalSpec:
     rate_per_hour: float
     window: Schedule
     profile: Profile | None = None
+    initial_backlog: int = 0  # instances created at time zero
 
 
 @dataclass
@@ -88,6 +89,7 @@ class Inflow:
     window: Schedule
     entry: list[str]
     profile: Profile | None = None
+    initial_backlog: int = 0
 
 
 @dataclass
@@ -110,6 +112,8 @@ class Company:
     systems: list[BusinessSystem]
     workflows: list[Workflow]
     outages: list[tuple[str, float, float]] = field(default_factory=list)
+    holidays: list[int] = field(default_factory=list)  # day numbers from time zero: nobody works, nothing arrives
+    actuals: dict[str, float] = field(default_factory=dict)  # observed KPI values; the engine ignores them
     _index: dict[str, Resource] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def resources(self) -> list[Resource]:
@@ -176,6 +180,13 @@ class Company:
                 raise ModelError(f"resource {r.id}: capacity must be 1, got {r.capacity}")
             if r.schedule is None:
                 raise ModelError(f"resource {r.id}: no schedule")
+
+        closed = [(d * 1440, (d + 1) * 1440) for d in sorted(set(self.holidays))]
+        for r in resources:
+            r.schedule.closed = closed
+        for w in self.workflows:
+            for x in ([w.arrival] if w.arrival else []) + w.inflows:
+                x.window.closed = closed
 
         dept_ids = {d.id for d in self.departments}
         system_ids = {s.id for s in self.systems}

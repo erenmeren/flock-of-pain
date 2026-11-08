@@ -1,17 +1,41 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Boxes, Building2, Server, Users, UserRound } from "lucide-react";
+import { ArrowRight, Boxes, Building2, CalendarOff, Server, Users, UserRound } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { IconTile, PageHeader, StatCard } from "@/components/page";
 import { Panel } from "@/components/dashboard/kpi";
 import { Chip, DeptMark, Loading, OrgNav, Pill, StatusDot, accent } from "@/components/org/parts";
 import { allResources, deptHeadcount, isPool, stepsIn } from "@/components/org/ops";
 import { Card, CardContent } from "@/components/ui/card";
-import { headcount, referencedIds } from "@/lib/company";
+import { Input } from "@/components/ui/input";
+import { type Company, DAYS, headcount, parseDayList, referencedIds } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
+function HolidaysPanel({ company, setCompany }: { company: Company; setCompany: (c: Company) => void }) {
+  const [bad, setBad] = useState(false);
+  const days = company.holidays ?? [];
+  const text = days.join(", ");
+  return (
+    <Panel title={<span className="flex items-center gap-1">Holidays<Hint id="holidays" /></span>} subtitle="Company-wide days off, as day numbers" icon={CalendarOff} contentClassName="flex flex-col gap-2">
+      <p className="text-xs text-muted-foreground">Day numbers count days from the start of the run: day 0 is the first Monday, so day 5 is the first Saturday and day 7 the second Monday.</p>
+      <Input key={text} aria-label="holiday day numbers" aria-invalid={bad} className="max-w-md tabular-nums" placeholder="none, e.g. 3, 10" defaultValue={text} onBlur={(e) => {
+        const parsed = parseDayList(e.target.value);
+        setBad(parsed === null);
+        if (parsed === null || parsed.join(", ") === text) return;
+        const next: Company = { ...company, holidays: parsed };
+        if (!parsed.length) delete next.holidays;
+        setCompany(next);
+      }} />
+      {bad && <p role="alert" className="text-xs text-rose-400">Use whole day numbers from 0 to 36500, at most 366 of them.</p>}
+      {days.length > 0 && <div className="flex flex-wrap gap-1">{days.map((d) => <Chip key={d}>day {d} · {DAYS[d % 7]}</Chip>)}</div>}
+    </Panel>
+  );
+}
+
 export default function OrganizationPage() {
-  const { company } = useTwin();
+  const { company, setCompany } = useTwin();
   if (!company) return <Loading />;
   const resources = allResources(company);
   const steps = stepsIn(company);
@@ -62,6 +86,7 @@ export default function OrganizationPage() {
         <StatCard icon={UserRound} label="Named people" value={resources.filter((r) => !isPool(r)).length} />
         <StatCard icon={Server} label="Systems" value={company.systems.length} />
       </div>
+      <HolidaysPanel company={company} setCompany={setCompany} />
       <Panel title="Systems" subtitle="Shared tools the workflow steps run on" icon={Server} href="/organization/systems" linkLabel="Manage systems" contentClassName="flex flex-col gap-2">
         {company.systems.length === 0 && <span className="text-sm text-muted-foreground">No systems.</span>}
         {company.systems.map((s, i) => {

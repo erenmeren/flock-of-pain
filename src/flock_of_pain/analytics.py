@@ -82,6 +82,9 @@ class Metrics:
     ledger: list[LedgerRow] = field(default_factory=list)
     labor_cost: float = 0.0
     overtime_minutes: float = 0.0
+    cycle_p50: float = 0.0  # over all instances, whatever their workflow
+    cycle_p90: float = 0.0
+    wait_p90: float = 0.0
 
 
 @dataclass
@@ -92,10 +95,14 @@ class _TaskTrack:
     blocked: tuple[float, str | None, str | None] | None = None  # (t, system id, resource id)
 
 
-def compute_metrics(events: list[Event], company: Company, horizon_minutes: float) -> Metrics:
-    """Unfinished waits, runs and blocks are closed at the horizon."""
+def compute_metrics(events: list[Event], company: Company, horizon_minutes: float, warmup_minutes: float = 0) -> Metrics:
+    """Unfinished waits, runs and blocks are closed at the horizon.
+
+    Only the window from warmup_minutes to horizon_minutes is measured: instances arriving before it are left out of
+    the workflow metrics, and busy and ledger time are clipped to it.
+    """
     resources = company.resources()
-    rm = {r.id: ResourceMetrics(on_shift_minutes=r.schedule.on_minutes(0, horizon_minutes)) for r in resources}
+    rm = {r.id: ResourceMetrics(on_shift_minutes=r.schedule.on_minutes(warmup_minutes, horizon_minutes)) for r in resources}
     wm = {w.id: WorkflowMetrics() for w in company.workflows}
     dm = {d.id: DeptMetrics() for d in company.departments}
     tracks: dict[str, _TaskTrack] = defaultdict(_TaskTrack)
@@ -108,6 +115,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     ot = {r.id: next((x.overtime_rate for x in (r, pools.get(r.pool_id)) if x is not None and x.overtime_rate is not None),
                      1.0) for r in resources}  # carved employees inherit the pool's rate
     wf_started: dict[str, float] = {}
+    early: set[str] = set()  # instances that arrived during the warm-up
     cycles: dict[str, list[float]] = defaultdict(list)
     cancelled: dict[str, set[str]] = defaultdict(set)
     breached: dict[str, set[str]] = defaultdict(set)  # workflow -> instances with any SLA breach
@@ -116,25 +124,28 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
     last_t = None
 
     def close_segment(e: Event, tr: _TaskTrack, t: float) -> None:
-        if tr.segment is not None and t > tr.segment[0]:
+        if tr.segment is not None and t > (start := max(tr.segment[0], warmup_minutes)):
             row = ledger[e.department_id, tr.segment[1], tr.segment[2]]
-            row[0] += t - tr.segment[0]
+            row[0] += t - start
             row[1] += 1
         tr.segment = None
 
     def close_run(e: Event, tr: _TaskTrack, t: float) -> None:
-        if tr.run is not None:
-            minutes = t - tr.run[0]
+        if tr.run is not None and t > warmup_minutes:
+            start = max(tr.run[0], warmup_minutes)
+            minutes = t - start
             r = company.resource(tr.run[1])
             rm[r.id].busy_minutes += minutes
-            off = minutes - r.schedule.on_minutes(tr.run[0], t)
+            off = minutes - r.schedule.on_minutes(start, t)
             overrun[r.id] += off
-            wf_cost[e.workflow_id] += (minutes + off * (ot[r.id] - 1)) / 60 * r.cost_per_hour
+            if e.instance_id not in early:
+                wf_cost[e.workflow_id] += (minutes + off * (ot[r.id] - 1)) / 60 * r.cost_per_hour
         tr.run = None
 
     def close_block(e: Event, tr: _TaskTrack, t: float) -> None:
-        if tr.blocked is not None:
+        if tr.blocked is not None and (not warmup_minutes or t > warmup_minutes):
             start, system_id, resource_id = tr.blocked
+            start = max(start, warmup_minutes)
             row = ledger[e.department_id, Reason.SYSTEM_DOWN, system_id]
             row[0] += t - start
             row[1] += 1
@@ -148,16 +159,23 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
                 dm[d].backlog_max = max(dm[d].backlog_max, len(ids))
 
     for e in events:
-        if last_t is not None and e.t != last_t:
+        if last_t is not None and e.t != last_t and e.t > warmup_minutes:
             sample_backlog()  # after all same-instant events, so instant starts don't count as backlog
         last_t = e.t
+        if e.kind == K.WORKFLOW_STARTED and e.t < warmup_minutes:
+            early.add(e.instance_id)
+        measured = e.instance_id not in early
         w = wm.setdefault(e.workflow_id, WorkflowMetrics()) if e.workflow_id else None
+        if not measured:
+            w = WorkflowMetrics()  # a sink: nothing about this instance reaches the workflow metrics
         if e.kind == K.WORKFLOW_STARTED:
             w.started += 1
-            wf_started[e.instance_id] = e.t
+            if measured:
+                wf_started[e.instance_id] = e.t
         elif e.kind == K.WORKFLOW_COMPLETED:
             w.completed += 1
-            done[e.workflow_id].add(e.instance_id)
+            if measured:
+                done[e.workflow_id].add(e.instance_id)
             if e.instance_id in wf_started:
                 cycles[e.workflow_id].append(e.t - wf_started[e.instance_id])
         elif e.kind == K.SLA_BREACHED:
@@ -175,7 +193,7 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
             tr.segment = (e.t, e.reason, e.system_id if e.reason == Reason.SYSTEM_DOWN else None)
             if not e.payload.get("retag"):
                 queued[e.department_id].add(e.task_id)
-                if e.kind == K.TASK_QUEUED:
+                if e.kind == K.TASK_QUEUED and measured:
                     tr.wait_from = e.t
         elif e.kind == K.TASK_STARTED:
             close_segment(e, tr, e.t)
@@ -189,10 +207,11 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
             close_run(e, tr, e.t)
             if e.kind == K.TASK_COMPLETED:
                 w.steps_completed += 1
-                if e.resource_id in rm:
-                    rm[e.resource_id].tasks_completed += 1
-                if e.department_id in dm and e.resource_id is not None:
-                    dm[e.department_id].tasks_completed += 1
+                if e.t >= warmup_minutes:
+                    if e.resource_id in rm:
+                        rm[e.resource_id].tasks_completed += 1
+                    if e.department_id in dm and e.resource_id is not None:
+                        dm[e.department_id].tasks_completed += 1
             elif e.kind == K.TASK_FAILED:
                 w.failures += 1
             else:
@@ -200,7 +219,8 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         elif e.kind == K.TASK_CANCELLED:
             close_segment(e, tr, e.t)
             queued[e.department_id].discard(e.task_id)
-            cancelled[e.workflow_id].add(e.instance_id)
+            if measured:
+                cancelled[e.workflow_id].add(e.instance_id)
     sample_backlog()
 
     # close what is still open at the horizon
@@ -232,7 +252,8 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
         d.utilization = _div(*by_dept[d_id])
         d.wait_p50 = percentile(waits_dept[d_id], 50)
 
-    days = horizon_minutes / 1440
+    measured_minutes = horizon_minutes - warmup_minutes
+    days = measured_minutes / 1440
     for w_id, w in wm.items():
         w.cancelled = len(cancelled[w_id])
         w.throughput_per_day = _div(w.completed, days)
@@ -247,5 +268,8 @@ def compute_metrics(events: list[Event], company: Company, horizon_minutes: floa
 
     rows = [LedgerRow(d, reason, blocker, minutes, n) for (d, reason, blocker), (minutes, n) in ledger.items()]
     rows.sort(key=lambda r: (-r.minutes, r.department_id, r.reason or "", r.blocker_id or ""))
-    return Metrics(horizon_minutes, wm, dm, rm, rows, sum(m.labor_cost for m in rm.values()),
-                   sum(m.overtime_minutes for m in rm.values()))
+    all_cycles = [x for xs in cycles.values() for x in xs]
+    all_waits = [x for xs in waits_wf.values() for x in xs]
+    return Metrics(measured_minutes, wm, dm, rm, rows, sum(m.labor_cost for m in rm.values()),
+                   sum(m.overtime_minutes for m in rm.values()),
+                   percentile(all_cycles, 50), percentile(all_cycles, 90), percentile(all_waits, 90))

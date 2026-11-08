@@ -129,7 +129,7 @@ def expand_inflows(c: Company) -> None:
             single = len(w.inflows) == 1
             out.append(Workflow(w.id if single else f"{w.id}.{i.id}",
                                 w.name if single else f"{w.name} · {i.name}",
-                                steps, ArrivalSpec(i.rate_per_hour, i.window, i.profile),
+                                steps, ArrivalSpec(i.rate_per_hour, i.window, i.profile, i.initial_backlog),
                                 cutoff_hour=w.cutoff_hour, arrival_windows=list(w.arrival_windows)))
     c.workflows = out
 

@@ -197,6 +197,7 @@ function InflowPanel({ wf, inflow, onChange, onRemove, onRenamed }: Omit<Props, 
         }} />
       </Field>
       <Field label="Rate per hour" hint="rate"><NumInput min={0} aria-label={`rate per hour of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.rate_per_hour} onCommit={(v) => set({ rate_per_hour: v })} /></Field>
+      <Field label="Initial backlog" hint="initial_backlog"><NumInput hi={100000} aria-label={`initial backlog of inflow ${inflow.id}`} className="w-full tabular-nums" value={inflow.initial_backlog ?? 0} onCommit={(v) => set({ initial_backlog: Math.floor(v) || undefined })} /></Field>
       <Field label="Window" hint="window"><ScheduleEditor id={`inflow ${inflow.id}`} schedule={inflow.window} onChange={(window) => set({ window })} /></Field>
       <ProfileEditor id={`inflow ${inflow.id}`} profile={inflow.profile} onChange={(profile) => set({ profile })}
         fit={<span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><CsvButton label={`arrivals csv of inflow ${inflow.id}`} onText={fitInflow} />{fit.note}</span>} />

@@ -2,9 +2,11 @@
 import multiprocessing
 import os
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
-from itertools import repeat
+from math import sqrt
+from statistics import stdev
 
 from flock_of_pain.analytics import LedgerRow, Metrics, compute_metrics, percentile
 from flock_of_pain.engine import Engine, RunConfig
@@ -32,6 +34,8 @@ class Stat:
     p10: float
     p50: float
     p90: float
+    ci_low: float
+    ci_high: float
 
 
 @dataclass
@@ -41,28 +45,41 @@ class ExperimentResult:
     summary: dict[str, Stat]
 
 
+# two-sided 95% Student t critical values for 1..30 degrees of freedom
+_T95 = (12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131,
+        2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042)
+
+
+def _ci(xs: list[float]) -> tuple[float, float, float]:
+    """Mean and its 95% t interval; both bounds are the mean with fewer than 2 values."""
+    mean = sum(xs) / len(xs)
+    n = len(xs)
+    if n < 2:
+        return mean, mean, mean
+    df = n - 1
+    t = _T95[df - 1] if df <= 30 else 1.96 + 2.372 / df + 2.82 / df ** 2  # Cornish-Fisher expansion
+    half = t * stdev(xs) / sqrt(n)
+    return mean, mean - half, mean + half
+
+
 def _stat(xs: list[float]) -> Stat:
-    return Stat(sum(xs) / len(xs), percentile(xs, 10), percentile(xs, 50), percentile(xs, 90))
+    mean, low, high = _ci(xs)
+    return Stat(mean, percentile(xs, 10), percentile(xs, 50), percentile(xs, 90), low, high)
 
 
 def kpis(m: Metrics) -> dict[str, float]:
-    # shortcut: Metrics keeps no raw samples, so percentiles are completed-weighted
-    # means of per-workflow values, not true pooled percentiles.
     ws = list(m.workflows.values())
     n = sum(w.completed for w in ws)
     failures = sum(w.failures for w in ws)
     attempts = failures + sum(w.steps_completed for w in ws)
 
-    def wmean(attr: str) -> float:
-        return sum(getattr(w, attr) * w.completed for w in ws) / n if n else 0.0
-
     utils = {f"util_{d}": dm.utilization for d, dm in m.departments.items()}
     return {
         "throughput_per_day": sum(w.throughput_per_day for w in ws),
         "completion_rate": n / started if (started := sum(w.started for w in ws)) else 0.0,
-        "cycle_p50": wmean("cycle_p50"),
-        "cycle_p90": wmean("cycle_p90"),
-        "wait_p90": wmean("wait_p90"),
+        "cycle_p50": m.cycle_p50,
+        "cycle_p90": m.cycle_p90,
+        "wait_p90": m.wait_p90,
         "sla_breach_rate": sum(w.sla_breached for w in ws) / n if n else 0.0,
         "deadline_miss_rate": sum(w.deadline_missed for w in ws) / started if started else 0.0,
         "abandon_rate": sum(w.abandoned for w in ws) / started if started else 0.0,
@@ -78,23 +95,47 @@ def _one_run(scenario: Scenario, config: RunConfig, keep_events: bool) -> RunRes
     company = scenario.materialize()
     engine = Engine(company, config)
     engine.run()
-    metrics = compute_metrics(engine.events, company, config.horizon_minutes)
+    metrics = compute_metrics(engine.events, company, config.horizon_minutes, config.warmup_minutes)
     return RunResult(config.seed, engine.events if keep_events else [], metrics)
 
 
-def run_experiment(name: str, scenario: Scenario, config: RunConfig, keep_events: bool = True) -> ExperimentResult:
+def run_experiment(name: str, scenario: Scenario, config: RunConfig, keep_events: bool = True,
+                   on_run: Callable[[], None] | None = None) -> ExperimentResult:
+    """on_run is called after each finished replication, in order; if it raises, pending replications are cancelled."""
     configs = [replace(config, seed=config.seed + i) for i in range(config.replications)]
     workers = min(len(configs), os.cpu_count() or 1)
+    runs = []
     if workers > 1:  # replications are independent (own seed), so run them on all cores; order is kept
         # forkserver, not fork: the API process is multi-threaded and fork() there can deadlock
         ctx = multiprocessing.get_context("forkserver" if "forkserver" in multiprocessing.get_all_start_methods() else "spawn")
         with ProcessPoolExecutor(workers, mp_context=ctx) as pool:
-            runs = list(pool.map(_one_run, repeat(scenario), configs, repeat(keep_events)))
+            futures = [pool.submit(_one_run, scenario, c, keep_events) for c in configs]
+            try:
+                for f in futures:
+                    runs.append(f.result())
+                    if on_run:
+                        on_run()
+            except BaseException:
+                pool.shutdown(cancel_futures=True)  # waits only for the replications already running
+                raise
     else:
-        runs = [_one_run(scenario, c, keep_events) for c in configs]
+        for c in configs:
+            runs.append(_one_run(scenario, c, keep_events))
+            if on_run:
+                on_run()
     per_run = [kpis(r.metrics) for r in runs]
     keys = per_run[0].keys() if per_run else []
     return ExperimentResult(name, runs, {k: _stat([p.get(k, 0.0) for p in per_run]) for k in keys})
+
+
+def compare_to_base(base: ExperimentResult, other: ExperimentResult) -> dict[str, dict]:
+    """Per KPI: mean(other) - mean(base) paired by replication index, its 95% interval, and whether it excludes 0."""
+    pairs = [(kpis(a.metrics), kpis(b.metrics)) for a, b in zip(base.runs, other.runs)]
+    out = {}
+    for k in {k: None for a, b in pairs for k in (*a, *b)}:
+        delta, low, high = _ci([b.get(k, 0.0) - a.get(k, 0.0) for a, b in pairs])
+        out[k] = {"delta": delta, "ci_low": low, "ci_high": high, "significant": len(pairs) >= 2 and (low > 0 or high < 0)}
+    return out
 
 
 def compare(results: list[ExperimentResult]) -> str:
@@ -112,7 +153,7 @@ def compare(results: list[ExperimentResult]) -> str:
     return "\n".join([ASSUMPTION, *lines])
 
 
-def top_ledger(result: ExperimentResult, n: int = 5, exclude=(Reason.OFF_SHIFT,)) -> list[LedgerRow]:
+def top_ledger(result: ExperimentResult, n: int | None = 5, exclude=(Reason.OFF_SHIFT,)) -> list[LedgerRow]:
     acc: dict[tuple, list] = defaultdict(lambda: [0.0, 0])
     for run in result.runs:
         for r in run.metrics.ledger:

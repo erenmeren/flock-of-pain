@@ -1,19 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { Braces, CircleHelp, Database, Download, KeyRound, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Braces, CircleHelp, Database, Download, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { cn } from "cn";
 import { Panel } from "@/components/dashboard/kpi";
+import { setGettingStartedOn } from "@/components/getting-started";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
+import { SignInPanel, UsersPanel } from "@/components/settings/auth-panels";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { type ApiError, signup } from "@/lib/api";
-import { parseCompany, parseScenarios, slug } from "@/lib/company";
+import { parseCompany, parseScenarios } from "@/lib/company";
 import { setHintsOn, useHintsOn } from "@/lib/hints";
 import { useTwin } from "@/lib/store";
 
@@ -39,19 +41,7 @@ export default function Settings() {
   const hintsOn = useHintsOn();
   const [prompt, setPrompt] = useState("");
   const [newName, setNewName] = useState("");
-  const [tenant, setTenant] = useState("");
-  const [invite, setInvite] = useState("");
-  const [signingUp, setSigningUp] = useState(false);
   const create = async () => { if (newName.trim() && await t.create(newName)) setNewName(""); };
-  const doSignup = async () => {
-    setSigningUp(true);
-    try {
-      const r = await signup(slug(tenant), invite);
-      t.changeKey(r.key); // the key is shown once by the API; the field below keeps it
-      t.setError(null);
-      setTenant(""); setInvite("");
-    } catch (e) { t.setError(e as ApiError); } finally { setSigningUp(false); }
-  };
 
   const tryApply = (fn: () => void) => {
     try { fn(); t.setError(null); } catch (e) { t.setError({ path: null, message: `Invalid JSON: ${(e as Error).message}` }); }
@@ -67,7 +57,7 @@ export default function Settings() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Settings" subtitle="API key, generation, saved companies and raw JSON" />
+      <PageHeader title="Settings" subtitle="Sign in, generation, saved companies and raw JSON" />
 
       {t.error && (
         <Alert variant="destructive">
@@ -77,34 +67,25 @@ export default function Settings() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title={<span className="flex items-center gap-1.5">API Key<Hint id="api_key" /></span>} subtitle="Tenant key for the simulation API" icon={KeyRound}>
-          <div className="flex flex-col gap-2">
-            {/* keyed so the stored key, read after mount, becomes the default */}
-            <Input key={t.apiKey} type="password" className="h-9 rounded-xl border-0 font-mono glass-inset dark:bg-transparent" aria-label="api key" placeholder="tenant API key" defaultValue={t.apiKey}
-              onBlur={(e) => { if (e.target.value !== t.apiKey) t.changeKey(e.target.value); }} />
-            <p className="text-xs text-muted-foreground">Create one with <code className="font-mono">flock_of_pain tenant create</code>, or sign up below when the API hands out invite codes. Saved when the field loses focus; stored in this browser only.</p>
-            <form className="mt-1 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); doSignup(); }}>
-              <Input className="h-9 min-w-32 flex-1 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="tenant id" placeholder="Tenant id" value={tenant} onChange={(e) => setTenant(e.target.value)} disabled={signingUp} />
-              <Input className="h-9 min-w-32 flex-1 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="invite code" placeholder="Invite code" value={invite} onChange={(e) => setInvite(e.target.value)} disabled={signingUp} />
-              <Button type="submit" variant="outline" size="sm" className="h-9 rounded-full px-3" disabled={signingUp || !slug(tenant) || !invite}>{signingUp ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Sign up</Button>
-            </form>
-          </div>
-        </Panel>
+        <SignInPanel />
 
         <Panel title={<span className="flex items-center gap-1.5">Generate with AI<Hint id="generate" /></span>} subtitle="Describe a company; Claude drafts the twin" icon={Sparkles}>
           <div className="flex flex-col gap-2">
             <Textarea aria-label="company description" placeholder="Describe the company in words; Claude writes the twin" className="h-24 rounded-xl border-0 glass-inset dark:bg-transparent" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
             <div className="flex items-center gap-3">
-              <Button className="rounded-full px-4" onClick={() => t.generate(prompt)} disabled={t.busy || !prompt.trim()}>
+              <Button className="rounded-full px-4" onClick={() => t.generate(prompt)} disabled={t.busy || !prompt.trim() || t.viewer}>
                 {t.busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Generate
               </Button>
-              <span className="text-xs text-muted-foreground">Replaces the current draft (company and scenarios).</span>
+              <span className="text-xs text-muted-foreground">{t.viewer ? "A viewer cannot generate a company." : "Replaces the current draft (company and scenarios)."}</span>
             </div>
           </div>
         </Panel>
       </div>
 
-      <Panel title="Help hints" subtitle="Question marks next to labels explain what a field does" icon={CircleHelp}>
+      <UsersPanel />
+
+      <Panel title="Help hints" subtitle="Question marks next to labels explain what a field does" icon={CircleHelp}
+        action={<Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={() => setGettingStartedOn(true)}>Show getting started</Link>}>
         <Label className="flex cursor-pointer items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm font-normal hover:bg-white/[0.05]">
           <Checkbox aria-label="show help hints" checked={hintsOn} onCheckedChange={(c) => setHintsOn(!!c)} />
           <span className="flex flex-1 flex-col">Show help hints<span className="text-xs text-muted-foreground">Hover a question mark for an explanation. Stored in this browser.</span></span>
@@ -118,7 +99,7 @@ export default function Settings() {
             <Input className="h-9 rounded-xl border-0 glass-inset dark:bg-transparent" aria-label="new company name" placeholder="New company name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={t.busy} />
             <Button type="submit" variant="outline" size="sm" className="h-9 rounded-full px-3" disabled={t.busy || !newName.trim()}><Plus className="size-3.5" /> Create empty</Button>
           </form>
-          {t.saved.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No saved companies{t.apiKey ? "" : " (set an API key first)"}.</p>}
+          {t.saved.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No saved companies{t.authed ? "" : " (sign in first)"}.</p>}
           {t.saved.map((c) => (
             <div key={c.id} className={cn("flex flex-wrap items-center gap-3 rounded-xl glass-inset px-3 py-2.5 text-sm", t.selected === c.id && "ring-1! ring-primary/40")}>
               <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">{c.name.slice(0, 2).toUpperCase()}</span>
@@ -127,7 +108,7 @@ export default function Settings() {
               {t.selected === c.id && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">loaded</span>}
               <span className="ml-auto text-xs tabular-nums text-muted-foreground">{c.updated_at.replace("T", " ").replace("+00:00", "")}</span>
               <Button variant="outline" size="sm" className="rounded-full" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
-              <Button variant="destructive" size="sm" className="rounded-full" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>
+              {!t.viewer && <Button variant="destructive" size="sm" className="rounded-full" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>}
             </div>
           ))}
         </div>

@@ -32,10 +32,27 @@ def test_simulate_roundtrip():
     assert b["kpi_keys"][: len(KPI_KEYS)] == list(KPI_KEYS)
     assert all(k.startswith("util_") for k in b["kpi_keys"][len(KPI_KEYS):])
     s = b["scenarios"][0]
-    assert set(s["summary"]["cycle_p90"]) == {"mean", "p10", "p50", "p90"}
+    assert set(s["summary"]["cycle_p90"]) == {"mean", "p10", "p50", "p90", "ci_low", "ci_high"}
+    assert s["summary"]["cycle_p90"]["ci_low"] <= s["summary"]["cycle_p90"]["mean"] <= s["summary"]["cycle_p90"]["ci_high"]
     assert len(s["runs"]) == 2 and "events" not in s["runs"][0]
     assert isinstance(s["off_shift_minutes"], float)
     assert all(set(row) == {"department_id", "reason", "blocker_id", "minutes", "count"} for row in s["ledger"])
+    assert "comparison" not in s and "comparison" in b["scenarios"][1]
+    entry = b["scenarios"][1]["comparison"]["cycle_p90"]
+    assert set(entry) == {"delta", "ci_low", "ci_high", "significant"} and isinstance(entry["significant"], bool)
+    assert set(KPI_KEYS) <= set(b["scenarios"][1]["comparison"])
+    assert all(isinstance(x["recommendations"], list) for x in b["scenarios"])
+    assert all(set(r) == {"severity", "kind", "department_id", "message"} for x in b["scenarios"] for r in x["recommendations"])
+
+
+def test_simulate_saved_run_keeps_the_new_fields():
+    ex = client.get("/example").json()
+    body = {"company": ex["company"], "scenarios": ex["scenarios"][:2], "config": {"seed": 1, "days": 1}, "save": True}
+    r = client.post("/simulate", json=body).json()
+    stored = client.get(f"/runs/{r['run_id']}").json()["result"]["scenarios"]
+    assert stored[1]["comparison"] == r["scenarios"][1]["comparison"]
+    assert stored[0]["recommendations"] == r["scenarios"][0]["recommendations"]
+    assert stored[0]["summary"] == r["scenarios"][0]["summary"]
 
 
 def test_simulate_with_events():
@@ -290,3 +307,13 @@ def test_calibrate_endpoints():
         r = client.post(url, json=body)
         assert r.status_code == 422 and r.json()["path"] == path, (url, r.text)
     assert client.post("/calibrate/durations", json={"minutes": [1, 2]}, headers={"X-API-Key": ""}).status_code == 401
+
+
+def test_recommendations_get_the_whole_ledger(monkeypatch):
+    seen = []
+    real = api.top_ledger
+    monkeypatch.setattr(api, "top_ledger", lambda r, **kw: seen.append(kw.get("n", 5)) or real(r, **kw))
+    ex = client.get("/example").json()
+    r = client.post("/simulate", json={"company": ex["company"], "scenarios": ex["scenarios"][:1], "config": {"seed": 1, "days": 1}})
+    assert r.status_code == 200, r.text
+    assert None in seen and 5 in seen  # the response shows the top rows, the advice sees them all

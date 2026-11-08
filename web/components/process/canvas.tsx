@@ -115,6 +115,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
   const [toast, setToast] = useState<string | null>(null);
   const edit = (f: (w: Workflow) => Workflow) => onChange(f(wf.inflows ? wf : { ...toInflows(wf), layout: fillLayout(wf) }));
   const stepName = (id: string) => wf.steps.find((s) => s.id === id)?.name ?? id;
+  const showPanel = !!selected && [...wf.steps, ...inflowsOf(wf)].some((x) => x.id === selected); // an undo can take the selected node away
 
   useEffect(() => {
     const pos = fillLayout(wf);
@@ -198,7 +199,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
   const chip = (type: string, value: string) => ({ draggable: true, onDragStart: (e: React.DragEvent) => e.dataTransfer.setData(type, value) });
 
   return (
-    <div className={`grid min-h-0 flex-1 gap-4 ${selected ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
+    <div className={`grid min-h-0 flex-1 gap-4 ${showPanel ? "lg:grid-cols-[11rem_1fr_18rem]" : "lg:grid-cols-[11rem_1fr]"}`}>
       <div className="flex min-h-0 flex-wrap gap-2 lg:w-44 lg:flex-col lg:overflow-y-auto">
         {company.departments.map((d, i) => (
           <button key={d.id} type="button" className={CHIP} {...chip(DEPT, d.id)} onClick={() => clickAdd("step", d.id)}>
@@ -237,7 +238,7 @@ function Canvas({ wf, company, onChange }: { wf: Workflow; company: Company; onC
         </div>
         {toast && <p className="text-xs text-amber-400">{toast}</p>}
       </div>
-      {selected && <DetailPanel wf={toInflows(wf)} company={company} selected={selected} onChange={onChange} onClose={() => setSelected(null)} onRenamed={setSelected} onRemove={removeSelected} />}
+      {showPanel && <DetailPanel wf={toInflows(wf)} company={company} selected={selected} onChange={onChange} onClose={() => setSelected(null)} onRenamed={setSelected} onRemove={removeSelected} />}
     </div>
   );
 }

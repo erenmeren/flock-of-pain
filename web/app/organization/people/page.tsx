@@ -4,8 +4,9 @@ import { useState } from "react";
 import { Plus, Users } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
-import { IdTag, NumInput, OptNumInput, ScheduleEditor } from "@/components/editor-fields";
+import { AbsencesEditor, IdTag, NumInput, OptNumInput, ScheduleEditor } from "@/components/editor-fields";
 import { Avatar, DeptMark, INLINE_INPUT, Loading, OrgNav, SkillsInput, TableCard } from "@/components/org/parts";
+import { PeopleImport } from "@/components/org/people-import";
 import { type Loc, addResource, allResources, isPool, movePerson, removeResource, setResource } from "@/components/org/ops";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -119,7 +120,10 @@ export default function PeoplePage() {
                           onCheckedChange={(c) => set({ ...r, schedule: c ? null : poolById.get(r.pool_id ?? "")?.schedule ?? weekdays9to5() })} /> inherit pool
                       </Label>
                     )}
-                    {r.schedule ? <ScheduleEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
+                    {r.schedule ? <div className="flex flex-col gap-2">
+                        <ScheduleEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
+                        <AbsencesEditor id={r.id} schedule={r.schedule} onChange={(s) => set({ ...r, schedule: s })} />
+                      </div>
                       : r.pool_id === undefined && <Button variant="outline" size="sm" onClick={() => set({ ...r, schedule: weekdays9to5() })}>Add schedule</Button>}
                   </TableCell>
                   <TableCell className="text-right">
@@ -133,6 +137,7 @@ export default function PeoplePage() {
         </Table>
         {people.length === 0 && <p className="mt-2 rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">No named people{filter === ALL ? "" : " in this department"}.</p>}
       </TableCard>
+      <PeopleImport company={company} scenarios={scenarios} setCompany={setCompany} />
     </div>
   );
 }

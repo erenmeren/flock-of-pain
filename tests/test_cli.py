@@ -45,6 +45,33 @@ def test_tenant_commands(tmp_path, capsys, monkeypatch):
     assert main(["tenant", "list"]) == 0 and capsys.readouterr().out.startswith("acme | Acme Inc | ")
 
 
+def test_user_commands(tmp_path, capsys, monkeypatch):
+    from flock_of_pain import store
+    monkeypatch.setenv("FLOCK_DB", str(tmp_path / "t.db"))
+    monkeypatch.setattr(store, "SCRYPT_N", 16)
+    secret = "correct horse battery"
+    assert main(["tenant", "create", "acme"]) == 0
+    capsys.readouterr()
+    monkeypatch.setenv("FLOCK_USER_PASSWORD", secret)
+    assert main(["user", "create", "acme", "Boss@X.io", "--role", "admin"]) == 0
+    assert store.login("boss@x.io", secret)["role"] == "admin"
+    monkeypatch.delenv("FLOCK_USER_PASSWORD")
+    monkeypatch.setattr("getpass.getpass", lambda *a, **kw: secret + " 2")
+    assert main(["user", "create", "acme", "v@x.io"]) == 0
+    assert store.login("v@x.io", secret + " 2")["role"] == "viewer"
+    out = capsys.readouterr()
+    assert secret not in out.out + out.err
+    assert main(["user", "list", "acme"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert [ln.split(" | ")[:2] for ln in lines] == [["boss@x.io", "admin"], ["v@x.io", "viewer"]]
+    assert main(["user", "create", "acme", "v@x.io"]) == 1 and "exists" in capsys.readouterr().err
+    assert main(["user", "create", "ghost", "n@x.io"]) == 1 and "no tenant" in capsys.readouterr().err
+    assert main(["user", "list", "ghost"]) == 1 and "no tenant" in capsys.readouterr().err
+    assert main(["user", "create", "acme", "nope"]) == 1 and "email" in capsys.readouterr().err
+    monkeypatch.setattr("getpass.getpass", lambda *a, **kw: "short")
+    assert main(["user", "create", "acme", "n@x.io"]) == 1 and "password" in capsys.readouterr().err
+
+
 def test_backup_command(tmp_path, monkeypatch):
     import sqlite3
     from flock_of_pain import store

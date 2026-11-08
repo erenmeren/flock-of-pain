@@ -13,6 +13,7 @@ def weekday(t: float) -> int:
 class Schedule:
     weekday_hours: dict[int, list[tuple[float, float]]]
     absences: list[tuple[float, float]] = field(default_factory=list)
+    closed: list[tuple[float, float]] = field(default_factory=list)  # company holidays, sorted; set by Company.resolve
 
     def __post_init__(self):
         # a bare (start, end) pair is one window
@@ -26,7 +27,7 @@ class Schedule:
             for h in self.weekday_hours.get(day % 7, ()):
                 start = max(lo, day * MINUTES_PER_DAY + h[0] * 60)
                 end = min(hi, day * MINUTES_PER_DAY + h[1] * 60)
-                for a, b in sorted(self.absences):
+                for a, b in sorted([*self.absences, *self.closed]):
                     if b <= start or a >= end:
                         continue
                     if a > start:
@@ -39,7 +40,8 @@ class Schedule:
         return any(s <= t < e for s, e in self._segments(t, t + 1))
 
     def next_on(self, t: float) -> float | None:
-        for s, e in self._segments(t, t + 2 * MINUTES_PER_WEEK):
+        # look past the last holiday: a long closure must not read as "never on again"
+        for s, e in self._segments(t, max(t, self.closed[-1][1] if self.closed else t) + 2 * MINUTES_PER_WEEK):
             if e > t:
                 return max(s, t)
         return None
