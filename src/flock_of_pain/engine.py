@@ -23,6 +23,7 @@ class RunConfig:
     replications: int = 1
     policy: str = "priority"
     crn: bool = False  # common random numbers: one stream per random purpose, stable across scenarios
+    warmup_minutes: float = 0  # first part of horizon_minutes (the simulated span) left out of the metrics
 
 
 @dataclass
@@ -96,6 +97,8 @@ class Engine:
             self.schedule(start, partial(self._outage_start, system_id))
             self.schedule(end, partial(self._outage_end, system_id))
         for w in company.workflows:
+            for _ in range(w.arrival.initial_backlog):
+                self.schedule(0.0, partial(self._arrive, w, False))
             self._next_arrival(w, 0.0)
 
     # --- event loop ---
@@ -169,7 +172,7 @@ class Engine:
                 return
             t = t2
 
-    def _arrive(self, wf: Workflow) -> None:
+    def _arrive(self, wf: Workflow, chain: bool = True) -> None:
         self._arrivals[wf.id] += 1
         inst = Instance(f"{wf.id}-{self._arrivals[wf.id]:06d}", wf)
         self.instances[inst.id] = inst
@@ -181,7 +184,8 @@ class Engine:
         for s in wf.steps:
             if not s.depends_on:
                 self._create_task(inst, s)
-        self._next_arrival(wf, self.now)
+        if chain:
+            self._next_arrival(wf, self.now)
 
     def _deadline(self, inst: Instance) -> None:
         # completed instances are gone from self.instances; cancelled ones are failures, not late

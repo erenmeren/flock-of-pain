@@ -21,6 +21,8 @@ _STEP_DEFAULTS = {"depends_on": [], "system_id": None, "priority": 0, "sla_minut
 # caps keep one /simulate call bounded: event count grows with arrival rate and with retries per instant
 MAX_RATE_PER_HOUR = 10000
 MAX_RETRIES = 100
+MAX_INITIAL_BACKLOG = 100000
+MAX_HOLIDAYS, MAX_HOLIDAY_DAY = 366, 36500  # schedule lookups scan the holiday list and may walk up to the last day
 
 
 class SchemaError(ModelError):
@@ -182,7 +184,8 @@ def _rate_check(path: str, x) -> None:
     peak = x.profile.peak if x.profile else 1.0
     _check(path, ("rate_per_hour", x.rate_per_hour >= 0, "must be >= 0"),
            ("rate_per_hour", x.rate_per_hour * peak <= MAX_RATE_PER_HOUR,
-            f"must be <= {MAX_RATE_PER_HOUR}" + (" at the profile's peak" if x.profile else "")))
+            f"must be <= {MAX_RATE_PER_HOUR}" + (" at the profile's peak" if x.profile else "")),
+           ("initial_backlog", 0 <= x.initial_backlog <= MAX_INITIAL_BACKLOG, f"expected 0..{MAX_INITIAL_BACKLOG}"))
 
 
 def resource_from_dict(d: dict, department_id: str, path: str) -> Resource:
@@ -263,7 +266,8 @@ def _step_to_dict(s: Step) -> dict:
 def _inflow_from_dict(d: dict, path: str) -> Inflow:
     f = Inflow(_get(d, "id", path, str), _get(d, "name", path, str), _get(d, "rate_per_hour", path, float),
                schedule_from_dict(_get(d, "window", path, dict), _join(path, "window")), _strs(d, "entry", path),
-               _profile_from_dict(_get(d, "profile", path, dict, None), _join(path, "profile")))
+               _profile_from_dict(_get(d, "profile", path, dict, None), _join(path, "profile")),
+               _get(d, "initial_backlog", path, int, 0))
     _rate_check(path, f)
     _done(d, path)
     return f
@@ -276,7 +280,8 @@ def _workflow_from_dict(d: dict, path: str) -> Workflow:
     if a is not None:
         a = _obj(a, ap)
         arrival = ArrivalSpec(_get(a, "rate_per_hour", ap, float), schedule_from_dict(_get(a, "window", ap, dict), _join(ap, "window")),
-                              _profile_from_dict(_get(a, "profile", ap, dict, None), _join(ap, "profile")))
+                              _profile_from_dict(_get(a, "profile", ap, dict, None), _join(ap, "profile")),
+                              _get(a, "initial_backlog", ap, int, 0))
         _done(a, ap)
         _rate_check(ap, arrival)
     inflows = _items(d, "inflows", path, _inflow_from_dict, [])
@@ -318,8 +323,15 @@ def company_from_dict(d: dict, draft: bool = False) -> Company:
                 or any(not isinstance(x, (int, float)) or isinstance(x, bool) for x in o[1:])):
             raise SchemaError(f"{op}[{i}]", "expected [system_id, start, end]")
         outages.append((o[0], o[1], o[2]))
+    holidays = _get(d, "holidays", "", list, [])
+    _check("", ("holidays", len(holidays) <= MAX_HOLIDAYS, f"at most {MAX_HOLIDAYS} days"))
+    for i, h in enumerate(holidays):
+        if not isinstance(h, int) or isinstance(h, bool) or not 0 <= h <= MAX_HOLIDAY_DAY:
+            raise SchemaError(f"holidays[{i}]", f"expected an int day number 0..{MAX_HOLIDAY_DAY}")
+    actuals = {k: _get({k: v}, k, "actuals", float) for k, v in _get(d, "actuals", "", dict, {}).items()}
     c = Company(_get(d, "id", "", str), _get(d, "name", "", str), _items(d, "departments", "", _department_from_dict),
-                _items(d, "systems", "", _system_from_dict), _items(d, "workflows", "", _workflow_from_dict), outages)
+                _items(d, "systems", "", _system_from_dict), _items(d, "workflows", "", _workflow_from_dict), outages,
+                holidays, actuals)
     _done(d, "")
     c.resolve(draft)
     return c
@@ -333,10 +345,13 @@ def _workflow_to_dict(w: Workflow) -> dict:
         out["arrival"] = {"rate_per_hour": w.arrival.rate_per_hour, "window": schedule_to_dict(w.arrival.window)}
         if w.arrival.profile is not None:
             out["arrival"]["profile"] = _profile_to_dict(w.arrival.profile)
+        if w.arrival.initial_backlog:
+            out["arrival"]["initial_backlog"] = w.arrival.initial_backlog
     else:
         out["inflows"] = [{"id": f.id, "name": f.name, "rate_per_hour": f.rate_per_hour,
                            "window": schedule_to_dict(f.window), "entry": list(f.entry),
-                           **({"profile": _profile_to_dict(f.profile)} if f.profile is not None else {})}
+                           **({"profile": _profile_to_dict(f.profile)} if f.profile is not None else {}),
+                           **({"initial_backlog": f.initial_backlog} if f.initial_backlog else {})}
                           for f in w.inflows]
     if w.layout:
         out["layout"] = {k: list(v) for k, v in w.layout.items()}
@@ -354,6 +369,8 @@ def company_to_dict(c: Company) -> dict:
                         for d in c.departments],
         "workflows": [_workflow_to_dict(w) for w in c.workflows],
         "outages": [list(o) for o in c.outages],
+        **({"holidays": list(c.holidays)} if c.holidays else {}),
+        **({"actuals": dict(c.actuals)} if c.actuals else {}),
     }
 
 
@@ -410,19 +427,24 @@ def run_config_from_dict(d: dict) -> RunConfig:
     seed, days = _get(d, "seed", "", int), _get(d, "days", "", float)
     reps, policy = _get(d, "replications", "", int, 1), _get(d, "policy", "", str, "priority")
     crn = _get(d, "crn", "", bool, False)
+    warmup = _get(d, "warmup_days", "", float, 0)
     _done(d, "")
     for k, ok in (("days", days > 0), ("replications", reps >= 1)):
         if not ok:
             raise SchemaError(k, "must be > 0" if k == "days" else "must be >= 1")
+    _check("", ("warmup_days", warmup >= 0, "must be >= 0"))
     if policy not in POLICIES:
         raise SchemaError("policy", f"unknown policy {policy!r}")
-    return RunConfig(seed, days * 1440, reps, policy, crn)
+    return RunConfig(seed, (days + warmup) * 1440, reps, policy, crn, warmup * 1440)
 
 
 def run_config_to_dict(c: RunConfig) -> dict:
     out = {"seed": c.seed, "days": c.horizon_minutes / 1440, "replications": c.replications, "policy": c.policy}
     if c.crn:
         out["crn"] = True
+    if c.warmup_minutes:  # rounded: subtracting the warm-up back leaves float noise
+        out["days"] = round((c.horizon_minutes - c.warmup_minutes) / 1440, 9)
+        out["warmup_days"] = c.warmup_minutes / 1440
     return out
 
 
