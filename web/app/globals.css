@@ -184,3 +184,17 @@ html[data-focus] [data-shell] { display: none; }
 @media (prefers-reduced-transparency: reduce) {
   .glass { background: var(--card); backdrop-filter: none; }
 }
+
+/* Printing (the report page): black on white, no shell, and the page flows over as many sheets as it needs. */
+@media print {
+  .dark {
+    --background: #fff; --foreground: #000; --card: #fff; --card-foreground: #000; --popover: #fff; --popover-foreground: #000;
+    --muted: #eee; --muted-foreground: #444; --border: #bbb; --primary: #000; --chart-1: #333; --chart-2: #666;
+  }
+  [data-shell] { display: none !important; }
+  html, body, body > div, main { display: block; height: auto; min-height: 0; overflow: visible; padding: 0; background: #fff; }
+  .dark body { background-image: none; }
+  .glass, .glass-inset, [data-slot="card"] { background: #fff; backdrop-filter: none; box-shadow: none; }
+  [data-slot="table-container"] { overflow: visible; }
+  tr { break-inside: avoid; }
+}

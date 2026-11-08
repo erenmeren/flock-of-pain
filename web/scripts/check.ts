@@ -6,9 +6,13 @@ import { deptColumns, handoffs, healthScores, mapEdges, minutes, workflowMeans }
 import { addInflow, addStep, blockingIssue, channelLabels, connect, disconnect, freshName, inflowsOf, newWorkflow, rateOf, removeNode, renameStep, setBranch, stepIssues, toInflows, unskilled, wouldCycle } from "@/components/process/graph";
 
 import { autoLayout, fillLayout } from "@/components/process/layout";
-import { type Company, type Scenario, type Workflow, checkCompany, checkScenarios, headcount, idFor, mergeWindows, renameDepartment, renameInScenarios, renameSystem, scenarioRefs, setMultiplier, slug, splitAt, windowsOf, firstColumn, parseHoursList } from "@/lib/company";
+import { type Company, type Scenario, type Schedule, type Workflow, checkCompany, checkScenarios, editAbsence, headcount, idFor, mergeWindows, orderWindows, renameDepartment, renameInScenarios, renameSystem, sameEveryDay, scenarioRefs, setDayHours, setMultiplier, slug, splitAt, windowsOf, firstColumn, parseDayList, parseHoursList, runDays, weekdays9to5 } from "@/lib/company";
 import type { SimEvent } from "@/lib/api";
 import { snapshot } from "@/lib/playback";
+import { addScenario, budgetIssue, demandSweep, firstResource, jobConfig, parsePercents, staffSweep, sweepRows } from "@/lib/sweep";
+import { csvText, realityRows, resultsCsv, setActual, topWaits } from "@/lib/results";
+import { applyPeople, importedRows, parseDays, parsePeopleCsv, parseTable } from "@/lib/people-csv";
+import { COALESCE_MS, HISTORY_CAP, emptyHistory, record, redo, shouldAutosave, undo, undoKey } from "@/lib/history";
 
 const sched = { weekday_hours: { "0": [9, 17] as [number, number] } };
 const c: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
@@ -352,6 +356,312 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   const held = snapshot([{ t: 0, kind: "TASK_QUEUED", task_id: "k", instance_id: null, workflow_id: null, step_id: "s", department_id: "a", resource_id: null, system_id: null, reason: "BATCH_HOLD", payload: {} }], 5);
   assert.equal(held.tasks[0].state, "QUEUED"); assert.equal(held.tasks[0].reason, "BATCH_HOLD");
   assert.deepEqual(held.perDept, { a: { QUEUED: 1, IN_PROGRESS: 0, BLOCKED: 0 } });
+}
+
+{
+  // undo history: edits within the window are one step, a gap starts a new one
+  let h = emptyHistory<number>();
+  h = record(h, 0, 1000);
+  h = record(h, 1, 1000 + COALESCE_MS - 1);
+  h = record(h, 2, 1000 + 2 * COALESCE_MS - 2);
+  assert.deepEqual(h.past, [0]);
+  h = record(h, 3, 1000 + 4 * COALESCE_MS);
+  assert.deepEqual(h.past, [0, 3]);
+  // undo then redo round-trips; an edit right after an undo is its own step and clears redo
+  const u = undo(h, 4)!;
+  assert.equal(u.state, 3); assert.deepEqual(u.history.future, [4]);
+  const r = redo(u.history, 3)!;
+  assert.equal(r.state, 4); assert.deepEqual(r.history.past, [0, 3]); assert.deepEqual(r.history.future, []);
+  const edited = record(u.history, 3, 1000 + 4 * COALESCE_MS + 1);
+  assert.deepEqual(edited.future, []); assert.deepEqual(edited.past, [0, 3]);
+  assert.equal(undo(emptyHistory<number>(), 1), null);
+  assert.equal(redo(emptyHistory<number>(), 1), null);
+  // capped, oldest dropped
+  let big = emptyHistory<number>();
+  for (let i = 0; i < HISTORY_CAP + 10; i++) big = record(big, i, (i + 1) * 10 * COALESCE_MS);
+  assert.equal(big.past.length, HISTORY_CAP); assert.equal(big.past[0], 10);
+
+  const key = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) => undoKey({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...m });
+  assert.equal(key("z", { ctrlKey: true }), "undo"); assert.equal(key("z", { metaKey: true }), "undo");
+  assert.equal(key("Z", { ctrlKey: true, shiftKey: true }), "redo"); assert.equal(key("Z", { metaKey: true, shiftKey: true }), "redo");
+  assert.equal(key("y", { ctrlKey: true }), "redo");
+  assert.equal(key("y", { metaKey: true }), null); assert.equal(key("z"), null); assert.equal(key("z", { ctrlKey: true, altKey: true }), null);
+
+  // autosave only for a saved draft with this id, a writer, and a real edit that has not just failed
+  const ok = { companyId: "a", selected: "a", canWrite: true, sync: { rev: 2, saved: 1 }, failedRev: null, saving: false };
+  assert.equal(shouldAutosave(ok), true);
+  assert.equal(shouldAutosave({ ...ok, selected: "b" }), false); // the id changed through an edit
+  assert.equal(shouldAutosave({ ...ok, selected: "" }), false);
+  assert.equal(shouldAutosave({ ...ok, canWrite: false }), false);
+  assert.equal(shouldAutosave({ ...ok, sync: { rev: 2, saved: 2 } }), false);
+  assert.equal(shouldAutosave({ ...ok, sync: { rev: 0, saved: -1 } }), false); // restored dirty draft: nothing until an edit
+  assert.equal(shouldAutosave({ ...ok, failedRev: 2 }), false);
+  assert.equal(shouldAutosave({ ...ok, failedRev: 1 }), true);
+  assert.equal(shouldAutosave({ ...ok, saving: true }), false);
+
+  // run-days count the warm-up
+  assert.equal(runDays({ days: 10, replications: 5 }, 2), 100);
+  assert.equal(runDays({ days: 10, warmup_days: 0, replications: 5 }, 2), 100);
+  assert.equal(runDays({ days: 10, warmup_days: 5, replications: 2 }, 3), 90);
+}
+
+{ // decision sweep: scenarios on top of the base overlays, new employee copied from the department's first resource
+  const hours = { "0": [8, 12] as [number, number] };
+  const co: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
+    { id: "ops", name: "Ops", resources: [
+      { id: "p", skills: ["s"], cost_per_hour: 20, schedule: { weekday_hours: hours, absences: [[0, 60]] }, headcount: 4, overtime_rate: 1.5 },
+      { id: "m", skills: ["s"], cost_per_hour: 25, schedule: null, pool_id: "p" },
+    ] },
+    { id: "empty", name: "Empty", resources: [] },
+  ] };
+  const base: Scenario = { id: "b", name: "B", overlays: [{ type: "arrival_multiplier", factor: 2, workflow_id: null }] };
+  const pts = staffSweep(co, base, "ops", 2);
+  assert.deepEqual(pts.map((p) => [p.value, p.label]), [[1, "+1"], [2, "+2"]]);
+  assert.equal(pts[1].scenario.overlays.length, 3);
+  assert.deepEqual(pts[1].scenario.overlays[0], base.overlays[0]);
+  const hire = pts[0].scenario.overlays[1];
+  assert.ok(hire.type === "add_employee");
+  assert.deepEqual(hire.employee, { id: "ops_sweep_1", name: "New hire 1", skills: ["s"], cost_per_hour: 20, speed_factor: 1, schedule: { weekday_hours: hours }, overtime_rate: 1.5 }); // a pool becomes one person, absences stay behind
+  assert.equal(new Set(pts.map((p) => p.scenario.id)).size, 2);
+  assert.ok(pts.every((p) => p.scenario.id !== base.id));
+  assert.deepEqual(staffSweep(co, base, "empty", 2), []);
+  assert.doesNotThrow(() => checkScenarios(pts.map((p) => p.scenario)));
+  // a member inherits the pool's schedule; the base scenario's removals and additions decide who is first
+  const noPool: Scenario = { id: "b", name: "B", overlays: [{ type: "remove_resource", resource_id: "p" }] };
+  assert.equal(firstResource(co, noPool, "ops")?.id, "m");
+  const fromMember = staffSweep(co, noPool, "ops", 1)[0].scenario.overlays[1];
+  assert.ok(fromMember.type === "add_employee");
+  assert.deepEqual(fromMember.employee.schedule, { weekday_hours: hours });
+  assert.equal(fromMember.employee.cost_per_hour, 25);
+  const added: Scenario = { id: "b", name: "B", overlays: [{ type: "add_employee", department_id: "empty", employee: { id: "ops_sweep_1", skills: ["t"], cost_per_hour: 1, schedule: null } }] };
+  const onAdded = staffSweep({ ...co, departments: [co.departments[0], { id: "empty", name: "Empty", resources: [{ id: "ops_sweep_1", skills: ["t"], cost_per_hour: 1, schedule: sched }] }] }, added, "ops", 1)[0].scenario.overlays[1];
+  assert.ok(onAdded.type === "add_employee");
+  assert.equal(onAdded.employee.id, "ops_sweep_1_2"); // never an id the company or base already has
+
+  assert.deepEqual(parsePercents("+10%, 20 -5%;20,0"), [-5, 10, 20]);
+  assert.deepEqual(parsePercents("  "), []);
+  assert.equal(parsePercents("-100"), null);
+  assert.equal(parsePercents("ten"), null);
+  const dem = demandSweep(base, [-5, 10], "w");
+  assert.deepEqual(dem.map((p) => p.label), ["-5%", "+10%"]);
+  assert.deepEqual(dem[1].scenario.overlays, [base.overlays[0], { type: "arrival_multiplier", factor: 1.1, workflow_id: "w" }]);
+  assert.equal((demandSweep(base, [10], null)[0].scenario.overlays[1] as { workflow_id: unknown }).workflow_id, null);
+
+  const cfg = { seed: 1, days: 10, replications: 5, policy: "fifo", crn: false, include_events: true, save: true };
+  assert.deepEqual(JSON.parse(JSON.stringify(jobConfig({ ...cfg, warmup_days: 2 }))), { seed: 1, days: 10, warmup_days: 2, replications: 5, policy: "fifo", crn: true }); // no store-only flags: the API refuses unknown keys
+  assert.equal(budgetIssue(cfg, 40), null); // exactly 2000 run-days fits
+  assert.match(budgetIssue(cfg, 41)!, /run-days/);
+  assert.match(budgetIssue({ ...cfg, warmup_days: 1 }, 40)!, /11 days/); // warm-up counts
+  assert.match(budgetIssue({ ...cfg, days: 0.5, replications: 100 }, 5)!, /500 runs/);
+
+  // the id is unique against the draft at add time
+  const draft: Scenario[] = [{ id: "optimized", name: "o", overlays: [] }];
+  assert.deepEqual(addScenario(draft, { id: "optimized", name: "n", overlays: [] }).map((s) => s.id), ["optimized", "optimized_2"]);
+  assert.equal(addScenario(draft, { id: "new", name: "n", overlays: [] })[1].id, "new");
+
+  // chart rows: value order with the base at 0; a response without the newer fields does not crash
+  const st = (mean: number) => ({ mean, p10: mean, p50: mean, p90: mean });
+  const sr = (id: string, mean: number, extra = {}) => ({ id, name: id, summary: { k: st(mean) }, ledger: [], off_shift_minutes: 0, runs: [], ...extra });
+  const down = demandSweep(base, [-5, 10], null);
+  const res = { disclaimer: "", kpi_keys: ["k"], scenarios: [sr("b", 1), sr(down[0].scenario.id, 2, { comparison: { k: { delta: 1, ci_low: 0.5, ci_high: 1.5, significant: true } } }), sr(down[1].scenario.id, 3)] };
+  const rows = sweepRows(down, res, "k");
+  assert.deepEqual(rows.map((r) => r.label), ["-5%", "Base", "+10%"]);
+  assert.equal(rows[0].comparison?.significant, true);
+  assert.equal(rows[2].comparison, undefined);
+  assert.equal(sweepRows(down, res, "gone")[1].stat, undefined);
+}
+
+{ // CSV export: rows, escapes, formula prefixes in text but not in numbers
+  assert.equal(csvText("plain"), "plain");
+  assert.equal(csvText('a,"b"'), '"a,""b"""');
+  assert.equal(csvText("line\nbreak"), '"line\nbreak"');
+  for (const bad of ["=SUM(A1)", "+1", "-1", "@x", " =x", "\tx"]) assert.ok(csvText(bad).replace(/^"/, "").startsWith("'"), bad);
+  assert.equal(csvText("=a,b"), `"'=a,b"`);
+  const s0 = { id: "a", name: "=Base, one", summary: { k: { mean: -1.5, p10: 1, p50: 2, p90: 3, ci_low: -2, ci_high: -1 } }, ledger: [], off_shift_minutes: 0, runs: [] };
+  const s1 = { ...s0, id: "b", name: "Old", summary: { k: { mean: 2, p10: 1, p50: 2, p90: 3 } }, comparison: { k: { delta: 3.5, ci_low: 1, ci_high: 6, significant: true } } };
+  const lines = resultsCsv({ disclaimer: "", kpi_keys: ["k", "gone"], scenarios: [s0, s1] }).split("\r\n");
+  assert.equal(lines[0], "scenario,kpi,mean,ci_low,ci_high,p10,p50,p90,delta,significant");
+  assert.equal(lines[1], `"'=Base, one",k,-1.5,-2,-1,1,2,3,,`); // numbers stay numeric, also when negative
+  assert.equal(lines[2], `"'=Base, one",gone,,,,,,,,`);
+  assert.equal(lines[3], "Old,k,2,,,1,2,3,3.5,true");
+  assert.equal(lines[5], "");
+
+  // reality check
+  const summary = { a: { mean: 10, p10: 0, p50: 0, p90: 0, ci_low: 8, ci_high: 12 }, b: { mean: 10, p10: 0, p50: 0, p90: 0 }, one: { mean: 10, p10: 0, p50: 0, p90: 0, ci_low: 10, ci_high: 10 } };
+  const r = realityRows(["a", "b", "one", "none"], summary, { a: 12, b: 3, one: 11, none: 5 });
+  assert.equal(r[0].verdict, "inside"); assert.equal(r[0].diff, -2);
+  assert.equal(realityRows(["a"], summary, { a: 12.5 })[0].verdict, "outside");
+  assert.equal(r[1].verdict, undefined); assert.equal(r[1].diff, 7); // an old run has no interval
+  assert.equal(r[2].verdict, undefined); // one replication: nothing to be inside of
+  assert.equal(r[3].stat, undefined); assert.equal(r[3].actual, 5);
+  assert.equal(realityRows(["a"], summary, undefined)[0].diff, undefined);
+  const co: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [] };
+  const one = setActual(co, "a", 2);
+  assert.deepEqual(one.actuals, { a: 2 });
+  assert.deepEqual(setActual(one, "b", 0).actuals, { a: 2, b: 0 }); // 0 is a value
+  assert.equal("actuals" in setActual(one, "a", undefined), false);
+
+  const row = (minutes: number) => ({ department_id: "d", reason: null, blocker_id: null, minutes, count: 1 });
+  assert.deepEqual(topWaits([row(1), row(3), row(2)], 2).map((x) => x.minutes), [3, 2]);
+}
+
+{ // People CSV
+  assert.deepEqual(parseDays("Mon-Fri"), [0, 1, 2, 3, 4]);
+  assert.deepEqual(parseDays("0-4"), [0, 1, 2, 3, 4]);
+  assert.deepEqual(parseDays("sat, Sunday"), [5, 6]);
+  assert.deepEqual(parseDays("Fri-Mon"), [0, 4, 5, 6]);
+  assert.deepEqual(parseDays("Mon - Wed"), [0, 1, 2]);
+  assert.equal(parseDays("7"), null); assert.equal(parseDays("Mon-"), null); assert.equal(parseDays("Mon-Tue-Wed"), null); assert.equal(parseDays("someday"), null);
+
+  // tokenizer: BOM, CRLF, CR, quotes, embedded delimiters and newlines, blank rows, line numbers
+  const t = parseTable('﻿a,b\r\n\r\n"x, ""y""","l1\nl2"\r\n q ,\rz,w');
+  assert.deepEqual(t.rows.map((r) => r.cells), [["a", "b"], ['x, "y"', "l1\nl2"], ["q", ""], ["z", "w"]]);
+  assert.deepEqual(t.rows.map((r) => r.line), [1, 3, 5, 6]);
+  assert.equal(parseTable('a,b\n"open,1').open, 2);
+  assert.deepEqual(parseTable("a;b;c,d\n1;2;3,4").rows[0].cells, ["a", "b", "c,d"]); // the delimiter is the commonest one in the header
+  assert.deepEqual(parseTable("a\tb\n1\t2").rows[1].cells, ["1", "2"]);
+
+  const hours = { "0": [8, 16] as [number, number] };
+  const co: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
+    { id: "ops", name: "Operations", resources: [
+      { id: "pool", skills: ["s"], cost_per_hour: 1, schedule: sched, headcount: 3 },
+      { id: "ann_lee", name: "Ann Lee", skills: ["s"], cost_per_hour: 10, speed_factor: 2, schedule: { weekday_hours: hours, absences: [[0, 60]] } },
+      { id: "mem", name: "Mem", skills: ["s"], cost_per_hour: 5, schedule: null, pool_id: "pool" },
+    ] },
+    { id: "sales", name: "Sales", resources: [] },
+  ] };
+  const plan = (text: string, opts = {}) => parsePeopleCsv(text, co, opts);
+  const err = (text: string, opts = {}) => plan(`name,department,skills,id,start,end,days,cost_per_hour,speed_factor,overtime_rate\n${text}`, opts).rows[0].errors.join("|");
+
+  // file-level problems
+  assert.match(plan("").error!, /header/);
+  assert.match(plan("name,skills\nA,x").error!, /Missing column: department/);
+  assert.match(plan("name,name,department,skills\n").error!, /twice/);
+  assert.match(plan('name,department,skills\n"A,Sales,x').error!, /never closed/);
+  assert.match(plan(`name,department,skills\n${"A,Sales,x\n".repeat(5001)}`).error!, /5001 rows.*5000/);
+  assert.equal(plan(`name,department,skills\n${"A,Sales,x\n".repeat(5000)}`).error, null);
+  assert.deepEqual(plan("Name,DEPARTMENT, Skills ,badge\nA,Sales,x,1").warnings, ["Ignored column: badge."]);
+  assert.equal(plan("Name,DEPARTMENT, Skills \nA,Sales,x").rows[0].status, "new"); // headers are case-insensitive
+  assert.equal(plan("name,department,skills\n").rows.length, 0);
+  assert.match(plan("name,department,skills\nAy�e,Sales,x").warnings[0], /UTF-8/);
+
+  // a new person with defaults, by department id or name in any case, Excel's semicolons and BOM
+  const excel = plan('﻿name;department;skills;cost_per_hour\r\n"Ayşe Kaya";SALES;"quote;order; quote";12,5\r\n');
+  const ayse = excel.rows[0];
+  assert.deepEqual(ayse, { line: 2, name: "Ayşe Kaya", id: "ayse_kaya", department: "SALES", deptId: "sales", deptName: "Sales", newDept: false, errors: [], status: "new",
+    fields: { skills: ["quote", "order"], cost_per_hour: 12.5 } });
+  assert.equal(plan("name\tdepartment\tskills\nB\toperations\tx").rows[0].deptId, "ops");
+  const applied = applyPeople(co, excel, "skip").departments[1].resources[0];
+  assert.deepEqual(applied, { id: "ayse_kaya", name: "Ayşe Kaya", skills: ["quote", "order"], cost_per_hour: 12.5, schedule: weekdays9to5() });
+
+  // row-level errors
+  assert.match(err(",Sales,x"), /name is empty/);
+  assert.match(err("A,,x"), /department is empty/);
+  assert.match(err("A,Nowhere,x"), /unknown department "Nowhere"/);
+  for (const bad of ["-1", "Infinity", "NaN", "1e999", "abc", "0x10", "1,000"]) assert.match(err(`A,Sales,x,,,,,"${bad}"`), /cost_per_hour/, bad);
+  assert.match(err("A,Sales,x,,,,,,0"), /speed_factor: must be above 0/);
+  assert.match(err("A,Sales,x,,,,,,,0.5"), /overtime_rate: must be 1 or more/);
+  assert.match(err("A,Sales,x,,24"), /start: must be/);
+  assert.match(err("A,Sales,x,,-1"), /start: must be/);
+  assert.match(err("A,Sales,x,,10,9"), /end: must be after 10/);
+  assert.match(err("A,Sales,x,,10,35"), /end: must be after 10 and at most 34/);
+  assert.match(err("A,Sales,x,,18"), /end: must be after 18/); // the default end does not fit
+  assert.match(err("A,Sales,x,,,,Funday"), /days:/);
+  assert.match(err("A,Sales,x,???"), /no letters or digits/);
+  assert.match(err("A,Sales,x,pool"), /belongs to a pool/);
+  assert.match(err("A,Sales,x,hired", { reserved: ["hired"] }), /added by a scenario/);
+  assert.match(plan("name,department,skills\nA,Sales,x,extra").rows[0].errors[0], /4 cells but 3 columns/);
+
+  // schedules
+  const sch = (cells: string) => plan(`name,department,skills,start,end,days\nA,Sales,x,${cells}`).rows[0].fields.schedule;
+  assert.equal(sch(",,"), undefined);
+  assert.deepEqual(sch("8,12,Sat"), { weekday_hours: { "5": [8, 12] } });
+  assert.deepEqual(sch("22,30,0"), { weekday_hours: { "0": [22, 30] } }); // overnight
+  assert.deepEqual(sch("8:30,17:15,0"), { weekday_hours: { "0": [8.5, 17.25] } });
+  assert.deepEqual(sch(",,0-1"), { weekday_hours: { "0": [9, 17], "1": [9, 17] } });
+  assert.deepEqual(sch("10,,"), { weekday_hours: Object.fromEntries([0, 1, 2, 3, 4].map((d) => [String(d), [10, 17]])) });
+
+  // ids: from the name, unique in the file and against pools and scenarios; explicit ones checked
+  const ids = (text: string, opts = {}) => plan(text, opts).rows.map((r) => r.id);
+  assert.deepEqual(ids("name,department,skills\nBo Li,Sales,x\nBo Li,Sales,x\nPool,Sales,x\nHired,Sales,x", { reserved: ["hired"] }), ["bo_li", "bo_li_2", "pool_2", "hired_2"]);
+  assert.equal(ids("name,department,skills\n李,Sales,x")[0], "emp"); // no latin letters in the name
+  assert.match(plan("name,department,skills,id\nA,Sales,x,dup\nB,Sales,x,DUP").rows[1].errors[0], /already used on line 2/);
+  assert.equal(ids("name,department,skills,id\nA,Sales,x,Mr. X")[0], "mr_x");
+
+  // re-import: an explicit choice, a skip changes nothing, an update only what is filled
+  const again = plan("name,department,skills,id,cost_per_hour\nAnn L,Sales,,ann_lee,30\nNew One,Sales,x,,\n");
+  assert.deepEqual(again.rows.map((r) => r.status), ["existing", "new"]);
+  assert.equal(importedRows(again, "skip").length, 1);
+  assert.equal(importedRows(again, "update").length, 2);
+  const skipped = applyPeople(co, again, "skip");
+  assert.deepEqual(skipped.departments[0], co.departments[0]);
+  assert.equal(skipped.departments[1].resources.length, 1);
+  const upd = applyPeople(co, again, "update");
+  const ann = upd.departments[1].resources[0];
+  assert.deepEqual(JSON.parse(JSON.stringify(ann)), { id: "ann_lee", name: "Ann L", skills: ["s"], cost_per_hour: 30, speed_factor: 2, schedule: { weekday_hours: hours, absences: [[0, 60]] } });
+  assert.equal(upd.departments[0].resources.length, 2); // moved, not copied
+  assert.equal(headcount(upd), headcount(co) + 1);
+  // an update with hours keeps the absences; a pool member moved away leaves the pool
+  const hoursUpd = applyPeople(co, plan("name,department,skills,id,start,end\nAnn,ops,,ann_lee,7,11"), "update").departments[0].resources[1];
+  assert.deepEqual(hoursUpd.schedule, { weekday_hours: Object.fromEntries([0, 1, 2, 3, 4].map((d) => [String(d), [7, 11]])), absences: [[0, 60]] });
+  const memberMoved = applyPeople(co, plan("name,department,skills,id\nMem,Sales,,mem"), "update");
+  assert.equal(memberMoved.departments[1].resources[0].pool_id, undefined);
+  assert.equal(memberMoved.departments[0].resources[0].headcount, 2);
+
+  // missing departments: an error unless asked for, one per name, only when a row really imports
+  const mk = plan("name,department,skills\nA,Field Team,x\nB,field team,x\nC,Lab,x", { createMissing: true });
+  assert.deepEqual(mk.rows.map((r) => [r.deptId, r.newDept]), [["field_team", true], ["field_team", true], ["lab", true]]);
+  const made = applyPeople(co, mk, "skip");
+  assert.deepEqual(made.departments.slice(2).map((d) => [d.id, d.name, d.resources.length]), [["field_team", "Field Team", 2], ["lab", "Lab", 1]]);
+  assert.equal(plan("name,department,skills\nA,Sales Dept,x\n", { createMissing: true }).rows[0].deptId, "sales_dept");
+  assert.equal(parsePeopleCsv("name,department,skills\nA,S X,x", { ...co, departments: [{ id: "s_x", name: "Other", resources: [] }] }, { createMissing: true }).rows[0].deptId, "s_x_2");
+  const withBad = plan("name,department,skills,cost_per_hour\nA,Lab,x,-1\n", { createMissing: true });
+  assert.equal(applyPeople(co, withBad, "skip"), co); // error rows change nothing, not even a department
+  // cell text stays data
+  const html = plan('name,department,skills\n"<img src=x onerror=1>",Sales,"<b>"').rows[0];
+  assert.equal(html.name, "<img src=x onerror=1>"); assert.equal(html.id, "img_src_x_onerror_1");
+  checkCompany(applyPeople(co, excel, "skip"));
+}
+
+{ // forms: per-day hours round trip, new company fields, absences, holiday day numbers
+  const mixed: Schedule = { weekday_hours: { "0": [9, 17], "1": [[8.5, 12], [13, 17.25]], "5": [[1, 2], [3, 4], [5, 6]] }, absences: [[0, 60]] };
+  const copy = JSON.stringify(mixed);
+  assert.equal(sameEveryDay(mixed), false); // opens in per-day mode
+  const edited = setDayHours(mixed, "0", [[10, 17]]);
+  assert.equal(JSON.stringify(mixed), copy);
+  assert.deepEqual(edited, { ...mixed, weekday_hours: { ...mixed.weekday_hours, "0": [10, 17] } }); // other shapes, fractions and absences untouched
+  assert.deepEqual(setDayHours(mixed, "1", [[8.5, 12], [13, 18]]).weekday_hours["1"], [[8.5, 12], [13, 18]]);
+  assert.deepEqual(setDayHours(mixed, "5", null).weekday_hours, { "0": [9, 17], "1": mixed.weekday_hours["1"] });
+  assert.deepEqual(setDayHours(setDayHours(mixed, "2", [[9, 12]]), "2", null), mixed);
+  assert.equal(sameEveryDay({ weekday_hours: { "0": [9, 17], "1": [[9, 17]] } }), true); // a bare pair is one window
+  assert.equal(sameEveryDay({ weekday_hours: {} }), true);
+  assert.equal(sameEveryDay({ weekday_hours: { "0": [[1, 2], [3, 4], [5, 6]] } }), false); // three windows only fit per day
+  assert.equal(sameEveryDay({ weekday_hours: { "0": [] } }), false);
+  assert.deepEqual(orderWindows([[9.5, 9.5], [9, 20]], 0.25), [[9.5, 9.75], [9.75, 20]]);
+  assert.deepEqual(orderWindows([[9.5, 17.5]], 1), [[9, 17]]);
+
+  const base = { id: "x", name: "x", departments: [] };
+  assert.deepEqual(checkCompany({ ...base, holidays: [0, 7], actuals: { a: 0.5 } }).holidays, [0, 7]);
+  for (const bad of [{ holidays: 3 }, { holidays: [1.5] }, { holidays: [-1] }, { holidays: ["1"] }, { actuals: [] }, { actuals: { a: "1" } }, { actuals: { a: null } }]) assert.throws(() => checkCompany({ ...base, ...bad }), JSON.stringify(bad));
+  const person = (schedule: unknown) => ({ ...base, departments: [{ id: "d", name: "d", resources: [{ id: "r", skills: [], cost_per_hour: 1, schedule }] }] });
+  checkCompany(person({ weekday_hours: {}, absences: [[0, 60]] }));
+  assert.throws(() => checkCompany(person({ weekday_hours: {}, absences: 5 })), /absences/);
+  assert.throws(() => checkCompany(person({ weekday_hours: {}, absences: [[0]] })), /absences/);
+  const wfWith = (x: object) => ({ ...base, workflows: [{ id: "w", name: "w", steps: [], ...x }] });
+  const win = { rate_per_hour: 1, window: { weekday_hours: {} } };
+  checkCompany(wfWith({ arrival: { ...win, initial_backlog: 5 } }));
+  assert.throws(() => checkCompany(wfWith({ arrival: { ...win, initial_backlog: -1 } })), /initial_backlog/);
+  assert.throws(() => checkCompany(wfWith({ inflows: [{ ...win, id: "i", entry: [], initial_backlog: 1.5 }] })), /initial_backlog/);
+
+  assert.deepEqual(parseDayList("12, 5;5 40"), [5, 12, 40]);
+  assert.deepEqual(parseDayList(" "), []);
+  for (const bad of ["-1", "1.5", "x", "36501"]) assert.equal(parseDayList(bad), null, bad);
+  assert.equal(parseDayList(Array.from({ length: 367 }, (_, i) => i).join(",")), null);
+
+  assert.deepEqual(editAbsence([600, 1020], "start", 0, 9), [540, 1020]);
+  assert.deepEqual(editAbsence([600, 1020], "end", 1, 0), [600, 1440]);
+  assert.deepEqual(editAbsence([600, 1020], "start", 2, 0), [2880, 2940]); // start past the end: the end follows
+  assert.deepEqual(editAbsence([600, 1020], "end", 0, 1), [600, 660]);
 }
 
 console.log("ok");

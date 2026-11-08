@@ -8,10 +8,12 @@ import { FlowStrip } from "@/components/dashboard/flow";
 import { Gauge } from "@/components/dashboard/health";
 import { healthScores } from "@/components/dashboard/derive";
 import { OrgMap } from "@/components/dashboard/org-map";
+import { GettingStarted } from "@/components/getting-started";
 import { Hint } from "@/components/hint";
 import { StatCard } from "@/components/page";
 import { buttonVariants } from "@/components/ui/button";
 import { accent } from "@/components/org/parts";
+import { runDays as countRunDays } from "@/lib/company";
 import { useTwin } from "@/lib/store";
 
 const TILES = [["throughput_per_day", Activity], ["cycle_p50", Timer], ["mean_dept_utilization", GaugeIcon]] as const;
@@ -29,11 +31,12 @@ export default function Overview() {
   const health = healthScores(base?.summary);
   // the what-if card shows the scenario that moves throughput the most
   const spotlight = base && others.length ? others.reduce((a, b) => (Math.abs((b.summary.throughput_per_day?.mean ?? 0) - (base.summary.throughput_per_day?.mean ?? 0)) > Math.abs((a.summary.throughput_per_day?.mean ?? 0) - (base.summary.throughput_per_day?.mean ?? 0)) ? b : a)) : undefined;
-  const runDays = config.days * config.replications * scenarios.length;
+  const runDays = countRunDays(config, scenarios.length);
 
   return (
     <div className="grid gap-4 lg:grid-cols-12">
       <h1 className="sr-only">Overview</h1>
+      <GettingStarted />
       <Panel icon={Network} title="Organization System" subtitle="Inflows, departments, systems and hand-offs" href="/organization" linkLabel="View details" className="lg:col-span-7" contentClassName="flex flex-1 flex-col justify-center">
         <OrgMap company={company} />
       </Panel>
@@ -113,7 +116,7 @@ export default function Overview() {
                 {WHAT_IF.map((k) => (
                   <li key={k} className="flex items-center justify-between gap-2 py-1.5 text-xs">
                     <span className="text-muted-foreground">{KPI_LABEL[k]}</span>
-                    <Delta k={k} value={spotlight.summary[k]?.mean} base={base.summary[k]?.mean} />
+                    <Delta k={k} value={spotlight.summary[k]?.mean} base={base.summary[k]?.mean} cmp={spotlight.comparison?.[k]} />
                   </li>
                 ))}
               </ul>

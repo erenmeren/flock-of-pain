@@ -35,11 +35,11 @@ export type Step = {
   patience?: Dist; // minutes a queued task waits before the item is abandoned
 };
 export type Pos = [number, number];
-export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[]; profile?: Profile };
+export type Inflow = { id: string; name: string; rate_per_hour: number; window: Schedule; entry: string[]; profile?: Profile; initial_backlog?: number };
 export type Workflow = {
   id: string;
   name: string;
-  arrival?: { rate_per_hour: number; window: Schedule; profile?: Profile }; // an arrival or inflows, never both
+  arrival?: { rate_per_hour: number; window: Schedule; profile?: Profile; initial_backlog?: number }; // an arrival or inflows, never both
   cutoff_hour?: number; // an instance is due at the next time of day with this hour
   inflows?: Inflow[];
   layout?: Record<string, Pos>; // canvas positions by step/inflow id
@@ -53,6 +53,8 @@ export type Company = {
   departments: Department[];
   workflows: Workflow[];
   outages?: Outage[];
+  holidays?: number[]; // day numbers from time zero
+  actuals?: Record<string, number>; // observed KPI values, for the reality check; the engine ignores them
 };
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -79,6 +81,32 @@ export function mergeWindows(s: Schedule): Schedule {
     const ws = windowsOf(v);
     return [k, ws.length ? [ws[0][0], ws[ws.length - 1][1]] as Hours : v];
   })) };
+}
+
+/** Every working day has the same one or two windows, so the simple form shows it without loss. */
+export const sameEveryDay = (s: Schedule) => {
+  const all = Object.values(s.weekday_hours).map(windowsOf);
+  return all.every((w) => JSON.stringify(w) === JSON.stringify(all[0]) && (w.length === 1 || w.length === 2));
+};
+
+/** Loader rule: start < end <= start + 24, windows in order without overlap. `step` 1 snaps to whole hours; a finer step keeps the data's fractions. */
+export function orderWindows(ws: Hours[], step: number): Hours[] {
+  const snap = step === 1 ? Math.floor : (x: number) => x;
+  const within = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  let lo = 0;
+  return ws.map(([s, e]) => {
+    s = within(snap(s), lo, 24 - step);
+    e = within(snap(e), s + step, s + 24);
+    lo = e;
+    return [s, e];
+  });
+}
+
+/** One weekday's windows set, or the day removed when null; every other day and the absences stay exactly as stored. */
+export function setDayHours(s: Schedule, day: string, ws: Hours[] | null): Schedule {
+  const weekday_hours = { ...s.weekday_hours };
+  if (ws) { const out = orderWindows(ws, 0.25); weekday_hours[day] = out.length === 1 ? out[0] : out; } else delete weekday_hours[day];
+  return { ...s, weekday_hours };
 }
 
 /** Profile with `key`'s multiplier at `k` set; values of 1 are dropped and an all-1 profile is undefined. */
@@ -122,6 +150,12 @@ export function checkCompany(c: unknown): Company {
         && typeof i.rate_per_hour === "number" && isObj(i.window) && hoursOk(i.window.weekday_hours))))
       && (w.layout === undefined || (isObj(w.layout) && Object.values(w.layout).every((v) => Array.isArray(v) && v.length === 2)))))
     throw new Error("workflows must be a list of objects with steps, durations and an arrival or inflows");
+  const backlogOk = (x: unknown) => x === undefined || (isObj(x) && (x.initial_backlog === undefined || (Number.isInteger(x.initial_backlog) && (x.initial_backlog as number) >= 0)));
+  if (!out.workflows.every((w) => backlogOk(w.arrival) && (w.inflows ?? []).every(backlogOk))) throw new Error("initial_backlog must be a whole number >= 0");
+  if (out.holidays !== undefined && !(Array.isArray(out.holidays) && out.holidays.every((h) => Number.isInteger(h) && h >= 0)))
+    throw new Error("holidays must be a list of whole day numbers >= 0");
+  if (out.actuals !== undefined && !(isObj(out.actuals) && Object.values(out.actuals).every(Number.isFinite)))
+    throw new Error("actuals must map KPI names to numbers");
   if (out.outages !== undefined && !(Array.isArray(out.outages) && out.outages.every((o) => Array.isArray(o) && o.length === 3)))
     throw new Error("outages must be a list of [system_id, start, end]");
   for (const d of out.departments) {
@@ -132,6 +166,8 @@ export function checkCompany(c: unknown): Company {
         throw new Error(`resource ${r.id}: overtime_rate must be a number >= 1`);
       if (r.schedule != null && (!isObj(r.schedule) || !hoursOk(r.schedule.weekday_hours)))
         throw new Error("schedule needs weekday_hours of [start, end] pairs or lists of them");
+      if (r.schedule?.absences !== undefined && !(Array.isArray(r.schedule.absences) && r.schedule.absences.every(pair)))
+        throw new Error(`resource ${r.id}: absences must be a list of [start, end] minutes`);
     }
   }
   const depts = new Set(out.departments.map((d) => d.id)), systems = new Set(out.systems.map((s) => s.id));
@@ -198,6 +234,21 @@ export function parseHoursList(text: string): number[] | null {
   return hs.every((h) => Number.isFinite(h) && h >= 0 && h < 24) ? [...new Set(hs)].sort((a, b) => a - b) : null;
 }
 
+/** "12, 5;40" as sorted distinct holiday day numbers; [] for an empty box, null when a value is not a whole number the API accepts. */
+export function parseDayList(text: string): number[] | null {
+  const ds = text.split(/[,;\s]+/).filter(Boolean).map(Number);
+  if (!ds.every((d) => Number.isInteger(d) && d >= 0 && d <= 36500)) return null;
+  const out = [...new Set(ds)].sort((a, b) => a - b);
+  return out.length <= 366 ? out : null;
+}
+
+/** An absence with its start or end set to a day and hour; an end that would not follow the start lands an hour after it. */
+export function editAbsence([start, end]: Hours, part: "start" | "end", day: number, hour: number): Hours {
+  const m = day * 1440 + hour * 60;
+  if (part === "start") return [m, end > m ? end : m + 60];
+  return [start, m > start ? m : start + 60];
+}
+
 const isNumOrDate = (x: string) => (x.trim() !== "" && Number.isFinite(Number(x))) || !Number.isNaN(Date.parse(x));
 /** First cell of every non-empty CSV line (comma, semicolon or tab separated); a first row that is neither a number nor a date is a header and dropped. */
 export function firstColumn(text: string): string[] {
@@ -259,3 +310,6 @@ export function scenarioRefs(scenarios: Scenario[]): { departments: Set<string>;
 export function headcount(c: Company): number {
   return c.departments.flatMap((d) => d.resources).reduce((n, r) => n + (r.headcount !== undefined ? r.headcount : r.pool_id ? 0 : 1), 0);
 }
+
+/** Days the API simulates and budgets: the warm-up runs in addition to the measured days, in every replication of every scenario. */
+export const runDays = (c: { days: number; warmup_days?: number; replications: number }, scenarios: number) => (c.days + (c.warmup_days ?? 0)) * c.replications * scenarios;

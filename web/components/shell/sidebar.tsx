@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, FlaskConical, LayoutDashboard, Network, Play, Settings, Workflow } from "lucide-react";
+import { BarChart3, FlaskConical, LayoutDashboard, Network, Play, Scale, Settings, Workflow } from "lucide-react";
 import { cn } from "cn";
 import { useMounted, useTwin } from "@/lib/store";
 
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/processes", label: "Processes", icon: Workflow },
   { href: "/simulation", label: "Simulation", icon: Play },
   { href: "/scenarios", label: "Scenario Lab", icon: FlaskConical },
+  { href: "/decisions", label: "Decisions", icon: Scale },
   { href: "/analysis", label: "Analysis", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -28,9 +29,10 @@ export function Logo({ className }: { className?: string }) {
 
 export function Sidebar({ className }: { className?: string }) {
   const path = usePathname();
-  const { apiKey, selected, company } = useTwin();
+  const { authed, me: signedIn, draftStatus, selected, company } = useTwin();
   const mounted = useMounted();
-  const keyOk = mounted && !!apiKey;
+  const me = mounted ? signedIn : null; // /auth/me can answer before this Suspense boundary hydrates
+  const draft = !mounted || !company ? "Loading…" : draftStatus.state === "saving" ? "Saving…" : draftStatus.state === "saved" ? `Saved: ${selected}` : draftStatus.state === "failed" ? "Save failed" : "Unsaved";
   return (
     <aside data-shell className={cn("glass flex w-60 shrink-0 flex-col gap-6 rounded-2xl p-4", className)}>
       <Link href="/" className="flex items-center gap-3 px-1 pt-1">
@@ -58,15 +60,22 @@ export function Sidebar({ className }: { className?: string }) {
       </nav>
       <div className="glass-inset mt-auto flex flex-col gap-2 rounded-xl p-3 text-xs">
         <p className="flex items-center gap-2">
-          <span className={cn("size-2 rounded-full", keyOk ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-amber-400 shadow-[0_0_8px_#fbbf24]")} />
+          <span className={cn("size-2 rounded-full", me ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-amber-400 shadow-[0_0_8px_#fbbf24]")} />
           <span className="text-muted-foreground">API</span>
-          <span className="ml-auto">{keyOk ? "Connected" : "No key"}</span>
+          <span className="ml-auto">{me ? "Connected" : mounted && authed ? "Not verified" : "Not signed in"}</span>
         </p>
+        {me && (
+          <p className="flex items-center gap-2" title={me.email ?? `tenant ${me.tenant}`}>
+            <span className="min-w-0 truncate text-muted-foreground">{me.email ?? "API key"}</span>
+            <span className="ml-auto shrink-0 rounded-full bg-primary/15 px-1.5 text-[10px] text-primary">{me.role}</span>
+          </p>
+        )}
         <p className="flex items-center gap-2" title={mounted ? company?.id : undefined}>
           <span className="size-2 rounded-full bg-primary/70" />
           <span className="text-muted-foreground">Draft</span>
-          <span className="ml-auto truncate">{!mounted || !company ? "Loading…" : selected ? `Saved: ${selected}` : "Unsaved"}</span>
+          <span className="ml-auto truncate">{draft}</span>
         </p>
+        {mounted && draftStatus.state === "failed" && <p className="break-words text-rose-400">{draftStatus.message}</p>}
       </div>
     </aside>
   );

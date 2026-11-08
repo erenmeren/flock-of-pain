@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Loader2, Menu, Play, Save, SlidersHorizontal } from "lucide-react";
+import { Loader2, Menu, Play, Redo2, Save, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RunProgress } from "@/components/shell/run-progress";
 import { Logo, Sidebar } from "@/components/shell/sidebar";
+import { undoKey } from "@/lib/history";
 import { useMounted, useTwin } from "@/lib/store";
 
 const EXAMPLE = "__example__";
@@ -20,6 +22,17 @@ export function Topbar() {
   const menu = menuAt === path;
   const items = { [EXAMPLE]: "Reynolds example", ...Object.fromEntries(t.saved.map((c) => [c.id, c.name])) };
   const pick = (v: string | null) => { if (v === EXAMPLE) t.loadExample(); else if (v) t.load(v); };
+  const { undo, redo } = t;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = undoKey(e);
+      if (!action || (e.target as Element | null)?.closest?.("input,textarea,[contenteditable]:not([contenteditable='false'])")) return; // text fields keep native undo
+      e.preventDefault();
+      if (action === "undo") undo(); else redo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
   return (
     <header data-shell className="flex flex-col gap-2">
       <div className="glass flex items-center gap-2 rounded-2xl px-3 py-2">
@@ -30,8 +43,10 @@ export function Topbar() {
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false}>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>
-        <Button variant="outline" size="sm" className="h-9 rounded-full px-3" onClick={t.save} disabled={t.busy || !t.company}><Save className="size-4" /> <span className="hidden sm:inline">Save</span></Button>
-        <span className="ml-auto hidden text-xs text-muted-foreground md:block">{mounted && `${t.scenarios.length} scenarios · ${t.config.days} days × ${t.config.replications} reps`}</span>
+        {!(mounted && t.viewer) && <Button variant="outline" size="sm" className="h-9 rounded-full px-3" onClick={t.save} disabled={t.busy || !t.company}><Save className="size-4" /> <span className="hidden sm:inline">Save</span></Button>}
+        <Button variant="outline" size="icon-lg" className="rounded-full" aria-label="undo" title="Undo (Ctrl+Z)" onClick={t.undo} disabled={!t.canUndo}><Undo2 className="size-4" /></Button>
+        <Button variant="outline" size="icon-lg" className="rounded-full" aria-label="redo" title="Redo (Ctrl+Shift+Z)" onClick={t.redo} disabled={!t.canRedo}><Redo2 className="size-4" /></Button>
+        {t.progress ? <RunProgress className="ml-auto w-44 lg:w-64" /> : <span className="ml-auto hidden text-xs text-muted-foreground md:block">{mounted && `${t.scenarios.length} scenarios · ${t.config.days} days × ${t.config.replications} reps`}</span>}
         <Button onClick={t.run} disabled={t.busy || !t.company} size="lg" className="rounded-full px-5 text-[15px]">
           {t.busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />} <span className="hidden sm:inline">Run Simulation</span>
         </Button>
@@ -46,7 +61,7 @@ export function Topbar() {
       {t.error && path !== "/settings" && (
         <Alert variant="destructive" className="rise">
           <AlertTitle>{t.error.path ?? "Error"}</AlertTitle>
-          <AlertDescription>{t.error.message}{t.error.href && <Link href={t.error.href} className="ml-2 underline">Open canvas</Link>}</AlertDescription>
+          <AlertDescription>{t.error.message}{t.error.href && <Link href={t.error.href} className="ml-2 underline">{t.error.href === "/settings" ? "Open Settings" : "Open canvas"}</Link>}</AlertDescription>
         </Alert>
       )}
     </header>

@@ -5,6 +5,7 @@ import { BarChart3, Gauge, History, ListTree, RefreshCw, Workflow } from "lucide
 import { cn } from "cn";
 import { workflowMeans } from "@/components/dashboard/derive";
 import { BASE_KPIS, Delta, KPI_LABEL, LedgerTable, NoResult, Panel, fmtKpi, resultKey, sourceLabel } from "@/components/dashboard/kpi";
+import { Interval, RealityCheck, Recommendations, ResultActions } from "@/components/dashboard/results";
 import { DeptMark } from "@/components/org/parts";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
@@ -33,7 +34,7 @@ function WorkflowBreakdown({ result, labels }: { result: SimulateResponse; label
   const ids = [...new Set(means.flatMap(Object.keys))];
   const base = means[0];
   return (
-    <Panel title="Workflow Breakdown" subtitle="Mean per engine workflow; a workflow with several inflows shows one row per inflow" icon={Workflow}
+    <Panel title="Workflow Breakdown" subtitle="Mean per engine workflow; a workflow with several inflows shows one row per inflow. These deltas are not tested against noise." icon={Workflow}
       action={
         <Select value={k} items={Object.fromEntries(WF_KPIS.map((x) => [x, KPI_LABEL[x] ?? x]))} onValueChange={(v) => v && setK(v)}>
           <SelectTrigger aria-label="workflow metric" className="w-52 rounded-full"><SelectValue /></SelectTrigger>
@@ -57,7 +58,7 @@ function WorkflowBreakdown({ result, labels }: { result: SimulateResponse; label
                   return (
                     <TableCell key={s.id} className="text-right tabular-nums">
                       {fmtKpi(k, v)}
-                      {i > 0 && <span className="ml-2 text-xs"><Delta k={k} value={v} base={wfValue(base[id], k)} /></span>}
+                      {i > 0 && <span className="ml-2 text-xs"><Delta k={k} value={v} base={wfValue(base[id], k)} untested /></span>}
                     </TableCell>
                   );
                 })}
@@ -75,7 +76,7 @@ const labelsFor = (src: ResultSource | null, company: { id: string } | null) =>
   src?.kind === "run" && company && src.company_id === company.id ? channelLabels(company as Parameters<typeof channelLabels>[0]) : {};
 
 export default function Analysis() {
-  const { runs, showRun, refreshLists, result, resultSource, run, busy, company } = useTwin();
+  const { runs, showRun, refreshLists, result, resultSource, run, busy, company, setCompany } = useTwin();
   const base = result?.scenarios[0];
   const kpis = result ? BASE_KPIS.filter((k) => result.kpi_keys.includes(k)) : [];
   const deptKeys = result ? result.kpi_keys.filter((k) => !BASE_KPIS.includes(k)) : [];
@@ -83,6 +84,7 @@ export default function Analysis() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Analysis" subtitle={result ? sourceLabel(resultSource) : "Compare scenarios against the baseline"}>
+        {result && <ResultActions result={result} source={resultSource} />}
         <Button variant="outline" size="sm" className="rounded-full" onClick={refreshLists} disabled={busy}><RefreshCw className="size-3.5" /> Refresh</Button>
       </PageHeader>
 
@@ -117,7 +119,7 @@ export default function Analysis() {
 
       {result && base ? (
         <>
-          <Panel title="Scenario Comparison" subtitle={`Mean per KPI · baseline: ${base.name}`} icon={BarChart3}
+          <Panel title="Scenario Comparison" subtitle={<>Mean per KPI with its 95% interval · baseline: {base.name} <Hint id="significance" /></>} icon={BarChart3}
             action={<span className="hidden flex-wrap gap-3 sm:flex">{result.scenarios.map((s, i) => <span key={s.id} className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-2 rounded-full" style={{ background: barColor(i) }} />{s.name}</span>)}</span>}>
             <div className="grid gap-3 xl:grid-cols-2">
               {kpis.map((k) => {
@@ -127,14 +129,14 @@ export default function Analysis() {
                   <div key={k} className="flex flex-col gap-2 rounded-xl glass-inset p-3">
                     <span className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">{KPI_LABEL[k] ?? k}<Hint id={k} /></span>
                     {result.scenarios.map((s, i) => (
-                      <div key={s.id} className="grid grid-cols-[5rem_1fr_4.5rem_4rem] sm:grid-cols-[8rem_1fr_6rem_5.5rem] items-center gap-3 text-sm">
+                      <div key={s.id} className="grid grid-cols-[5rem_1fr_5.5rem_4.5rem] sm:grid-cols-[8rem_1fr_8rem_5.5rem] items-center gap-3 text-sm">
                         <span className="truncate text-xs text-muted-foreground" title={s.name}>{s.name}</span>
                         <div className="h-2 rounded-full bg-white/[0.06]">
                           <div className="h-full rounded-full motion-safe:transition-[width] duration-300"
                             style={{ width: `${(Math.abs(vals[i]) / max) * 100}%`, background: barColor(i), boxShadow: i === 0 ? undefined : `0 0 10px ${barColor(i)}` }} />
                         </div>
-                        <span className="text-right font-medium tabular-nums">{fmtKpi(k, s.summary[k]?.mean)}</span>
-                        <span className="text-right text-xs">{i === 0 ? <span className="text-muted-foreground">baseline</span> : <Delta k={k} value={s.summary[k]?.mean} base={base.summary[k]?.mean} />}</span>
+                        <span className="flex flex-col items-end font-medium tabular-nums">{fmtKpi(k, s.summary[k]?.mean)}<Interval k={k} st={s.summary[k]} /></span>
+                        <span className="text-right text-xs">{i === 0 ? <span className="text-muted-foreground">baseline</span> : <Delta k={k} value={s.summary[k]?.mean} base={base.summary[k]?.mean} cmp={s.comparison?.[k]} />}</span>
                       </div>
                     ))}
                   </div>
@@ -142,6 +144,10 @@ export default function Analysis() {
               })}
             </div>
           </Panel>
+
+          <Recommendations result={result} company={company} />
+
+          {company && <RealityCheck result={result} source={resultSource} company={company} setCompany={setCompany} />}
 
           {deptKeys.length > 0 && (
             <Panel title="Department Utilization" subtitle="Mean busy share per department, delta vs baseline" icon={Gauge}>
@@ -163,7 +169,7 @@ export default function Analysis() {
                       {result.scenarios.map((s, i) => (
                         <TableCell key={s.id} className="text-right tabular-nums">
                           {fmtKpi(k, s.summary[k]?.mean)}
-                          {i > 0 && <span className="ml-2 text-xs"><Delta k={k} value={s.summary[k]?.mean} base={base.summary[k]?.mean} /></span>}
+                          {i > 0 && <span className="ml-2 text-xs"><Delta k={k} value={s.summary[k]?.mean} base={base.summary[k]?.mean} cmp={s.comparison?.[k]} /></span>}
                         </TableCell>
                       ))}
                     </TableRow>

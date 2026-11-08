@@ -28,10 +28,17 @@ export function WorkflowPage() {
     document.documentElement.toggleAttribute("data-focus", focus);
     return () => document.documentElement.removeAttribute("data-focus");
   }, [focus]);
+  // an undo can change this workflow's id under the URL: follow it (same company, same slot, same count) instead of "Unknown workflow"
+  const at = company ? company.workflows.findIndex((w) => w.id === id) : -1;
+  const shape = company ? `${company.id}/${company.workflows.length}` : "";
+  const [slot, setSlot] = useState({ at: -1, shape: "" });
+  if (at >= 0 && (slot.at !== at || slot.shape !== shape)) setSlot({ at, shape });
+  const moved = at < 0 && slot.at >= 0 && slot.shape === shape ? company?.workflows[slot.at]?.id : undefined;
+  useEffect(() => { if (moved) router.replace(`/processes/${encodeURIComponent(moved)}`); }, [moved, router]);
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const back = <Button variant="outline" size="sm" className="rounded-full" render={<Link href="/processes" />} nativeButton={false}><ArrowLeft className="size-4" /> Processes</Button>;
-  const i = company.workflows.findIndex((w) => w.id === id);
+  const i = at;
   if (i < 0) return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-10">
       <p className="text-sm text-muted-foreground">Unknown workflow <span className="font-mono">{id}</span>.</p>
