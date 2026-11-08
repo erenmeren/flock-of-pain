@@ -1,4 +1,4 @@
-"""SQLite persistence: tenants with API keys, company bundles and run results. Stdlib only.
+"""SQLite persistence: tenants with API keys, users and sessions, company bundles and run results. Stdlib only.
 
 A bundle is {"company": {...}, "scenarios": [...]} in the API's JSON form, keyed by (tenant, company id).
 Run results are stored without events. Path from FLOCK_DB (default ./flock.db).
@@ -6,19 +6,32 @@ Run results are stored without events. Path from FLOCK_DB (default ./flock.db).
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 TENANT_ID, TENANT_ID_MAX = r"[\w.-]+", 64  # shared by the API and the CLI
 MAX_COMPANIES = int(os.environ.get("FLOCK_MAX_COMPANIES", "50"))  # per tenant; parsed at import so a typo fails at startup
 MAX_SAVED_RUNS = int(os.environ.get("FLOCK_MAX_RUNS", "200"))  # per tenant; older runs are deleted
+MIN_PASSWORD, MAX_PASSWORD, MAX_EMAIL = 10, 200, 254  # the password cap keeps scrypt from being a CPU sink through the 2 MB body
+SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 14, 8, 5  # an OWASP tier; 16 MB per hash. Stored with each hash, so these can change
+SESSION_DAYS = 7
+LOGIN_LIMIT, LOGIN_WINDOW_MINUTES = 10, 15
 
 
 class LimitError(Exception):
-    """A per-tenant storage cap was reached."""
+    """A per-tenant storage cap was reached, or a change would leave the tenant without an admin user."""
+
+
+class CredentialError(ValueError):
+    """A bad email or password; `path` is the request field."""
+
+    def __init__(self, path: str, message: str):
+        super().__init__(message)
+        self.path = path
 
 
 SCHEMA = """
@@ -33,6 +46,14 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS runs_tenant ON runs (tenant_id, id);
 CREATE TABLE IF NOT EXISTS usage (
     tenant_id TEXT NOT NULL, day TEXT NOT NULL, generates INTEGER NOT NULL, PRIMARY KEY (tenant_id, day));
+CREATE TABLE IF NOT EXISTS users (
+    email TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, role TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS users_tenant ON users (tenant_id);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS sessions_email ON sessions (email);
+CREATE TABLE IF NOT EXISTS login_failures (email TEXT NOT NULL, at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS login_failures_email ON login_failures (email);
 """
 
 
@@ -96,11 +117,15 @@ def _hash(key: str) -> str:
 
 # --- tenants ---------------------------------------------------------------
 
-def create_tenant(tid: str, name: str) -> str:
-    """Create a tenant and return its API key, shown once; only the hash is stored."""
+def create_tenant(tid: str, name: str, email: str | None = None, password: str | None = None) -> str:
+    """Create a tenant, with its first admin user when `email` is given, and return its API key, shown once; only the
+    hash is stored. One transaction: a taken email leaves no tenant behind (IntegrityError names the column)."""
     key = f"fop_{secrets.token_urlsafe(32)}"
+    user = None if email is None else _user_row(tid, email, password, "admin")
     with closing(_connect()) as con, con:
         con.execute("INSERT INTO tenants VALUES (?, ?, ?, ?)", (tid, name, _hash(key), _now()))
+        if user:
+            con.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", user)
     return key
 
 
@@ -137,6 +162,140 @@ def take_generate(tenant: str, limit: int, global_limit: int) -> bool:
 def list_tenants() -> list[dict]:
     with closing(_connect()) as con:
         return [dict(r) for r in con.execute("SELECT id, name, created_at FROM tenants ORDER BY id")]
+
+
+# --- users and sessions ----------------------------------------------------
+
+def _scrypt(password: str, salt: bytes, n: int, r: int, p: int) -> bytes:
+    return hashlib.scrypt(password.encode(), salt=salt, n=n, r=r, p=p, maxmem=128 * r * (n + p + 2))
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = _scrypt(password, salt, SCRYPT_N, SCRYPT_R, SCRYPT_P)
+    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${salt.hex()}${digest.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    _, n, r, p, salt, digest = stored.split("$")
+    return secrets.compare_digest(_scrypt(password, bytes.fromhex(salt), int(n), int(r), int(p)), bytes.fromhex(digest))
+
+
+def _dummy_hash() -> str:
+    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${'00' * 16}${'00' * 64}"
+
+
+def check_email(email: str) -> str:
+    """The lowercased email; '/' is out because the address is a URL path segment in /users/{email}."""
+    if len(email) > MAX_EMAIL or not re.fullmatch(r"[^@\s/]+@[^@\s/]+\.[^@\s/]+", email):
+        raise CredentialError("email", "expected an address like name@example.com")
+    return email.lower()
+
+
+def check_password(password: str) -> None:
+    if not MIN_PASSWORD <= len(password) <= MAX_PASSWORD:
+        raise CredentialError("password", f"must have {MIN_PASSWORD} to {MAX_PASSWORD} characters")
+
+
+def _user_row(tenant: str, email: str, password: str, role: str) -> tuple:
+    email = check_email(email)
+    check_password(password)
+    return email, tenant, role, hash_password(password), _now()
+
+
+def create_user(tenant: str, email: str, password: str, role: str) -> dict:
+    """Raises sqlite3.IntegrityError when the email exists in any tenant."""
+    row = _user_row(tenant, email, password, role)
+    with closing(_connect()) as con, con:
+        con.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", row)
+    return {"email": row[0], "role": role, "created_at": row[4]}
+
+
+def list_users(tenant: str) -> list[dict]:
+    with closing(_connect()) as con:
+        return [dict(r) for r in con.execute("SELECT email, role, created_at FROM users WHERE tenant_id = ? ORDER BY email", (tenant,))]
+
+
+def _lock_user(con: sqlite3.Connection, tenant: str, email: str, leaves_admin: bool) -> sqlite3.Row | None:
+    """The user's row under a write lock, so parallel demotions cannot both pass the last-admin check."""
+    con.execute("BEGIN IMMEDIATE")
+    row = con.execute("SELECT email, role, created_at FROM users WHERE tenant_id = ? AND email = ?", (tenant, email)).fetchone()
+    if row is not None and leaves_admin and row["role"] == "admin" and con.execute(
+            "SELECT count(*) FROM users WHERE tenant_id = ? AND role = 'admin'", (tenant,)).fetchone()[0] == 1:
+        raise LimitError(f"{email} is the tenant's last admin user")
+    return row
+
+
+def update_user(tenant: str, email: str, role: str | None = None, password: str | None = None) -> dict | None:
+    """Change a user of this tenant and delete their sessions; None when there is no such user."""
+    if password is not None:
+        check_password(password)
+    hashed = None if password is None else hash_password(password)  # before the lock: scrypt is slow
+    with closing(_connect()) as con, con:
+        row = _lock_user(con, tenant, email, role not in (None, "admin"))
+        if row is None:
+            return None
+        con.execute("UPDATE users SET role = coalesce(?, role), password_hash = coalesce(?, password_hash) WHERE email = ?",
+                    (role, hashed, email))
+        con.execute("DELETE FROM sessions WHERE email = ?", (email,))
+    return {**dict(row), "role": role or row["role"]}
+
+
+def delete_user(tenant: str, email: str) -> bool:
+    with closing(_connect()) as con, con:
+        if _lock_user(con, tenant, email, True) is None:
+            return False
+        con.execute("DELETE FROM users WHERE email = ?", (email,))
+        con.execute("DELETE FROM sessions WHERE email = ?", (email,))
+    return True
+
+
+def take_login_attempt(email: str) -> bool:
+    """Count one attempt against the email's limit before any scrypt, atomically so parallel guesses cannot pass it;
+    a successful login() clears the count. False when the limit is reached, even if the password would be right."""
+    # shortcut: anyone who knows an email can lock its login for 15 minutes, and spraying many emails is not limited, add a per-IP limit at the proxy when either is abused
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=LOGIN_WINDOW_MINUTES)).isoformat(timespec="seconds")
+    with closing(_connect()) as con, con:
+        con.execute("DELETE FROM login_failures WHERE at <= ?", (cutoff,))
+        return con.execute("INSERT INTO login_failures SELECT ?, ? WHERE (SELECT count(*) FROM login_failures WHERE email = ?) < ?",
+                           (email, _now(), email, LOGIN_LIMIT)).rowcount > 0
+
+
+def login(email: str, password: str) -> dict | None:
+    """A new session, or None. An unknown email costs one scrypt too, so timing does not tell which emails exist."""
+    with closing(_connect()) as con:
+        user = con.execute("SELECT tenant_id, role, password_hash FROM users WHERE email = ?", (email,)).fetchone()
+    right = _verify_password(password, user["password_hash"] if user else _dummy_hash())
+    if user is None or not right:
+        return None
+    token = f"fos_{secrets.token_urlsafe(32)}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds")
+    with closing(_connect()) as con, con:
+        con.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
+        con.execute("DELETE FROM login_failures WHERE email = ?", (email,))
+        # the hash in the WHERE: a removal or password change during the slow scrypt above leaves no session
+        if con.execute("INSERT INTO sessions SELECT ?, email, ? FROM users WHERE email = ? AND password_hash = ?",
+                       (_hash(token), expires_at, email, user["password_hash"])).rowcount == 0:
+            return None
+    return {"token": token, "tenant": user["tenant_id"], "email": email, "role": user["role"], "expires_at": expires_at}
+
+
+def session_user(token: str) -> dict | None:
+    """The live {email, tenant_id, role} of a session token; an expired session is deleted. Independent of the tenant key."""
+    with closing(_connect()) as con, con:
+        row = con.execute("SELECT u.email, u.tenant_id, u.role, s.expires_at FROM sessions s JOIN users u ON u.email = s.email "
+                          "WHERE s.token_hash = ?", (_hash(token),)).fetchone()
+        if row is None:
+            return None
+        if row["expires_at"] <= _now():
+            con.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash(token),))
+            return None
+    return dict(row)
+
+
+def delete_session(token: str) -> None:
+    with closing(_connect()) as con, con:
+        con.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash(token),))
 
 
 # --- companies -------------------------------------------------------------

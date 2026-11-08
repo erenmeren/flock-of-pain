@@ -32,6 +32,13 @@ def main(argv: list[str] | None = None) -> int:
     tc.add_argument("--name", help="display name (default: the id)")
     tsub.add_parser("rotate", help="replace a tenant's API key").add_argument("id")
     tsub.add_parser("list", help="list tenants")
+    user = sub.add_parser("user", help="manage users who sign in with a password (database from FLOCK_DB)")
+    usub = user.add_subparsers(dest="user_command", required=True)
+    uc = usub.add_parser("create", help="create a user; password prompted, or from FLOCK_USER_PASSWORD")
+    uc.add_argument("tenant")
+    uc.add_argument("email")
+    uc.add_argument("--role", choices=["admin", "editor", "viewer"], default="viewer")
+    usub.add_parser("list", help="list a tenant's users").add_argument("tenant")
     sub.add_parser("backup", help="copy the FLOCK_DB database to PATH (safe while the API runs)").add_argument("path", type=Path)
     cal = sub.add_parser("calibrate", help="fit arrivals (timestamps) or durations (minutes) from a CSV column; prints JSON")
     cal.add_argument("what", choices=["arrivals", "durations"])
@@ -84,6 +91,28 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for t in store.list_tenants():
                 print(f"{t['id']} | {t['name']} | {t['created_at']}")
+        return 0
+    if args.command == "user":
+        from flock_of_pain import store
+        if args.tenant not in {t["id"] for t in store.list_tenants()}:
+            print(f"error: no tenant {args.tenant!r}", file=sys.stderr)
+            return 1
+        if args.user_command == "list":
+            for u in store.list_users(args.tenant):
+                print(f"{u['email']} | {u['role']} | {u['created_at']}")
+            return 0
+        import getpass
+        import os
+        import sqlite3
+        try:
+            password = os.environ.get("FLOCK_USER_PASSWORD") or getpass.getpass()
+            print(store.create_user(args.tenant, args.email, password, args.role)["email"])
+        except store.CredentialError as e:
+            print(f"error: {e.path}: {e}", file=sys.stderr)
+            return 1
+        except sqlite3.IntegrityError:
+            print(f"error: email {args.email!r} exists", file=sys.stderr)
+            return 1
         return 0
     if args.command == "export-example":
         args.path.write_text(json.dumps(company_to_dict(reynolds.build()), indent=2))
