@@ -43,11 +43,11 @@ export function Topbar() {
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false}>{Object.entries(items).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>
-        {!(mounted && t.viewer) && <Button variant="outline" size="sm" className="h-9 rounded-full px-3" onClick={t.save} disabled={t.busy || !t.company}><Save className="size-4" /> <span className="hidden sm:inline">Save</span></Button>}
+        {!(mounted && t.viewer) && <Button variant="outline" size="sm" className="h-9 rounded-full px-3" onClick={t.save} disabled={!mounted || t.busy || !t.company}><Save className="size-4" /> <span className="hidden sm:inline">Save</span></Button>}
         <Button variant="outline" size="icon-lg" className="rounded-full" aria-label="undo" title="Undo (Ctrl+Z)" onClick={t.undo} disabled={!t.canUndo}><Undo2 className="size-4" /></Button>
         <Button variant="outline" size="icon-lg" className="rounded-full" aria-label="redo" title="Redo (Ctrl+Shift+Z)" onClick={t.redo} disabled={!t.canRedo}><Redo2 className="size-4" /></Button>
         {t.progress ? <RunProgress className="ml-auto w-44 lg:w-64" /> : <span className="ml-auto hidden text-xs text-muted-foreground md:block">{mounted && `${t.scenarios.length} scenarios · ${t.config.days} days × ${t.config.replications} reps`}</span>}
-        <Button onClick={t.run} disabled={t.busy || !t.company} size="lg" className="rounded-full px-5 text-[15px]">
+        <Button onClick={t.run} disabled={!mounted || t.busy || !t.company} size="lg" className="rounded-full px-5 text-[15px]">
           {t.busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />} <span className="hidden sm:inline">Run Simulation</span>
         </Button>
         <Link href="/settings" aria-label="settings" className={buttonVariants({ variant: "outline", size: "icon-lg", className: "rounded-full" })}><SlidersHorizontal className="size-4" /></Link>
@@ -57,6 +57,18 @@ export function Topbar() {
           <button type="button" aria-label="close menu" className="absolute inset-0 bg-black/60" onClick={() => setMenuAt(null)} />
           <Sidebar className="relative h-full" />
         </div>
+      )}
+      {mounted && t.conflict && (
+        <Alert className="rise">
+          <AlertTitle>Someone else saved {t.conflict.id} since you loaded it</AlertTitle>
+          <AlertDescription>
+            Their version is from {t.conflict.updated_at.replace("T", " ").replace("+00:00", "")}. Autosave is paused until you choose which version to keep.
+            <span className="mt-2 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="rounded-full" onClick={() => t.conflict && t.load(t.conflict.id)} disabled={t.busy}>Load their version</Button>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={t.overwrite} disabled={t.busy || t.viewer}>Overwrite with mine</Button>
+            </span>
+          </AlertDescription>
+        </Alert>
       )}
       {t.error && path !== "/settings" && (
         <Alert variant="destructive" className="rise">

@@ -10,9 +10,9 @@ import { type Company, type Scenario, type Schedule, type Workflow, checkCompany
 import type { SimEvent } from "@/lib/api";
 import { snapshot } from "@/lib/playback";
 import { addScenario, budgetIssue, demandSweep, firstResource, jobConfig, parsePercents, staffSweep, sweepRows } from "@/lib/sweep";
-import { csvText, realityRows, resultsCsv, setActual, topWaits } from "@/lib/results";
+import { csvText, deltaShown, noiseLabel, realityRows, resultsCsv, setActual, topWaits } from "@/lib/results";
 import { applyPeople, importedRows, parseDays, parsePeopleCsv, parseTable } from "@/lib/people-csv";
-import { COALESCE_MS, HISTORY_CAP, emptyHistory, record, redo, shouldAutosave, undo, undoKey } from "@/lib/history";
+import { COALESCE_MS, HISTORY_CAP, conflictOf, emptyHistory, record, redo, saveBody, shouldAutosave, undo, undoKey } from "@/lib/history";
 
 const sched = { weekday_hours: { "0": [9, 17] as [number, number] } };
 const c: Company = { id: "x", name: "x", systems: [], workflows: [], departments: [
@@ -388,7 +388,7 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(key("y", { metaKey: true }), null); assert.equal(key("z"), null); assert.equal(key("z", { ctrlKey: true, altKey: true }), null);
 
   // autosave only for a saved draft with this id, a writer, and a real edit that has not just failed
-  const ok = { companyId: "a", selected: "a", canWrite: true, sync: { rev: 2, saved: 1 }, failedRev: null, saving: false };
+  const ok = { companyId: "a", selected: "a", canWrite: true, sync: { rev: 2, saved: 1 }, failedRev: null, saving: false, conflict: false };
   assert.equal(shouldAutosave(ok), true);
   assert.equal(shouldAutosave({ ...ok, selected: "b" }), false); // the id changed through an edit
   assert.equal(shouldAutosave({ ...ok, selected: "" }), false);
@@ -398,6 +398,19 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(shouldAutosave({ ...ok, failedRev: 2 }), false);
   assert.equal(shouldAutosave({ ...ok, failedRev: 1 }), true);
   assert.equal(shouldAutosave({ ...ok, saving: true }), false);
+  assert.equal(shouldAutosave({ ...ok, conflict: true }), false); // someone else saved: wait for the user's choice
+
+  // edit conflicts: the base goes only with the company it belongs to; a 409 on it carries the other version
+  const bundle = { company: {}, scenarios: [] };
+  assert.deepEqual(saveBody(bundle, null, "a"), bundle); // first save of a new company
+  assert.deepEqual(saveBody(bundle, { id: "a", updated_at: "t1" }, "a"), { ...bundle, base_updated_at: "t1" });
+  assert.deepEqual(saveBody(bundle, { id: "a", updated_at: "t1" }, "b"), bundle); // the id changed: a different company
+  assert.deepEqual(conflictOf({ status: 409, path: "base_updated_at", message: "m", updated_at: "t2" }, "a"), { id: "a", updated_at: "t2" });
+  assert.equal(conflictOf({ status: 409, path: "company", message: "m" }, "a"), null);
+  assert.equal(conflictOf({ status: 422, path: "base_updated_at", message: "m", updated_at: "t2" }, "a"), null);
+  assert.equal(conflictOf(new TypeError("network"), "a"), null);
+  const theirs = conflictOf({ status: 409, path: "base_updated_at", message: "m", updated_at: "t2" }, "a");
+  assert.deepEqual(saveBody(bundle, theirs, "a"), { ...bundle, base_updated_at: "t2" }); // "Overwrite with mine" sends their version as the base
 
   // run-days count the warm-up
   assert.equal(runDays({ days: 10, replications: 5 }, 2), 100);
@@ -453,6 +466,10 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.match(budgetIssue(cfg, 41)!, /run-days/);
   assert.match(budgetIssue({ ...cfg, warmup_days: 1 }, 40)!, /11 days/); // warm-up counts
   assert.match(budgetIssue({ ...cfg, days: 0.5, replications: 100 }, 5)!, /500 runs/);
+  const tight = { max_run_days: 100, max_event_run_days: 5, max_runs: 20 }; // from GET /limits
+  assert.equal(budgetIssue(cfg, 2, tight), null); // 10 days x 10 runs = 100
+  assert.match(budgetIssue(cfg, 3, tight)!, /limit of 100/);
+  assert.match(budgetIssue({ ...cfg, days: 1 }, 5, tight)!, /25 runs, over the limit of 20/);
 
   // the id is unique against the draft at add time
   const draft: Scenario[] = [{ id: "optimized", name: "o", overlays: [] }];
@@ -471,6 +488,20 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(sweepRows(down, res, "gone")[1].stat, undefined);
 }
 
+{ // delta text: extra decimals for a tiny change, "negligible" when it is zero even then
+  assert.equal(deltaShown(0.52, 0.5, true)?.text, "+2.0");
+  assert.equal(deltaShown(0.5004, 0.5, true)?.text, "+0.04"); // 0.04 pp would show as +0.0
+  assert.equal(deltaShown(0.49999, 0.5, true)?.text, "-0.001");
+  const tiny = deltaShown(0.4999999, 0.5, true)!;
+  assert.deepEqual([tiny.text, tiny.negligible], ["0.0", true]);
+  assert.equal(deltaShown(10.5, 10, false)?.text, "+5.0");
+  assert.equal(deltaShown(1, 0, false), null);
+  const sig = { delta: 0, ci_low: -1e-9, ci_high: -1e-10, significant: true };
+  assert.equal(noiseLabel(sig, tiny.negligible), "negligible");
+  assert.equal(noiseLabel(sig), "significant");
+  assert.equal(noiseLabel({ ...sig, significant: false }, true), "within noise");
+}
+
 { // CSV export: rows, escapes, formula prefixes in text but not in numbers
   assert.equal(csvText("plain"), "plain");
   assert.equal(csvText('a,"b"'), '"a,""b"""');
@@ -485,6 +516,14 @@ assert.equal(nw.id, "customer_order"); assert.equal(nw.arrival, undefined); asse
   assert.equal(lines[2], `"'=Base, one",gone,,,,,,,,`);
   assert.equal(lines[3], "Old,k,2,,,1,2,3,3.5,true");
   assert.equal(lines[5], "");
+  // Excel with a decimal comma: semicolons, comma decimals, text quoted on ";" not on ","; formulas still escaped
+  const semi = resultsCsv({ disclaimer: "", kpi_keys: ["k", "gone"], scenarios: [s0, { ...s1, name: "a;b" }] }, ";").split("\r\n");
+  assert.equal(semi[0], "scenario;kpi;mean;ci_low;ci_high;p10;p50;p90;delta;significant");
+  assert.equal(semi[1], "'=Base, one;k;-1,5;-2;-1;1;2;3;;");
+  assert.equal(semi[2], "'=Base, one;gone;;;;;;;;");
+  assert.equal(semi[3], `"a;b";k;2;;;1;2;3;3,5;true`);
+  assert.equal(csvText("-1;x", ";"), `"'-1;x"`);
+  assert.equal(csvText("a;b"), "a;b"); // the comma CSV is unchanged
 
   // reality check
   const summary = { a: { mean: 10, p10: 0, p50: 0, p90: 0, ci_low: 8, ci_high: 12 }, b: { mean: 10, p10: 0, p50: 0, p90: 0 }, one: { mean: 10, p10: 0, p50: 0, p90: 0, ci_low: 10, ci_high: 10 } };

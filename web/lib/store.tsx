@@ -2,20 +2,21 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
-  type ApiError, type Bundle, type CompanyMeta, type Me, type RunMeta, type SimulateResponse,
-  SESSION_EXPIRED, cancelJob, credential, deleteCompany, generate as apiGenerate, getExample, getMe, getRun, listCompanies, listRuns, loadApiKey, loadCompany, loadSession, login, logout, saveCompany, setApiKey, setOnSessionExpired, setSession, startJob, waitForJob,
+  type ApiError, type Bundle, type CompanyMeta, type Limits, type Me, type RunMeta, type SimulateResponse,
+  SESSION_EXPIRED, cancelJob, credential, deleteCompany, generate as apiGenerate, getExample, getLimits, getMe, getRun, listCompanies, listRuns, loadApiKey, loadCompany, loadSession, login, logout, saveCompany, setApiKey, setOnSessionExpired, setSession, startJob, waitForJob,
 } from "@/lib/api";
 import { type Company, type Scenario, checkCompany, checkScenarios, slug } from "@/lib/company";
 import { blockingIssue } from "@/components/process/graph";
 import { useConfirm } from "@/lib/confirm";
-import { type History, type SaveSync, emptyHistory, record, redo as redoStep, shouldAutosave, undo as undoStep } from "@/lib/history";
+import { type History, type SaveBase, type SaveSync, conflictOf, emptyHistory, record, redo as redoStep, saveBody, shouldAutosave, undo as undoStep } from "@/lib/history";
+import { DEFAULT_LIMITS } from "@/lib/sweep";
 
 export type Config = { seed: number; days: number; warmup_days?: number; replications: number; policy: string; crn: boolean; include_events: boolean; save: boolean };
 export const DEFAULT_CONFIG: Config = { seed: 42, days: 10, replications: 5, policy: "priority", crn: true, include_events: false, save: false };
 export const POLICIES = ["priority", "fifo", "least_loaded", "edd"];
 
-/** Where the shown result came from, so a page never mixes another company's numbers with this one. */
-export type ResultSource = { kind: "run"; company_id: string; name: string } | { kind: "history"; run_id: number; name: string };
+/** Where the shown result came from, so a page never mixes another company's numbers with this one. A live run keeps the config it was started with. */
+export type ResultSource = { kind: "run"; company_id: string; name: string; config: Config } | { kind: "history"; run_id: number; name: string };
 
 export type Twin = {
   company: Company | null; // null until the example or a draft is loaded
@@ -35,7 +36,9 @@ export type Twin = {
   cancelling: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  draftStatus: { state: "unsaved" | "saved" | "saving" } | { state: "failed"; message: string };
+  draftStatus: { state: "unsaved" | "saved" | "saving" | "conflict" } | { state: "failed"; message: string };
+  conflict: SaveBase | null; // someone else saved the draft's company since it was loaded or saved here; autosave waits for a choice
+  limits: Limits; // the API's job limits, or the defaults when it does not say
   error: ApiError | null;
   setCompany: (c: Company) => void;
   setScenarios: (s: Scenario[]) => void;
@@ -52,6 +55,7 @@ export type Twin = {
   generate: (prompt: string) => Promise<void>;
   run: () => Promise<void>;
   save: () => Promise<void>;
+  overwrite: () => Promise<void>; // resolves `conflict` by saving the draft over the other version
   load: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   showRun: (id: number) => Promise<void>;
@@ -86,6 +90,10 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
   const [autoSaving, setAutoSaving] = useState(false);
   const [saveFail, setSaveFail] = useState<{ rev: number; message: string } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [base, setBaseState] = useState<SaveBase | null>(null);
+  const [conflict, setConflict] = useState<SaveBase | null>(null);
+  const [limits, setLimits] = useState<Limits>(DEFAULT_LIMITS);
+  const baseRef = useRef<SaveBase | null>(null); // read when a queued PUT starts, so it carries the version the previous PUT wrote
   const jobId = useRef<string | null>(null);
   const alive = useRef(true);
   const lastTenant = useRef<string | null>(null); // survives an expired session: signing back in to the same tenant keeps its state
@@ -105,14 +113,34 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     return () => setOnSessionExpired(() => {});
   }, []);
 
-  const put = useCallback((id: string, bundle: Bundle) => {
-    const p = saves.current.then(() => saveCompany(id, bundle));
-    saves.current = p.catch(() => {});
-    return p;
+  const setBase = useCallback((b: SaveBase | null) => {
+    baseRef.current = b;
+    setBaseState(b);
   }, []);
 
+  /** Resolves true when saved, false on an edit conflict (then in `conflict`); other errors reject. */
+  const put = useCallback((id: string, bundle: Bundle) => {
+    const p = saves.current.then(async () => {
+      try {
+        const m = await saveCompany(id, saveBody(bundle, baseRef.current, id));
+        setBase({ id, updated_at: m.updated_at });
+        setConflict(null);
+        return true;
+      } catch (e) {
+        const c = conflictOf(e, id);
+        if (!c) throw e;
+        setConflict(c);
+        return false;
+      }
+    });
+    saves.current = p.catch(() => {});
+    return p;
+  }, [setBase]);
+
   /** A different company became the draft: nothing to undo, nothing to autosave. */
-  const adopt = useCallback((c: Company, sc: Scenario[], id: string) => {
+  const adopt = useCallback((c: Company, sc: Scenario[], id: string, updatedAt?: string) => {
+    setBase(id && updatedAt ? { id, updated_at: updatedAt } : null);
+    setConflict(null);
     setCompanyState(c);
     setScenariosState(sc);
     setSelected(id);
@@ -120,7 +148,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     setResultSource(null);
     setHistory(emptyHistory());
     setSync((s) => ({ ...s, saved: s.rev }));
-  }, []);
+  }, [setBase]);
 
   const refreshLists = useCallback((report = true) => {
     const onErr = report ? setError : () => {};
@@ -149,7 +177,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setKeyState(loadApiKey());
       setToken(loadSession());
       refreshMe();
-      let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string; dirty?: boolean } | null = null;
+      let draft: { company: Company; scenarios: Scenario[]; config?: Config; selected?: string; dirty?: boolean; base?: SaveBase | null } | null = null;
       const raw = localStorage.getItem(DRAFT);
       try {
         draft = JSON.parse(raw ?? "null");
@@ -164,30 +192,40 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
         setScenariosState(draft.scenarios ?? []);
         setConfig({ ...DEFAULT_CONFIG, ...draft.config });
         setSelected(draft.selected ?? "");
+        setBase(draft.base ?? null);
         if (draft.dirty) setSync({ rev: 0, saved: -1 }); // edited after its last save: shown as unsaved, written on the next edit
       } else {
         loadExample().catch(setError);
       }
       refreshLists(false);
     });
-  }, [loadExample, refreshLists, refreshMe]);
+  }, [loadExample, refreshLists, refreshMe, setBase]);
 
   const dirty = sync.rev !== sync.saved;
   useEffect(() => {
     if (!company) return;
-    try { localStorage.setItem(DRAFT, JSON.stringify({ company, scenarios, config, selected, dirty })); } catch { /* quota or private window: draft lives in memory only */ }
-  }, [company, scenarios, config, selected, dirty]);
+    try { localStorage.setItem(DRAFT, JSON.stringify({ company, scenarios, config, selected, dirty, base })); } catch { /* quota or private window: draft lives in memory only */ }
+  }, [company, scenarios, config, selected, dirty, base]);
+
+  // once per credential: a sign-in, a key change or a reload
+  useEffect(() => {
+    if (!token && !apiKey) return;
+    let live = true;
+    getLimits().then((l) => { if (live) setLimits(l); }, () => { if (live) setLimits(DEFAULT_LIMITS); }); // an older API has no /limits
+    return () => { live = false; };
+  }, [token, apiKey]);
 
   const viewer = me?.role === "viewer";
   const canWrite = !!me && !viewer;
-  // shortcut: last write wins, a second tab or user saving the same company is overwritten silently; add a version check on PUT if that starts to matter.
+  // every PUT carries the updated_at it is based on; the API answers 409 when someone else saved since, and `conflict` holds autosave until the user picks a version
+  const conflicted = !!conflict && conflict.id === company?.id;
   useEffect(() => {
-    if (!company || !shouldAutosave({ companyId: company.id, selected, canWrite, sync, failedRev: saveFail?.rev ?? null, saving: autoSaving })) return;
+    if (!company || !shouldAutosave({ companyId: company.id, selected, canWrite, sync, failedRev: saveFail?.rev ?? null, saving: autoSaving, conflict: conflicted })) return;
     const { rev } = sync;
     const t = setTimeout(async () => {
       setAutoSaving(true);
       try {
-        await put(company.id, { company, scenarios });
+        if (!(await put(company.id, { company, scenarios }))) return;
         setSync((s) => ({ ...s, saved: Math.max(s.saved, rev) }));
         listCompanies().then(setSaved).catch(() => {});
       } catch (e) {
@@ -197,7 +235,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       }
     }, AUTOSAVE_MS);
     return () => clearTimeout(t);
-  }, [company, scenarios, selected, canWrite, sync, saveFail?.rev, autoSaving, put]);
+  }, [company, scenarios, selected, canWrite, sync, saveFail?.rev, autoSaving, conflicted, put]);
 
   const keepDraft = useCallback(async (c: Company | null) =>
     !!c && !(await confirm("Unsaved changes are lost.", { title: "Replace the current draft?", action: "Replace" })), [confirm]);
@@ -220,6 +258,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     setSelected("");
     setResult(null);
     setResultSource(null);
+    setConflict(null);
   }, []);
 
   /** Before credentials change: the run belongs to the old identity, its result must not land under the new one. */
@@ -242,12 +281,21 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       setSync((s) => ({ ...s, rev: s.rev + 1 }));
     };
     const onSaved = company && selected === company.id;
+    const write = async () => {
+      if (!company) return;
+      const { rev } = sync;
+      if (!(await put(company.id, { company, scenarios }))) return;
+      setSelected(company.id);
+      setSync((s) => ({ ...s, saved: Math.max(s.saved, rev) }));
+      refreshLists();
+    };
     return {
-    company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, me, viewer, busy, progress, cancelling, error,
+    company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, me, viewer, busy, progress, cancelling, error, limits,
+    conflict: conflicted ? conflict : null,
     authed: !!apiKey || !!token,
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
-    draftStatus: !onSaved ? { state: "unsaved" } : autoSaving ? { state: "saving" } : !dirty ? { state: "saved" }
+    draftStatus: !onSaved ? { state: "unsaved" } : autoSaving ? { state: "saving" } : conflicted ? { state: "conflict" } : !dirty ? { state: "saved" }
       : saveFail?.rev === sync.rev ? { state: "failed", message: saveFail.message } : { state: "unsaved" },
     setCompany: (c) => {
       if (JSON.stringify(c) === JSON.stringify(company)) return; // e.g. a drag that ends where it began: no empty undo step
@@ -324,6 +372,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       if (!company) return;
       const issue = blockingIssue(company);
       if (issue) { setError({ path: "company", message: issue.message, href: `/processes/${encodeURIComponent(issue.workflowId)}` }); return; }
+      const sent = config; // the report labels the result with this, not with whatever the draft says later
       const { include_events, save, warmup_days, ...cfg } = config;
       const { id } = await startJob({
         company, scenarios, config: warmup_days ? { ...cfg, warmup_days } : cfg, include_events, save: save && !viewer,
@@ -338,7 +387,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
         });
         if (!res) return; // cancelled: the previous result stays
         setResult(res);
-        setResultSource({ kind: "run", company_id: company.id, name: company.name });
+        setResultSource({ kind: "run", company_id: company.id, name: company.name, config: sent });
         if (save && !viewer) refreshLists();
       } catch (e) {
         if (e === ABANDONED || jobId.current !== id) return;
@@ -354,15 +403,17 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
       if (!company) return;
       if (saved.some((c) => c.id === company.id) && company.id !== selected
         && !(await confirm(`A saved company with the id "${company.id}" already exists.`, { title: "Replace the saved company?", action: "Replace" }))) return;
-      const { rev } = sync;
-      await put(company.id, { company, scenarios });
-      setSelected(company.id);
-      setSync((s) => ({ ...s, saved: Math.max(s.saved, rev) }));
-      refreshLists();
+      await write();
+    }),
+    overwrite: () => act(async () => {
+      if (!company || !conflicted || !conflict) return;
+      setBase(conflict); // based on their version now, so the PUT replaces it unless a third save came in between
+      await write();
     }),
     load: async (id) => { if (await keepDraft(company)) return; await act(async () => {
+      await saves.current; // a PUT still in flight would otherwise record its version as the base of the loaded company
       const b = await loadCompany(id);
-      adopt(b.company as Company, b.scenarios as Scenario[], id);
+      adopt(b.company as Company, b.scenarios as Scenario[], id, b.updated_at);
     }); },
     remove: (id) => act(async () => {
       if (!(await confirm(`"${id}" is removed from this tenant. This cannot be undone.`, { title: "Delete the saved company?", action: "Delete", destructive: true }))) return;
@@ -378,7 +429,7 @@ export function TwinProvider({ children }: { children: React.ReactNode }) {
     }),
     refreshLists: () => refreshLists(),
     };
-  }, [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, token, me, viewer, busy, progress, cancelling, history, sync, dirty, autoSaving, saveFail, error, act, adopt, abandonRun, clearTenant, confirm, keepDraft, loadExample, put, refreshLists, refreshMe]);
+  }, [company, scenarios, config, result, resultSource, saved, runs, selected, apiKey, token, me, viewer, busy, progress, cancelling, history, sync, dirty, autoSaving, saveFail, conflict, conflicted, limits, error, act, adopt, abandonRun, clearTenant, confirm, keepDraft, loadExample, put, refreshLists, refreshMe, setBase]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

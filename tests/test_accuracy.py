@@ -68,10 +68,10 @@ def test_wait_p90_pooled_and_counted_without_completions():
 # --- confidence interval ---
 
 def test_stat_ci_t_interval():
-    s = _stat([1, 2, 3])
+    s = _stat([11, 12, 13])
     half = 4.303 / math.sqrt(3)
-    assert (s.mean, s.p10, s.p50, s.p90) == (2, 1, 2, 3)
-    assert (s.ci_low, s.ci_high) == (pytest.approx(2 - half), pytest.approx(2 + half))
+    assert (s.mean, s.p10, s.p50, s.p90) == (12, 11, 12, 13)
+    assert (s.ci_low, s.ci_high) == (pytest.approx(12 - half), pytest.approx(12 + half))
 
 
 @pytest.mark.parametrize("xs", [[5.0], [5.0, 5.0, 5.0]])
@@ -532,3 +532,9 @@ def test_worker_failure_propagates_through_the_pool(monkeypatch):
     bad = Scenario("s", "S", tiny_company(rate_per_hour=2), [AddEmployee("nope", Resource("n", "nope", set(), schedule=business_hours(9, 17)))])
     with pytest.raises(Exception, match="unknown department"):
         run_experiment("s", bad, CFG)
+
+
+def test_interval_of_a_kpi_never_goes_below_zero():
+    from flock_of_pain.experiment import _stat
+    s = _stat([0.0, 0.0, 30.0])  # every KPI is a count, rate, time or cost, so a negative bound is impossible
+    assert s.ci_low == 0.0 and s.ci_high > 30.0

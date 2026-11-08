@@ -18,7 +18,7 @@ h1 { font-size: 22pt; margin-top: 0; border-bottom: 2px solid #1a1a1a; padding-b
 h2 { font-size: 15pt; margin-top: 2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; page-break-after: avoid; }
 h3 { font-size: 12pt; margin-top: 1.4em; page-break-after: avoid; }
 p, li { orphans: 3; widows: 3; }
-img { max-width: 100%; display: block; margin: .8em auto; border: 1px solid #ccc; border-radius: 4px; page-break-inside: avoid; }
+img { max-width: 100%; max-height: 23cm; width: auto; display: block; margin: .8em auto; border: 1px solid #ccc; border-radius: 4px; page-break-inside: avoid; }
 table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin: .8em 0; page-break-inside: avoid; }
 th, td { border: 1px solid #ccc; padding: .35em .5em; vertical-align: top; text-align: left; }
 th { background: #f0f0f0; }

@@ -20,7 +20,7 @@ const TILES = [["throughput_per_day", Activity], ["cycle_p50", Timer], ["mean_de
 const WHAT_IF = ["throughput_per_day", "cycle_p50", "labor_cost", "sla_breach_rate"];
 
 export default function Overview() {
-  const { company, scenarios, config, result, resultSource, run, busy } = useTwin();
+  const { company, scenarios, config, result, resultSource, run, busy, limits } = useTwin();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const wf = company.workflows[0];
@@ -95,7 +95,7 @@ export default function Overview() {
             <Row k="Horizon" v={`${config.days} days × ${config.replications} reps`} />
             <Row k="Scenarios" v={scenarios.length} />
             <Row k="Policy" v={config.policy} />
-            <Row k="Run-days" v={<span className={cn(config.include_events && runDays > 30 && "text-rose-400")}>{runDays}{config.include_events ? ` / 30${runDays > 30 ? " over budget" : ""}` : ""}</span>} />
+            <Row k="Run-days" v={<span className={cn(config.include_events && runDays > limits.max_event_run_days && "text-rose-400")}>{runDays}{config.include_events ? ` / ${limits.max_event_run_days}${runDays > limits.max_event_run_days ? " over budget" : ""}` : ""}</span>} />
           </dl>
           <div className="flex items-center gap-3">
             <button type="button" onClick={run} disabled={busy} aria-label="run simulation"

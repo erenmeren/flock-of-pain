@@ -132,6 +132,7 @@ class OptimizeRequest(BaseModel):
 class Bundle(BaseModel):
     company: dict
     scenarios: list[dict]
+    base_updated_at: str | None = None  # the updated_at the edit started from; another stored one gives 409
 
 
 class GenerateRequest(BaseModel):
@@ -157,6 +158,11 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(max_length=store.MAX_EMAIL)
     password: str
+
+
+class PasswordChange(BaseModel):
+    current: str
+    new: str
 
 
 Role = Literal["admin", "editor", "viewer"]
@@ -260,7 +266,8 @@ def _run_simulation(req: SimulateRequest, tenant: str, company, scenarios, confi
             "ledger": [{"department_id": x.department_id, "reason": None if x.reason is None else str(x.reason),
                         "blocker_id": x.blocker_id, "minutes": x.minutes, "count": x.count} for x in top_ledger(r)],
             "off_shift_minutes": off_shift_minutes(r),
-            "recommendations": recommend(r.summary, top_ledger(r, n=None), off_shift_minutes(r), s.materialize()),
+            "recommendations": recommend(r.summary, top_ledger(r, n=None), off_shift_minutes(r), s.materialize(),
+                                         (config.horizon_minutes - config.warmup_minutes) / 1440),
             **({"comparison": compare_to_base(results[0][1], r)} if i else {}),
             "runs": [run_out(run) for run in r.runs],
         } for i, (s, r) in enumerate(results)],
@@ -326,7 +333,11 @@ def put_company(cid: str, body: Bundle, tenant: str = Writer):
         raise SchemaError("company.id", f"must equal the URL id {cid!r}")
     if not re.fullmatch(TENANT_ID, cid):
         raise SchemaError("company.id", "use letters, digits, '_', '.' or '-' (it is the URL id)")
-    return store.save_company(tenant, {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]})
+    try:
+        return store.save_company(tenant, {"company": company_to_dict(company), "scenarios": [scenario_to_dict(s) for s in scenarios]},
+                                  body.base_updated_at)
+    except store.ConflictError as e:
+        return JSONResponse({"path": "base_updated_at", "message": str(e), "updated_at": e.updated_at}, status_code=409)
 
 
 @app.get("/companies/{cid}")
@@ -337,6 +348,11 @@ def get_company(cid: str, tenant: str = Tenant):
 @app.delete("/companies/{cid}")
 def delete_company(cid: str, tenant: str = Writer):
     return {"deleted": cid} if store.delete_company(tenant, cid) else _not_found()
+
+
+@app.get("/limits")
+def limits(tenant: str = Tenant):
+    return {"max_run_days": MAX_RUN_DAYS, "max_event_run_days": MAX_EVENT_RUN_DAYS, "max_runs": MAX_RUNS}
 
 
 @app.get("/runs")
@@ -412,17 +428,44 @@ def _email_taken():
     return JSONResponse({"path": "email", "message": "this email is already registered"}, status_code=409)
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else ""  # behind a proxy, the proxy's address
+
+
+def _take_login_attempt(email: str, ip: str) -> None:
+    if not store.take_login_attempt(email, ip):
+        raise QuotaError(f"too many failed logins; try again within {store.LOGIN_WINDOW_MINUTES} minutes")
+
+
 @app.post("/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     if len(req.password) > store.MAX_PASSWORD:
         raise store.CredentialError("password", f"over {store.MAX_PASSWORD} characters")
-    email = req.email.lower()
-    if not store.take_login_attempt(email):
-        raise QuotaError(f"too many failed logins; try again within {store.LOGIN_WINDOW_MINUTES} minutes")
-    session = store.login(email, req.password)
+    email, ip = req.email.lower(), _client_ip(request)
+    _take_login_attempt(email, ip)
+    session = store.login(email, req.password, ip)
     if session is None:
         raise AuthError("wrong email or password")
     return session
+
+
+@app.post("/auth/password")
+def change_password(req: PasswordChange, request: Request, caller: Principal = Caller,
+                    bearer: HTTPAuthorizationCredentials | None = Security(_bearer)):
+    """The signed-in user's own password; a wrong `current` counts as a failed login. Other sessions end."""
+    if caller.email is None:
+        raise store.CredentialError(None, "an API key has no password")
+    try:
+        store.check_password(req.new)
+    except store.CredentialError as e:
+        raise store.CredentialError("new", str(e)) from None
+    if len(req.current) > store.MAX_PASSWORD:
+        raise store.CredentialError("current", f"over {store.MAX_PASSWORD} characters")
+    ip = _client_ip(request)
+    _take_login_attempt(caller.email, ip)
+    if not store.change_password(caller.email, req.current, req.new, bearer.credentials, ip):
+        return JSONResponse({"path": "current", "message": "wrong current password"}, status_code=401)
+    return {"ok": True}
 
 
 @app.post("/auth/logout")

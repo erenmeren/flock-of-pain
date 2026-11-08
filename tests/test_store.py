@@ -1,4 +1,7 @@
+import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 import pytest
 
@@ -30,7 +33,7 @@ def test_company_roundtrip_upsert_delete_per_tenant():
     assert store.list_companies("t1") == []
     meta = store.save_company("t1", bundle())
     assert meta["id"] == "acme" and meta["name"] == "Acme" and meta["updated_at"]
-    assert store.get_company("t1", "acme") == bundle()
+    assert store.get_company("t1", "acme") == {**bundle(), "updated_at": meta["updated_at"]}
     assert store.get_company("t2", "acme") is None  # other tenant, same id
     store.save_company("t2", bundle(name="Acme of t2"))
     store.save_company("t1", bundle(name="Acme 2"))
@@ -40,6 +43,40 @@ def test_company_roundtrip_upsert_delete_per_tenant():
     assert store.get_company("t1", "acme") is not None
     assert store.delete_company("t1", "acme") is True
     assert store.delete_company("t1", "acme") is False
+
+
+def test_updated_at_has_microseconds_and_sorts_after_old_second_rows():
+    with closing(store._connect()) as con, con:
+        con.execute("INSERT INTO companies VALUES ('t1', 'old', 'Old', '{}', '2999-01-01T00:00:00+00:00')")
+        con.execute("INSERT INTO companies VALUES ('t1', 'older', 'Older', '{}', '2000-01-01T00:00:00+00:00')")
+    a = store.save_company("t1", bundle("a"))["updated_at"]
+    b = store.save_company("t1", bundle("b"))["updated_at"]
+    assert re.fullmatch(r"\S+T\d\d:\d\d:\d\d\.\d{6}\+00:00", a) and a < b
+    assert [c["id"] for c in store.list_companies("t1")] == ["old", "b", "a", "older"]
+    assert "2000-01-01T00:00:00+00:00" < a  # an old row with whole seconds still compares by time
+
+
+def test_base_updated_at_conflict_changes_nothing():
+    at = store.save_company("t1", bundle())["updated_at"]
+    with pytest.raises(store.ConflictError) as e:
+        store.save_company("t1", bundle(name="stale"), base_updated_at="2020-01-01T00:00:00+00:00")
+    assert e.value.updated_at == at and store.get_company("t1", "acme")["company"]["name"] == "Acme"
+    again = store.save_company("t1", bundle(name="fresh"), base_updated_at=at)["updated_at"]
+    assert again != at and store.get_company("t1", "acme")["company"]["name"] == "fresh"
+    assert store.save_company("t1", bundle("new"), base_updated_at="anything")["id"] == "new"  # nothing stored to conflict with
+
+
+def test_parallel_writers_with_the_same_base_one_wins():
+    at = store.save_company("t1", bundle())["updated_at"]
+
+    def write(i):
+        try:
+            store.save_company("t1", bundle(name=f"w{i}"), base_updated_at=at)
+            return True
+        except store.ConflictError:
+            return False
+    with ThreadPoolExecutor(8) as pool:
+        assert list(pool.map(write, range(8))).count(True) == 1
 
 
 def test_runs_scoped_newest_first_and_filtered():
@@ -69,7 +106,7 @@ def test_migrates_pre_tenant_database(tmp_path, monkeypatch):
     """)
     con.commit(); con.close()
     monkeypatch.setenv("FLOCK_DB", str(path))
-    assert store.get_company("default", "acme") == {"company": {"id": "acme"}}
+    assert store.get_company("default", "acme") == {"company": {"id": "acme"}, "updated_at": "2026-01-01T00:00:00+00:00"}
     assert [r["name"] for r in store.list_runs("default")] == ["r"]
     assert [t["id"] for t in store.list_tenants()] == ["default"]
     assert store.tenant_for_key("unset") is None  # no key until rotated
@@ -96,7 +133,7 @@ def test_failed_migration_keeps_old_tables_and_retries(tmp_path, monkeypatch):
     assert names == {"companies", "runs", "runs_v1", "sqlite_sequence"}  # rolled back, nothing renamed
     assert con.execute("SELECT count(*) FROM companies").fetchone()[0] == 1
     con.execute("DROP TABLE runs_v1"); con.commit(); con.close()
-    assert store.get_company("default", "acme") == {}  # the next open migrates
+    assert store.get_company("default", "acme") == {"updated_at": "2026-01-01T00:00:00+00:00"}  # the next open migrates
 
 
 def test_concurrent_opens_migrate_once(tmp_path, monkeypatch):

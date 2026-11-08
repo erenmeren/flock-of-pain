@@ -20,16 +20,25 @@ MIN_PASSWORD, MAX_PASSWORD, MAX_EMAIL = 10, 200, 254  # the password cap keeps s
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 14, 8, 5  # an OWASP tier; 16 MB per hash. Stored with each hash, so these can change
 SESSION_DAYS = 7
 LOGIN_LIMIT, LOGIN_WINDOW_MINUTES = 10, 15
+LOGIN_IP_LIMIT = int(os.environ.get("FLOCK_LOGIN_IP_LIMIT", "50"))  # failed logins per client IP in the window
 
 
 class LimitError(Exception):
     """A per-tenant storage cap was reached, or a change would leave the tenant without an admin user."""
 
 
+class ConflictError(Exception):
+    """The stored company changed since the version the caller edited; `updated_at` is the stored one."""
+
+    def __init__(self, updated_at: str):
+        super().__init__("the company was changed since you loaded it")
+        self.updated_at = updated_at
+
+
 class CredentialError(ValueError):
     """A bad email or password; `path` is the request field."""
 
-    def __init__(self, path: str, message: str):
+    def __init__(self, path: str | None, message: str):
         super().__init__(message)
         self.path = path
 
@@ -54,6 +63,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_email ON sessions (email);
 CREATE TABLE IF NOT EXISTS login_failures (email TEXT NOT NULL, at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS login_failures_email ON login_failures (email);
+CREATE TABLE IF NOT EXISTS login_ip_failures (ip TEXT NOT NULL, at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS login_ip_failures_ip ON login_ip_failures (ip);
 """
 
 
@@ -250,18 +261,30 @@ def delete_user(tenant: str, email: str) -> bool:
     return True
 
 
-def take_login_attempt(email: str) -> bool:
-    """Count one attempt against the email's limit before any scrypt, atomically so parallel guesses cannot pass it;
-    a successful login() clears the count. False when the limit is reached, even if the password would be right."""
-    # shortcut: anyone who knows an email can lock its login for 15 minutes, and spraying many emails is not limited, add a per-IP limit at the proxy when either is abused
+def take_login_attempt(email: str, ip: str) -> bool:
+    """Count one attempt against the email's and the client IP's limits before any scrypt, atomically so parallel guesses
+    cannot pass them; a successful login() takes it back. False when either limit is reached, even if the password would
+    be right; then nothing is counted."""
+    # shortcut: anyone who knows an email can lock its login for 15 minutes, and behind a proxy every client shares the proxy's IP; keep the proxy's own limit, or pass the real client IP (X-Forwarded-For from a trusted proxy) when either is abused
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=LOGIN_WINDOW_MINUTES)).isoformat(timespec="seconds")
     with closing(_connect()) as con, con:
         con.execute("DELETE FROM login_failures WHERE at <= ?", (cutoff,))
-        return con.execute("INSERT INTO login_failures SELECT ?, ? WHERE (SELECT count(*) FROM login_failures WHERE email = ?) < ?",
-                           (email, _now(), email, LOGIN_LIMIT)).rowcount > 0
+        con.execute("DELETE FROM login_ip_failures WHERE at <= ?", (cutoff,))
+        if con.execute("SELECT count(*) FROM login_ip_failures WHERE ip = ?", (ip,)).fetchone()[0] >= LOGIN_IP_LIMIT or \
+                con.execute("SELECT count(*) FROM login_failures WHERE email = ?", (email,)).fetchone()[0] >= LOGIN_LIMIT:
+            return False
+        con.execute("INSERT INTO login_failures VALUES (?, ?)", (email, _now()))
+        con.execute("INSERT INTO login_ip_failures VALUES (?, ?)", (ip, _now()))
+        return True
 
 
-def login(email: str, password: str) -> dict | None:
+def _forget_failures(con: sqlite3.Connection, email: str, ip: str) -> None:
+    """After a right password: the email's failures go, and the IP's count loses the attempt just taken."""
+    con.execute("DELETE FROM login_failures WHERE email = ?", (email,))
+    con.execute("DELETE FROM login_ip_failures WHERE rowid = (SELECT max(rowid) FROM login_ip_failures WHERE ip = ?)", (ip,))
+
+
+def login(email: str, password: str, ip: str = "") -> dict | None:
     """A new session, or None. An unknown email costs one scrypt too, so timing does not tell which emails exist."""
     with closing(_connect()) as con:
         user = con.execute("SELECT tenant_id, role, password_hash FROM users WHERE email = ?", (email,)).fetchone()
@@ -272,12 +295,30 @@ def login(email: str, password: str) -> dict | None:
     expires_at = (datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds")
     with closing(_connect()) as con, con:
         con.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
-        con.execute("DELETE FROM login_failures WHERE email = ?", (email,))
+        _forget_failures(con, email, ip)
         # the hash in the WHERE: a removal or password change during the slow scrypt above leaves no session
         if con.execute("INSERT INTO sessions SELECT ?, email, ? FROM users WHERE email = ? AND password_hash = ?",
                        (_hash(token), expires_at, email, user["password_hash"])).rowcount == 0:
             return None
     return {"token": token, "tenant": user["tenant_id"], "email": email, "role": user["role"], "expires_at": expires_at}
+
+
+def change_password(email: str, current: str, new: str, token: str, ip: str = "") -> bool:
+    """Set a user's own password and delete their other sessions, keeping `token`'s; False when `current` is wrong.
+    The caller has checked `new` and taken a login attempt."""
+    with closing(_connect()) as con:
+        row = con.execute("SELECT password_hash FROM users WHERE email = ?", (email,)).fetchone()
+    if row is None or not _verify_password(current, row["password_hash"]):
+        return False
+    hashed = hash_password(new)  # before the write: scrypt is slow
+    with closing(_connect()) as con, con:
+        # the old hash in the WHERE, like login(): a change made during the slow scrypt above wins
+        if con.execute("UPDATE users SET password_hash = ? WHERE email = ? AND password_hash = ?",
+                       (hashed, email, row["password_hash"])).rowcount == 0:
+            return False
+        _forget_failures(con, email, ip)
+        con.execute("DELETE FROM sessions WHERE email = ? AND token_hash != ?", (email, _hash(token)))
+    return True
 
 
 def session_user(token: str) -> dict | None:
@@ -300,10 +341,15 @@ def delete_session(token: str) -> None:
 
 # --- companies -------------------------------------------------------------
 
-def save_company(tenant: str, bundle: dict) -> dict:
-    cid, name, at = bundle["company"]["id"], bundle["company"]["name"], _now()
+def save_company(tenant: str, bundle: dict, base_updated_at: str | None = None) -> dict:
+    """Raises ConflictError when `base_updated_at` is given and the stored company has another updated_at. Microseconds
+    tell saves apart; they still sort after older whole-second rows ('.' > '+'). A write lock makes check and write one."""
+    cid, name, at = bundle["company"]["id"], bundle["company"]["name"], datetime.now(timezone.utc).isoformat(timespec="microseconds")
     with closing(_connect()) as con, con:
-        exists = con.execute("SELECT 1 FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).fetchone()
+        con.execute("BEGIN IMMEDIATE")
+        exists = con.execute("SELECT updated_at FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).fetchone()
+        if exists and base_updated_at is not None and exists["updated_at"] != base_updated_at:
+            raise ConflictError(exists["updated_at"])
         if not exists and con.execute("SELECT count(*) FROM companies WHERE tenant_id = ?", (tenant,)).fetchone()[0] >= MAX_COMPANIES:
             raise LimitError(f"limit of {MAX_COMPANIES} companies reached; delete one first")
         con.execute("INSERT INTO companies VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id, id) DO UPDATE SET "
@@ -321,8 +367,8 @@ def list_companies(tenant: str) -> list[dict]:
 
 def get_company(tenant: str, cid: str) -> dict | None:
     with closing(_connect()) as con:
-        row = con.execute("SELECT bundle FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).fetchone()
-    return None if row is None else json.loads(row["bundle"])
+        row = con.execute("SELECT bundle, updated_at FROM companies WHERE tenant_id = ? AND id = ?", (tenant, cid)).fetchone()
+    return None if row is None else {**json.loads(row["bundle"]), "updated_at": row["updated_at"]}
 
 
 def delete_company(tenant: str, cid: str) -> bool:

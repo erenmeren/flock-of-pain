@@ -22,7 +22,7 @@ export const HINTS: Record<string, string> = {
   replications: "How many times each scenario is re-run with different random draws. KPIs are averaged over them.",
   policy: "How a free worker picks the next task: priority = highest step priority first, fifo = oldest first, least_loaded = the department with the longest queue first, edd = the task whose workflow cut-off comes soonest first.",
   crn: "Common random numbers: every scenario gets the same arrivals and durations, so differences between scenarios come from the change, not the dice.",
-  include_events: "Records every event so the run can be replayed step by step on this page. Limited to 30 run-days ((days + warm-up) × reps × scenarios).",
+  include_events: "Records every event so the run can be replayed step by step on this page. Limited to a small number of run-days ((days + warm-up) × reps × scenarios); the counter beside it shows the server's limit.",
   warmup_days: "Extra days simulated before measuring starts, so the run does not begin from an unrealistically empty office. KPIs cover only the days after it, so the weekdays measured shift too: use 7 to compare with a run without warm-up. 0 means no warm-up.",
   save_run: "Stores the result on the server so it appears under Run History on the Analysis page.",
   // workflow step
@@ -81,7 +81,7 @@ export const HINTS: Record<string, string> = {
   cost_per_completed: "Labor cost divided by completed items.",
   health: "Composite score: delivery (completion rate), SLA (1 − breach rate), quality (1 − rework rate) and balance (utilization close to 75%).",
   // decisions and results
-  optimizer: "Tries one more employee in each candidate department and keeps the best KPI gain per added cost, round after round. It counts the target as met only when the whole 95% interval is on the right side of it. A new employee copies skills, schedule and cost from the department's first resource.",
+  optimizer: "Tries one more employee in each candidate department and keeps the best KPI gain per added cost, round after round. When no single hire helps, it tries every pair (two in one department included) before it stops. It counts the target as met only when the whole 95% interval is on the right side of it. A new employee copies skills, schedule and cost from the department's first resource.",
   sweep: "Runs the base scenario once per value, with the same random numbers, so you can see where more staff or demand starts to matter. Nothing is saved until you add a point as a scenario.",
   significance: "Significant: the 95% interval of the change, measured run by run, excludes zero. Within noise: the runs cannot tell this change from random variation, so do not read it as a real gain or loss. With one replication every change counts as within noise; use more replications.",
   reality_check: "Enter what you measured in the real company. A large gap means the model's inputs (arrival rates, durations, staffing, schedules) need calibrating before its what-ifs can be trusted. The interval says how sure the simulation is of its own mean, not how right the model is, and it narrows with more replications.",

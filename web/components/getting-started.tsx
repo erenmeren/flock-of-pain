@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTwin } from "@/lib/store";
 
 const KEY = "flock_getting_started_off";
+const EXAMPLE_ID = "reynolds"; // the id in src/flock_of_pain/examples/reynolds.json
 const listeners = new Set<() => void>();
 const read = () => { try { return localStorage.getItem(KEY) === null; } catch { return true; } };
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
@@ -53,7 +54,7 @@ export function GettingStarted() {
             </>
           )}
         </Step>
-        <Step n={2} title="Choose a starting point">
+        <Step n={2} title="Choose a starting point" done={!!t.selected || (!!t.company && t.company.id !== EXAMPLE_ID) || t.canUndo}>
           <Button variant="outline" size="sm" className="self-start rounded-full" onClick={t.loadExample} disabled={t.busy}>Start from the example</Button>
           <div className="flex flex-col gap-2">
             <Textarea aria-label="describe the company" placeholder="Or describe the company in plain words" className="h-16 rounded-xl border-0 glass-inset dark:bg-transparent" value={prompt} onChange={(e) => setPrompt(e.target.value)} />

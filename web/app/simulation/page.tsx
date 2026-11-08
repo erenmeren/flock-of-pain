@@ -25,10 +25,11 @@ const HEAD = "[&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-wide [&_th]:te
 const LiveDot = () => <span className="size-2.5 shrink-0 rounded-full bg-rose-500 shadow-[0_0_10px_#f43f5e]" aria-hidden />;
 
 export default function Simulation() {
-  const { company, scenarios, config, setConfig, result, resultSource, run, busy, viewer } = useTwin();
+  const { company, scenarios, config, setConfig, result, resultSource, run, busy, viewer, limits } = useTwin();
   if (!company) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const runDays = countRunDays(config, scenarios.length);
-  const over = runDays > 30 && config.include_events;
+  const cap = limits.max_event_run_days;
+  const over = runDays > cap && config.include_events;
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,10 +66,10 @@ export default function Simulation() {
               <Checkbox aria-label="include events" checked={config.include_events} onCheckedChange={(c) => setConfig({ ...config, include_events: !!c })} />
               <span className="flex flex-1 flex-col">
                 <span className="flex items-center gap-1">Include events for playback<Hint id="include_events" /></span>
-                <span className="text-xs text-muted-foreground">At most 30 run-days: (days + warm-up) × reps × scenarios</span>
+                <span className="text-xs text-muted-foreground">At most {cap} run-days: (days + warm-up) × reps × scenarios</span>
               </span>
               <span className={cn("rounded-full px-2 py-0.5 text-xs tabular-nums", over ? "bg-rose-400/15 text-rose-400" : "bg-white/5 text-muted-foreground")}>
-                run-days {runDays} / 30
+                run-days {runDays} / {cap}
               </span>
             </Label>
             {!viewer && <Label className={TOGGLE}>
@@ -91,7 +92,7 @@ export default function Simulation() {
 
       {result ? (
         <>
-          <Panel title="KPIs" subtitle={<>{sourceLabel(resultSource)} · mean, its 95% interval, p10–p90 · {result.disclaimer} <Hint id="significance" /></>} icon={BarChart3}
+          <Panel title="KPIs" subtitle={<>{sourceLabel(resultSource)} · mean and its 95% interval · {result.disclaimer} <Hint id="significance" /></>} icon={BarChart3}
             action={<ResultActions result={result} source={resultSource} />}>
             <Table>
               <TableHeader className={HEAD}>
@@ -109,7 +110,6 @@ export default function Simulation() {
                       return (
                         <TableCell key={s.id} className="text-right tabular-nums">
                           <span className="font-medium">{fmtKpi(k, st?.mean)}</span>
-                          {st && <span className="ml-1.5 text-xs text-muted-foreground">{fmtKpi(k, st.p10)}–{fmtKpi(k, st.p90)}</span>}
                           <span className="flex flex-col items-end gap-0.5">
                             <Interval k={k} st={st} />
                             {i > 0 && <span className="text-xs"><Delta k={k} value={st?.mean} base={result.scenarios[0].summary[k]?.mean} cmp={s.comparison?.[k]} /></span>}

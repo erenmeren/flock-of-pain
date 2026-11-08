@@ -126,7 +126,49 @@ def test_budget_stops_before_exceeding_run_days():
 
 def test_budget_also_caps_runs():
     p = plan(candidates=["ops", "bill"], max_hires=50, config={"seed": 1, "days": 0.01, "replications": 2}, runs=10)
-    assert p.rounds == 2 and p.total == 10
+    assert p.budget == 10 and p.total == 10
+
+
+def pair_company():
+    """Operations and Billing work in series at the same pace, so a hire in only one of them moves nothing."""
+    s = business_hours(9, 17)
+    c = Company("c", "C", [
+        Department("ops", "Operations", [Resource("o1", "ops", {"do"}, cost_per_hour=20.0, schedule=s)]),
+        Department("bill", "Billing", [Resource("b1", "bill", {"bill"}, cost_per_hour=40.0, schedule=s)]),
+    ], [], [Workflow("w", "W", [
+        Step("a", "A", "ops", "do", const(30)),
+        Step("b", "B", "bill", "bill", const(30), depends_on=["a"]),
+    ], ArrivalSpec(20, business_hours(9, 17)))])
+    c.resolve()
+    return c
+
+
+MORE = {"kpi": "throughput_per_day", "op": ">=", "value": 1e9}  # never met
+
+
+def test_pair_step_when_two_departments_must_both_grow():
+    c, cfg = pair_company(), {"seed": 1, "days": 1, "replications": 2}
+    base = run_experiment("b", plan(c, config=cfg).base, plan(c, config=cfg).config, keep_events=False).summary["throughput_per_day"].mean
+    runs = []
+    p = plan(c, target=MORE, max_hires=2, config=cfg)
+    out = optimize.run(p, lambda: runs.append(1))
+    assert out["hires"] == {"ops": 1, "bill": 1} and out["stopped"] == "max_hires"
+    assert [e["hires"] for e in out["path"]] == [{}, {"ops": 1, "bill": 1}]  # one path entry for the pair
+    assert out["path"][1]["mean"] > base
+    assert len(runs) == 2 * (1 + 2 + 3) <= p.total  # base, the singles, then the pairs (ops+ops, ops+bill, bill+bill)
+    ids = [o["employee"]["id"] for o in out["scenario"]["overlays"]]
+    assert sorted(ids) == ["bill_hire_1", "ops_hire_1"]
+
+
+def test_pair_step_respects_max_hires_and_budget():
+    c, cfg = pair_company(), {"seed": 1, "days": 1, "replications": 2}
+    out = optimize.run(plan(c, target=MORE, max_hires=1, config=cfg))
+    assert out["stopped"] == "max_hires" and out["hires"] == {} and len(out["path"]) == 1  # a pair would pass max_hires
+    runs = []
+    p = plan(c, target=MORE, max_hires=5, config=cfg, run_days=10)  # base + singles fit, the pairs do not
+    out = optimize.run(p, lambda: runs.append(1))
+    assert out["stopped"] == "budget" and out["hires"] == {} and len(runs) == 6 <= p.total
+    assert optimize.run(plan(c, target=MORE, max_hires=5, config=cfg, run_days=12))["hires"] == {"ops": 1, "bill": 1}
 
 
 def test_warmup_counts_towards_the_budget():
@@ -235,7 +277,7 @@ def test_scenario_runs_through_simulate(h):
     r = client.post("/optimize", json=body(max_hires=2, candidates=["ops", "bill"]), headers=h)
     assert r.status_code == 202 and set(r.json()) == {"id"}
     j = finish(r.json()["id"], h)
-    assert j["kind"] == "optimize" and j["status"] == "done" and j["done"] == j["total"] and j["total"] == 10
+    assert j["kind"] == "optimize" and j["status"] == "done" and j["done"] == j["total"] and j["total"] == 16  # an upper bound
     out = j["result"]
     assert sum(out["hires"].values()) == 2
     sim = client.post("/simulate", json={"company": body()["company"], "scenarios": [BASE, out["scenario"]], "config": {**CFG, "crn": True}},

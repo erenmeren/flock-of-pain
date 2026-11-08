@@ -8,7 +8,7 @@ import { Panel } from "@/components/dashboard/kpi";
 import { setGettingStartedOn } from "@/components/getting-started";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
-import { SignInPanel, UsersPanel } from "@/components/settings/auth-panels";
+import { PasswordPanel, SignInPanel, UsersPanel } from "@/components/settings/auth-panels";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -82,6 +82,8 @@ export default function Settings() {
         </Panel>
       </div>
 
+      <PasswordPanel />
+
       <UsersPanel />
 
       <Panel title="Help hints" subtitle="Question marks next to labels explain what a field does" icon={CircleHelp}
@@ -106,7 +108,7 @@ export default function Settings() {
               <span className="font-medium">{c.name}</span>
               <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
               {t.selected === c.id && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">loaded</span>}
-              <span className="ml-auto text-xs tabular-nums text-muted-foreground">{c.updated_at.replace("T", " ").replace("+00:00", "")}</span>
+              <span className="ml-auto text-xs tabular-nums text-muted-foreground">{c.updated_at.slice(0, 19).replace("T", " ")}</span>
               <Button variant="outline" size="sm" className="rounded-full" onClick={() => t.load(c.id)} disabled={t.busy}>Load</Button>
               {!t.viewer && <Button variant="destructive" size="sm" className="rounded-full" onClick={() => t.remove(c.id)} disabled={t.busy}><Trash2 className="size-3.5" /> Delete</Button>}
             </div>

@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, Loader2, LogOut, Plus, Trash2, Users } from "lucide-react";
+import { KeyRound, Loader2, LockKeyhole, LogOut, Plus, Trash2, Users } from "lucide-react";
 import { Panel } from "@/components/dashboard/kpi";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type ApiError, type Role, type UserRow, createUser, deleteUser, listUsers, signup, updateUser } from "@/lib/api";
+import { type ApiError, type Role, type UserRow, changePassword, createUser, deleteUser, listUsers, signup, updateUser } from "@/lib/api";
 import { slug } from "@/lib/company";
 import { useConfirm } from "@/lib/confirm";
 import { useTwin } from "@/lib/store";
@@ -91,6 +91,52 @@ export function SignInPanel() {
         </details>
         {shownKey && <p className="break-all text-xs text-muted-foreground">Tenant API key, shown once: <code className="font-mono text-foreground">{shownKey}</code></p>}
       </div>
+    </Panel>
+  );
+}
+
+/** For a user signed in with email; an API key has no password. The API ends the user's other sessions and keeps this one. */
+export function PasswordPanel() {
+  const { me } = useTwin();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [pending, setPending] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!me?.email) return null;
+  const mismatch = !!repeat && next !== repeat;
+
+  const submit = async () => {
+    setPending(true);
+    setNote(null);
+    try {
+      await changePassword(current, next);
+      setCurrent(""); setNext(""); setRepeat("");
+      setNote({ ok: true, text: "Password changed. Your other sessions are signed out." });
+    } catch (e) {
+      const err = e as ApiError;
+      setNote({ ok: false, text: err.status === 429 ? "Too many attempts. Wait a minute and try again."
+        : err.path === "current" ? "The current password is wrong."
+        : err.path === "new" ? `New password: ${err.message}` : err.message });
+    } finally { setPending(false); }
+  };
+
+  return (
+    <Panel title="Change password" subtitle={me.email} icon={LockKeyhole}>
+      <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        {/* the hidden username lets a password manager file the new password under this account */}
+        <input type="email" autoComplete="username" value={me.email} readOnly hidden />
+        <Input type="password" autoComplete="current-password" className={FIELD} aria-label="current password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} disabled={pending} />
+        <div className="flex flex-wrap gap-2">
+          <Input type="password" autoComplete="new-password" className={FIELD} aria-label="new password" placeholder="New password, 10+ characters" value={next} onChange={(e) => setNext(e.target.value)} disabled={pending} />
+          <Input type="password" autoComplete="new-password" className={FIELD} aria-label="repeat new password" aria-invalid={mismatch || undefined} placeholder="Repeat new password" value={repeat} onChange={(e) => setRepeat(e.target.value)} disabled={pending} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" variant="outline" size="sm" className="h-9 rounded-full px-3" disabled={pending || !current || !next || next !== repeat}>{pending && <Loader2 className="size-3.5 animate-spin" />} Change password</Button>
+          {mismatch ? <p role="alert" className="text-xs text-rose-400">The new passwords do not match.</p>
+            : note && <p role={note.ok ? "status" : "alert"} className={note.ok ? "text-xs text-emerald-400" : "text-xs text-rose-400"}>{note.text}</p>}
+        </div>
+      </form>
     </Panel>
   );
 }
