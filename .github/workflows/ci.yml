@@ -30,6 +30,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npx next typegen # route helpers such as LayoutProps exist only after Next generates them
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
