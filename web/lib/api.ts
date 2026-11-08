@@ -46,10 +46,11 @@ export type SimulateResponse = {
   scenarios: ScenarioResult[];
   run_id?: number; // present when the request asked to save
 };
-export type Bundle = { company: unknown; scenarios: unknown[] };
+export type Bundle = { company: unknown; scenarios: unknown[]; updated_at?: string }; // updated_at: GET /companies/{id} only, absent from an older API
 export type CompanyMeta = { id: string; name: string; updated_at: string };
 export type RunMeta = { id: number; company_id: string | null; name: string; created_at: string };
-export type ApiError = { path: string | null; message: string; href?: string; status?: number };
+export type ApiError = { path: string | null; message: string; href?: string; status?: number; updated_at?: string }; // updated_at: the other save, on a 409 edit conflict
+export type Limits = { max_run_days: number; max_event_run_days: number; max_runs: number };
 export type Role = "admin" | "editor" | "viewer";
 export type Me = { tenant: string; email: string | null; role: Role }; // email null for an API key
 export type UserRow = { email: string; role: Role; created_at: string };
@@ -95,7 +96,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const res = await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.ok) return res.json();
   const j = await res.json().catch(() => null);
-  if (res.status === 401 && !open) {
+  if (res.status === 401 && !open && !(path === "/auth/password" && j?.path === "current")) { // a wrong current password is not an expired session
     if (token) {
       if (sessionToken === token && path !== "/auth/logout") { setSession(""); onSessionExpired(); } // a newer sign-in keeps its token
       throw SESSION_EXPIRED;
@@ -122,12 +123,15 @@ const enc = encodeURIComponent;
 export const login = (email: string, password: string) => request<Me & { token: string; email: string; expires_at: string }>("POST", "/auth/login", { email, password });
 export const logout = () => request<{ ok: true }>("POST", "/auth/logout");
 export const getMe = () => request<Me>("GET", "/auth/me");
+/** Ends the user's other sessions, keeps this one. */
+export const changePassword = (current: string, next: string) => request<{ ok: true }>("POST", "/auth/password", { current, new: next });
+export const getLimits = () => request<Limits>("GET", "/limits");
 export const listUsers = () => request<UserRow[]>("GET", "/users");
 export const createUser = (email: string, password: string, role: Role) => request<UserRow>("POST", "/users", { email, password, role });
 export const updateUser = (email: string, patch: { role?: Role; password?: string }) => request<UserRow>("PATCH", `/users/${enc(email)}`, patch);
 export const deleteUser = (email: string) => request<{ deleted: string }>("DELETE", `/users/${enc(email)}`);
 export const listCompanies = () => request<CompanyMeta[]>("GET", "/companies");
-export const saveCompany = (id: string, bundle: Bundle) => request<CompanyMeta>("PUT", `/companies/${enc(id)}`, bundle);
+export const saveCompany = (id: string, body: Bundle & { base_updated_at?: string }) => request<CompanyMeta>("PUT", `/companies/${enc(id)}`, body);
 export const loadCompany = (id: string) => request<Bundle>("GET", `/companies/${enc(id)}`);
 export const deleteCompany = (id: string) => request<{ deleted: string }>("DELETE", `/companies/${enc(id)}`);
 export const listRuns = (companyId?: string | null) =>

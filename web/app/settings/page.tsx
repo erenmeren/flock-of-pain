@@ -8,7 +8,7 @@ import { Panel } from "@/components/dashboard/kpi";
 import { setGettingStartedOn } from "@/components/getting-started";
 import { Hint } from "@/components/hint";
 import { PageHeader } from "@/components/page";
-import { SignInPanel, UsersPanel } from "@/components/settings/auth-panels";
+import { PasswordPanel, SignInPanel, UsersPanel } from "@/components/settings/auth-panels";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -81,6 +81,8 @@ export default function Settings() {
           </div>
         </Panel>
       </div>
+
+      <PasswordPanel />
 
       <UsersPanel />
 

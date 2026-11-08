@@ -22,7 +22,7 @@ export const HINTS: Record<string, string> = {
   replications: "How many times each scenario is re-run with different random draws. KPIs are averaged over them.",
   policy: "How a free worker picks the next task: priority = highest step priority first, fifo = oldest first, least_loaded = the department with the longest queue first, edd = the task whose workflow cut-off comes soonest first.",
   crn: "Common random numbers: every scenario gets the same arrivals and durations, so differences between scenarios come from the change, not the dice.",
-  include_events: "Records every event so the run can be replayed step by step on this page. Limited to 30 run-days ((days + warm-up) × reps × scenarios).",
+  include_events: "Records every event so the run can be replayed step by step on this page. Limited to a small number of run-days ((days + warm-up) × reps × scenarios); the counter beside it shows the server's limit.",
   warmup_days: "Extra days simulated before measuring starts, so the run does not begin from an unrealistically empty office. KPIs cover only the days after it, so the weekdays measured shift too: use 7 to compare with a run without warm-up. 0 means no warm-up.",
   save_run: "Stores the result on the server so it appears under Run History on the Analysis page.",
   // workflow step

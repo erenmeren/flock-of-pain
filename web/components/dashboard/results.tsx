@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Recommendation, SimulateResponse, Stat } from "@/lib/api";
 import { type Company, slug } from "@/lib/company";
-import { realityRows, resultsCsv, setActual } from "@/lib/results";
+import { type CsvSep, realityRows, resultsCsv, setActual } from "@/lib/results";
 import type { ResultSource } from "@/lib/store";
 
 /** The 95% interval of a mean; nothing for an old run, or one replication, where there is no interval. */
@@ -20,19 +20,20 @@ export function Interval({ k, st }: { k: string; st?: Stat }) {
   return <span className="whitespace-nowrap text-[11px] font-normal tabular-nums text-muted-foreground" title="95% interval of the mean">95% {fmtKpi(k, st.ci_low)}–{fmtKpi(k, st.ci_high)}</span>;
 }
 
-/** Download CSV and Print report. The report is a client-side navigation: the result lives in the TwinProvider, a new tab would lose it. */
+/** Download CSV (also for Excel with a decimal comma) and Print report. The report is a client-side navigation: the result lives in the TwinProvider, a new tab would lose it. */
 export function ResultActions({ result, source }: { result: SimulateResponse; source: ResultSource | null }) {
-  const download = () => {
-    const url = URL.createObjectURL(new Blob(["﻿", resultsCsv(result)], { type: "text/csv;charset=utf-8" })); // the BOM makes Excel read UTF-8
+  const download = (sep: CsvSep) => {
+    const url = URL.createObjectURL(new Blob(["﻿", resultsCsv(result, sep)], { type: "text/csv;charset=utf-8" })); // the BOM makes Excel read UTF-8
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${slug(source?.name ?? "") || "results"}-results.csv`;
+    a.download = `${slug(source?.name ?? "") || "results"}-results${sep === ";" ? "-excel" : ""}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
   return (
     <span className="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" className="rounded-full" onClick={download}><Download className="size-3.5" /> Download CSV</Button>
+      <Button variant="outline" size="sm" className="rounded-full" onClick={() => download(",")}><Download className="size-3.5" /> Download CSV</Button>
+      <Button variant="outline" size="sm" className="rounded-full" title="Semicolons and decimal commas, for Excel in locales such as Turkish" onClick={() => download(";")}><Download className="size-3.5" /> Excel (;)</Button>
       <Button variant="outline" size="sm" className="rounded-full" render={<Link href="/report" />} nativeButton={false}><Printer className="size-3.5" /> Print report</Button>
     </span>
   );

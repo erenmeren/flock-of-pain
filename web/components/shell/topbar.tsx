@@ -58,6 +58,18 @@ export function Topbar() {
           <Sidebar className="relative h-full" />
         </div>
       )}
+      {mounted && t.conflict && (
+        <Alert className="rise">
+          <AlertTitle>Someone else saved {t.conflict.id} since you loaded it</AlertTitle>
+          <AlertDescription>
+            Their version is from {t.conflict.updated_at.replace("T", " ").replace("+00:00", "")}. Autosave is paused until you choose which version to keep.
+            <span className="mt-2 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="rounded-full" onClick={() => t.conflict && t.load(t.conflict.id)} disabled={t.busy}>Load their version</Button>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={t.overwrite} disabled={t.busy || t.viewer}>Overwrite with mine</Button>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
       {t.error && path !== "/settings" && (
         <Alert variant="destructive" className="rise">
           <AlertTitle>{t.error.path ?? "Error"}</AlertTitle>

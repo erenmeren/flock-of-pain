@@ -1,10 +1,10 @@
 // Pure logic of the parameter sweep: scenarios from a base scenario, budget check, chart rows. Also shared by the optimizer panel.
-import type { Comparison, SimulateResponse, Stat } from "@/lib/api";
+import type { Comparison, Limits, SimulateResponse, Stat } from "@/lib/api";
 import { type Company, type Overlay, type Resource, type Scenario, idFor, runDays, weekdays9to5 } from "@/lib/company";
 import type { Config } from "@/lib/store";
 
-// The API's defaults; a server configured lower still answers 422 on `config`.
-export const MAX_RUN_DAYS = 2000, MAX_RUNS = 400;
+// The API's defaults, used until GET /limits answers and with an older API that has no /limits.
+export const DEFAULT_LIMITS: Limits = { max_run_days: 2000, max_event_run_days: 30, max_runs: 400 };
 
 export type SweepPoint = { value: number; label: string; scenario: Scenario };
 
@@ -12,11 +12,11 @@ export type SweepPoint = { value: number; label: string; scenario: Scenario };
 export const jobConfig = (c: Config) => ({ seed: c.seed, days: c.days, warmup_days: c.warmup_days, replications: c.replications, policy: c.policy, crn: true });
 
 /** Why a job of `scenarios` scenarios would be refused, counted as /jobs does; null when it fits. */
-export function budgetIssue(c: Config, scenarios: number): string | null {
+export function budgetIssue(c: Config, scenarios: number, limits: Limits = DEFAULT_LIMITS): string | null {
   const runs = c.replications * scenarios;
-  if (runs > MAX_RUNS) return `${c.replications} replications x ${scenarios} scenarios = ${runs} runs, over the limit of ${MAX_RUNS}. Use fewer values or replications.`;
+  if (runs > limits.max_runs) return `${c.replications} replications x ${scenarios} scenarios = ${runs} runs, over the limit of ${limits.max_runs}. Use fewer values or replications.`;
   const total = runDays(c, scenarios);
-  return total > MAX_RUN_DAYS ? `${c.days + (c.warmup_days ?? 0)} days x ${runs} runs = ${total} run-days, over the limit of ${MAX_RUN_DAYS}. Use fewer values, days or replications.` : null;
+  return total > limits.max_run_days ? `${c.days + (c.warmup_days ?? 0)} days x ${runs} runs = ${total} run-days, over the limit of ${limits.max_run_days}. Use fewer values, days or replications.` : null;
 }
 
 /** The department's first resource once the base scenario's overlays are applied. */

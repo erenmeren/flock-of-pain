@@ -32,7 +32,7 @@ export function Sidebar({ className }: { className?: string }) {
   const { authed, me: signedIn, draftStatus, selected, company } = useTwin();
   const mounted = useMounted();
   const me = mounted ? signedIn : null; // /auth/me can answer before this Suspense boundary hydrates
-  const draft = !mounted || !company ? "Loading…" : draftStatus.state === "saving" ? "Saving…" : draftStatus.state === "saved" ? `Saved: ${selected}` : draftStatus.state === "failed" ? "Save failed" : "Unsaved";
+  const draft = !mounted || !company ? "Loading…" : draftStatus.state === "saving" ? "Saving…" : draftStatus.state === "saved" ? `Saved: ${selected}` : draftStatus.state === "failed" ? "Save failed" : draftStatus.state === "conflict" ? "Edit conflict" : "Unsaved";
   return (
     <aside data-shell className={cn("glass flex w-60 shrink-0 flex-col gap-6 rounded-2xl p-4", className)}>
       <Link href="/" className="flex items-center gap-3 px-1 pt-1">

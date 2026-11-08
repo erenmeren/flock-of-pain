@@ -210,7 +210,7 @@ function OptimizerPanel({ company }: { company: Company }) {
 }
 
 function SweepPanel({ company }: { company: Company }) {
-  const { scenarios, setScenarios, config } = useTwin();
+  const { scenarios, setScenarios, config, limits } = useTwin();
   const [kind, setKind] = useState<"staff" | "demand">("staff");
   const [deptId, setDeptId] = useState("");
   const [count, setCount] = useState(5);
@@ -238,7 +238,7 @@ function SweepPanel({ company }: { company: Company }) {
       points = demandSweep(base, ps, workflow === ALL ? null : workflow);
     }
     const scenariosToRun = [base, ...points.map((p) => p.scenario)];
-    const tooBig = budgetIssue(config, scenariosToRun.length);
+    const tooBig = budgetIssue(config, scenariosToRun.length, limits);
     if (tooBig) return job.setError({ path: "config", message: tooBig });
     setDone(null);
     setAdded([]);

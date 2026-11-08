@@ -22,7 +22,7 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 );
 
 export default function ReportPage() {
-  const { company, config, result, resultSource } = useTwin();
+  const { company, result, resultSource } = useTwin();
   const historyId = resultSource?.kind === "history" ? resultSource.run_id : null;
   const [saved, setSaved] = useState<{ id: number; settings: Settings | null } | null>(null);
   // a history run has its own company and settings on the server; the draft's may be unrelated
@@ -46,7 +46,7 @@ export default function ReportPage() {
   );
 
   const history = historyId !== null;
-  const settings: Settings | null = history ? (saved?.id === historyId ? saved.settings : null) : { companyName: company?.name, config };
+  const settings: Settings | null = history ? (saved?.id === historyId ? saved.settings : null) : resultSource?.kind === "run" ? { companyName: resultSource.name, config: resultSource.config } : null;
   const c = settings?.config;
   const rows: [string, React.ReactNode][] = c ? [
     ["Days", c.days], ["Warm-up days", c.warmup_days ?? 0], ["Replications", c.replications], ["Seed", c.seed], ["Policy", c.policy], ["Common random numbers", c.crn ? "on" : "off"],
@@ -70,7 +70,6 @@ export default function ReportPage() {
             {rows.map(([k, v]) => <div key={k} className="flex justify-between gap-3"><dt className="text-muted-foreground">{k}</dt><dd className="tabular-nums">{v}</dd></div>)}
           </dl>
         ) : <p className="text-muted-foreground">{history && saved?.id !== historyId ? "Loading the saved settings…" : "The saved settings could not be loaded."}</p>}
-        {!history && <p className="text-xs text-muted-foreground">These are the settings in the draft now. If they were changed after the run, run again before relying on this report.</p>}
       </Section>
 
       <Section title="Assumptions">

@@ -1,4 +1,6 @@
-// Pure draft bookkeeping behind store.tsx: undo history, its keyboard shortcuts and the autosave gate.
+// Pure draft bookkeeping behind store.tsx: undo history, its keyboard shortcuts, the autosave gate and the edit-conflict check.
+import type { ApiError, Bundle } from "@/lib/api";
+
 export const HISTORY_CAP = 50;
 export const COALESCE_MS = 600;
 
@@ -32,6 +34,20 @@ export function undoKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; sh
 /** rev counts edits, saved is the rev the server has. rev 0 means no edit since this page loaded: a restored draft is not written until it is edited. */
 export type SaveSync = { rev: number; saved: number };
 
-export function shouldAutosave(a: { companyId: string; selected: string; canWrite: boolean; sync: SaveSync; failedRev: number | null; saving: boolean }): boolean {
-  return !!a.companyId && a.selected === a.companyId && a.canWrite && a.sync.rev > 0 && a.sync.rev !== a.sync.saved && a.failedRev !== a.sync.rev && !a.saving;
+export function shouldAutosave(a: { companyId: string; selected: string; canWrite: boolean; sync: SaveSync; failedRev: number | null; saving: boolean; conflict: boolean }): boolean {
+  return !!a.companyId && a.selected === a.companyId && a.canWrite && a.sync.rev > 0 && a.sync.rev !== a.sync.saved && a.failedRev !== a.sync.rev && !a.saving && !a.conflict;
+}
+
+/** The saved version a draft was loaded from or last written as. */
+export type SaveBase = { id: string; updated_at: string };
+
+/** The PUT body: the base version only when it belongs to the company being written, so a first save sends none. */
+export function saveBody(bundle: Bundle, base: SaveBase | null, id: string): Bundle & { base_updated_at?: string } {
+  return base?.id === id ? { ...bundle, base_updated_at: base.updated_at } : bundle;
+}
+
+/** Someone else saved `id` since our base: the version to overwrite with "mine", or null when the error is not that conflict. */
+export function conflictOf(e: unknown, id: string): SaveBase | null {
+  const x = e as ApiError;
+  return x?.status === 409 && x.path === "base_updated_at" && typeof x.updated_at === "string" ? { id, updated_at: x.updated_at } : null;
 }
